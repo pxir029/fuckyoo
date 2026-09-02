@@ -1,5 +1,5 @@
 # ============================================================
-# PXpanel 12.3.0 Beta
+# PXpanel 12.1.0 Beta
 # Railway Ready
 # ============================================================
 
@@ -41,7 +41,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXpanel"
-APP_VERSION = "12.3.0 Beta"
+APP_VERSION = "12.1.0 Beta"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -2076,71 +2076,6 @@ h1{
         flex-direction:column;
     }
 }
-
-/* PXpanel 12.2 — refined home + manual best-settings action */
-:root{
-    --px-green:#22c55e;
-    --px-green-soft:rgba(34,197,94,.14);
-    --px-cyan:#22d3ee;
-    --px-surface:rgba(15,23,42,.72);
-}
-body{
-    background:
-        radial-gradient(circle at 8% 8%,rgba(34,197,94,.075),transparent 28%),
-        radial-gradient(circle at 92% 4%,rgba(34,211,238,.065),transparent 25%),
-        radial-gradient(circle at 50% 100%,rgba(99,102,241,.055),transparent 34%),
-        #070b12 !important;
-}
-.modal-actions{
-    gap:10px;
-    flex-wrap:wrap;
-}
-.modal-btn{
-    min-height:44px;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    gap:8px;
-    transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease;
-}
-.modal-btn svg{width:17px;height:17px;flex:none}
-.best-settings-btn{
-    background:linear-gradient(135deg,rgba(34,197,94,.22),rgba(22,163,74,.13)) !important;
-    border:1px solid rgba(34,197,94,.48) !important;
-    color:#86efac !important;
-    box-shadow:0 8px 28px rgba(34,197,94,.09),inset 0 1px 0 rgba(255,255,255,.06);
-}
-.best-settings-btn:hover{
-    background:linear-gradient(135deg,rgba(34,197,94,.32),rgba(22,163,74,.2)) !important;
-    border-color:rgba(74,222,128,.72) !important;
-    color:#bbf7d0 !important;
-    transform:translateY(-1px);
-    box-shadow:0 12px 32px rgba(34,197,94,.16);
-}
-.best-settings-btn:active{transform:translateY(0) scale(.98)}
-.home-hero,.hero,.dashboard-hero{
-    border-color:rgba(255,255,255,.09) !important;
-    background:linear-gradient(145deg,rgba(15,23,42,.84),rgba(9,14,24,.7)) !important;
-    box-shadow:0 24px 80px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.035);
-}
-.card,.section{
-    border-color:rgba(255,255,255,.075) !important;
-    background:linear-gradient(145deg,rgba(17,24,39,.78),rgba(9,14,24,.72)) !important;
-    box-shadow:0 16px 55px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.025);
-}
-.card:hover{
-    border-color:rgba(34,197,94,.18) !important;
-    transform:translateY(-1px);
-}
-.top-actions,.header-actions{
-    gap:8px !important;
-}
-@media(max-width:640px){
-    .modal-actions .modal-btn{flex:1 1 calc(50% - 6px)}
-    .best-settings-btn{order:1}
-    .modal-actions .primary{order:2}
-    .modal-actions .secondary{order:3}
-}
 </style>
 </head>
 
@@ -2158,7 +2093,7 @@ PXpanel
 </div>
 
 <div class="version">
-12.3.0 Beta
+12.1.0 Beta
 </div>
 </div>
 
@@ -6293,152 +6228,6 @@ th{
     }
 }
 
-
-
-/* ============================================================
-   PXpanel 12.3 — Premium Dashboard Theme
-   ============================================================ */
-:root{
-    --px-bg:#05080d;
-    --px-panel:rgba(12,18,28,.82);
-    --px-panel-2:rgba(16,24,37,.72);
-    --px-line:rgba(255,255,255,.075);
-    --px-line-strong:rgba(255,255,255,.12);
-    --px-text:#f4f7fb;
-    --px-muted:rgba(226,232,240,.48);
-    --px-green:#34d399;
-    --px-blue:#60a5fa;
-    --px-violet:#a78bfa;
-}
-html{background:var(--px-bg)!important}
-body{
-    min-height:100vh!important;
-    background:
-      radial-gradient(900px 420px at 5% -5%,rgba(52,211,153,.10),transparent 62%),
-      radial-gradient(850px 430px at 100% 0%,rgba(96,165,250,.10),transparent 60%),
-      radial-gradient(750px 500px at 50% 100%,rgba(167,139,250,.075),transparent 65%),
-      linear-gradient(180deg,#05080d 0%,#070c13 48%,#05080d 100%)!important;
-}
-body:before{
-    content:"";
-    position:fixed;
-    inset:0;
-    pointer-events:none;
-    opacity:.24;
-    background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);
-    background-size:42px 42px;
-    mask-image:linear-gradient(to bottom,black,transparent 78%);
-}
-.wrapper{
-    position:relative!important;
-    width:min(1380px,calc(100% - 34px))!important;
-    margin:22px auto 40px!important;
-}
-.topbar{
-    position:relative;
-    overflow:hidden;
-    padding:17px 18px!important;
-    border:1px solid var(--px-line-strong)!important;
-    border-radius:24px!important;
-    background:linear-gradient(135deg,rgba(18,28,42,.92),rgba(8,13,21,.86))!important;
-    box-shadow:0 24px 80px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.055)!important;
-    backdrop-filter:blur(24px)!important;
-}
-.topbar:before{
-    content:"";position:absolute;inset:0;pointer-events:none;
-    background:linear-gradient(115deg,rgba(52,211,153,.055),transparent 34%,rgba(96,165,250,.045) 72%,transparent);
-}
-.brand,.top-actions{position:relative;z-index:1}
-.logo{
-    width:48px!important;height:48px!important;
-    display:grid!important;place-items:center!important;
-    border-radius:16px!important;
-    border:1px solid rgba(52,211,153,.25)!important;
-    background:linear-gradient(145deg,rgba(52,211,153,.17),rgba(96,165,250,.09))!important;
-    color:#86efac!important;
-    box-shadow:0 0 30px rgba(52,211,153,.09),inset 0 1px 0 rgba(255,255,255,.08)!important;
-}
-.brand-name{font-weight:900!important;letter-spacing:-.4px!important}
-.brand-desc{color:rgba(226,232,240,.55)!important}
-.brand-version{
-    display:inline-flex!important;margin-top:5px!important;padding:3px 7px!important;
-    border:1px solid rgba(96,165,250,.16)!important;border-radius:8px!important;
-    color:#93c5fd!important;background:rgba(96,165,250,.06)!important;
-}
-.top-actions{display:flex!important;flex-wrap:wrap!important;justify-content:flex-end!important}
-.top-btn{
-    border:1px solid rgba(255,255,255,.09)!important;
-    border-radius:13px!important;
-    background:rgba(255,255,255,.035)!important;
-    color:rgba(255,255,255,.78)!important;
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.035)!important;
-    transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease!important;
-}
-.top-btn:hover{transform:translateY(-2px)!important;border-color:rgba(96,165,250,.25)!important;background:rgba(96,165,250,.07)!important;box-shadow:0 10px 28px rgba(0,0,0,.18)!important}
-.top-btn.primary{border-color:rgba(52,211,153,.28)!important;background:linear-gradient(135deg,rgba(52,211,153,.15),rgba(34,197,94,.06))!important;color:#86efac!important}
-.top-btn.primary:hover{border-color:rgba(52,211,153,.48)!important;background:linear-gradient(135deg,rgba(52,211,153,.22),rgba(34,197,94,.09))!important}
-.top-btn.danger{border-color:rgba(251,113,133,.18)!important;color:#fda4af!important}
-.stats-grid{
-    gap:11px!important;
-    margin-top:14px!important;
-}
-.stat{
-    position:relative!important;overflow:hidden!important;
-    min-height:104px!important;padding:16px 17px!important;
-    border:1px solid var(--px-line)!important;
-    border-radius:20px!important;
-    background:linear-gradient(145deg,rgba(16,24,37,.78),rgba(8,13,21,.72))!important;
-    box-shadow:0 14px 45px rgba(0,0,0,.17),inset 0 1px 0 rgba(255,255,255,.028)!important;
-    transition:transform .2s ease,border-color .2s ease,background .2s ease!important;
-}
-.stat:after{content:"";position:absolute;right:-35px;top:-35px;width:95px;height:95px;border-radius:50%;background:radial-gradient(circle,rgba(52,211,153,.10),transparent 68%);pointer-events:none}
-.stat:hover{transform:translateY(-3px)!important;border-color:rgba(52,211,153,.18)!important;background:linear-gradient(145deg,rgba(18,30,43,.84),rgba(8,14,22,.76))!important}
-.stat-label{color:var(--px-muted)!important;font-weight:600!important}
-.stat-value{margin-top:8px!important;font-weight:900!important;letter-spacing:-.4px!important}
-.panel{
-    position:relative!important;
-    margin-top:14px!important;
-    border:1px solid var(--px-line)!important;
-    border-radius:22px!important;
-    background:linear-gradient(145deg,rgba(14,22,34,.80),rgba(7,12,20,.76))!important;
-    box-shadow:0 20px 65px rgba(0,0,0,.21),inset 0 1px 0 rgba(255,255,255,.03)!important;
-    overflow:hidden!important;
-}
-.panel-head{padding:17px 18px!important;border-bottom:1px solid rgba(255,255,255,.055)!important}
-.panel-title{font-weight:900!important;color:var(--px-text)!important}
-.panel-sub{color:var(--px-muted)!important}
-.table-wrap{border:0!important}
-table{min-width:900px!important}
-th{background:rgba(255,255,255,.018)!important;color:rgba(226,232,240,.45)!important;border-bottom:1px solid rgba(255,255,255,.06)!important}
-td{border-bottom:1px solid rgba(255,255,255,.045)!important;color:rgba(255,255,255,.78)!important}
-tbody tr{transition:background .16s ease!important}
-tbody tr:hover{background:rgba(96,165,250,.035)!important}
-.notice,.notice-box{
-    border-color:rgba(52,211,153,.13)!important;
-    background:linear-gradient(135deg,rgba(52,211,153,.055),rgba(96,165,250,.035))!important;
-}
-.download-grid{gap:11px!important}
-.download{
-    border:1px solid rgba(255,255,255,.065)!important;
-    border-radius:17px!important;
-    background:rgba(255,255,255,.022)!important;
-    transition:transform .18s ease,border-color .18s ease,background .18s ease!important;
-}
-.download:hover{transform:translateY(-2px)!important;border-color:rgba(96,165,250,.24)!important;background:rgba(96,165,250,.055)!important}
-@media(max-width:700px){
-    .wrapper{width:calc(100% - 18px)!important;margin-top:10px!important}
-    .topbar{padding:14px!important;border-radius:20px!important}
-    .top-actions{width:100%!important;display:grid!important;grid-template-columns:1fr 1fr!important}
-    .top-btn{width:100%!important}
-    .stats-grid{gap:9px!important}
-    .stat{min-height:92px!important;padding:13px!important;border-radius:17px!important}
-    .panel{border-radius:19px!important}
-}
-@media(max-width:430px){
-    .top-actions{grid-template-columns:1fr!important}
-    .top-btn.danger{grid-column:auto!important}
-    .brand{align-items:flex-start!important}
-}
 </style>
 
 </head>
@@ -7148,15 +6937,6 @@ class="modal-btn secondary"
 onclick="closeManualModal()"
 >
 انصراف
-</button>
-
-<button
-class="modal-btn best-settings-btn"
-onclick="applyBestManualSettings()"
-type="button"
->
-<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/></svg>
-بهترین تنظیمات
 </button>
 
 <button
@@ -8146,32 +7926,6 @@ async function createAuto(){
 
 }
 
-
-async function applyBestManualSettings(){
-    const setValue = (id, value) => {
-        const el = document.getElementById(id);
-        if (el) el.value = value;
-    };
-
-    // Recommended general-purpose profile: stable, compatible and unlimited.
-    setValue("manualName", "pxpanel_best");
-    setValue("manualProtocol", "vless-ws");
-    setValue("manualVolume", "0");
-    setValue("manualVolumeUnit", "GB");
-    setValue("manualDays", "0");
-    setValue("manualIpLimit", "0");
-    setValue("manualConnections", "0");
-    setValue("manualSpeed", "0");
-    setValue("manualFingerprint", "chrome");
-    setValue("manualFragment", "balanced");
-    setValue("manualPort", "443");
-    setValue("manualAlpn", "http/1.1");
-
-    const note = document.getElementById("manualNote");
-    if (note) note.value = "پروفایل پیشنهادی PXpanel — بدون ساخت کانفیگ";
-
-    showToast("بهترین تنظیمات اعمال شد؛ هنوز چیزی ساخته نشده است");
-}
 
 async function createManual(){
 
