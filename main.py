@@ -3635,6 +3635,34 @@ async def delete_link(
     }
 
 
+
+
+def subscription_metadata_headers(used_bytes: int, limit_bytes: int, expires_at, host: str, info_url: str, title: str):
+    """Standard subscription headers understood by v2rayNG/v2rayN/Hiddify and similar clients."""
+    used_bytes = max(0, int(used_bytes or 0))
+    limit_bytes = max(0, int(limit_bytes or 0))
+
+    expire_unix = 0
+    if expires_at:
+        try:
+            dt = datetime.fromisoformat(str(expires_at))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=IRAN_TZ) if IRAN_TZ else dt
+            expire_unix = max(0, int(dt.timestamp()))
+        except Exception:
+            expire_unix = 0
+
+    userinfo = f"upload=0; download={used_bytes}; total={limit_bytes}; expire={expire_unix}"
+
+    return {
+        "profile-title": quote(title, safe=""),
+        "profile-web-page-url": info_url,
+        "support-url": SUPPORT_URL,
+        "profile-update-interval": "12",
+        "subscription-userinfo": userinfo,
+        "content-disposition": 'inline; filename="subscription.txt"',
+    }
+
 # ============================================================
 # SINGLE SUB
 # ============================================================
@@ -3675,16 +3703,19 @@ async def subscription_single(
     volume_text = f"{fmt_bytes(used)}/{fmt_bytes(limit)}" if limit > 0 else f"{fmt_bytes(used)}/∞"
     expiry_text = str(link.get("expires_at") or "∞")
     profile_title = f"0.0.0.0 | {volume_text} | {expiry_text} | {link.get('label','PixonPanel')} | کانال تلگرام: logic_sec"
+    headers = subscription_metadata_headers(
+        used,
+        limit,
+        link.get("expires_at"),
+        host,
+        f"https://{host}/info/{uuid}",
+        profile_title,
+    )
 
     return Response(
         content=content,
-        media_type="text/plain",
-        headers={
-            "profile-title": quote(profile_title),
-            "profile-web-page-url": f"https://{host}/info/{uuid}",
-            "support-url": SUPPORT_URL,
-            "profile-update-interval": "12",
-        },
+        media_type="text/plain; charset=utf-8",
+        headers=headers,
     )
 
 # ============================================================
@@ -3789,28 +3820,115 @@ async def info_page(
     speed_limit = "نامحدود" if not snapshot.get("speed_limit_bytes",0) else fmt_bytes(snapshot.get("speed_limit_bytes",0)) + "/s"
 
     info_html = f"""<!DOCTYPE html>
-<html lang="fa" dir="rtl"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>{escape_html(snapshot.get("label","PixonPanel"))} | INFO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%}}body{{padding:18px;color:#fff;font-family:"Vazirmatn",sans-serif;background:radial-gradient(circle at 10% 0%,rgba(99,102,241,.18),transparent 28%),radial-gradient(circle at 100% 100%,rgba(16,185,129,.08),transparent 28%),#07070a}}
-.page{{width:min(860px,100%);margin:auto}}.card{{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);backdrop-filter:blur(24px);border-radius:26px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.35)}}
-.hero{{padding:22px;border-bottom:1px solid rgba(255,255,255,.06)}}.hero-top{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.hero h1{{margin:0;font-size:21px;font-weight:900}}.hero-sub{{margin-top:5px;color:rgba(255,255,255,.38);font-size:9px}}.status{{padding:7px 10px;border-radius:10px;font-size:9px;font-weight:800}}.status.good{{color:#86efac;background:rgba(34,197,94,.09);border:1px solid rgba(34,197,94,.16)}}.status.bad{{color:#fca5a5;background:rgba(239,68,68,.09);border:1px solid rgba(239,68,68,.16)}}
-.notice{{margin-top:16px;padding:13px 14px;border:1px solid rgba(99,102,241,.20);border-radius:16px;background:linear-gradient(135deg,rgba(99,102,241,.10),rgba(139,92,246,.04));color:rgba(255,255,255,.64);font-size:9px;line-height:2}}.notice strong{{color:#c4b5fd}}
-.stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;padding:16px}}.metric{{position:relative;overflow:hidden;padding:13px;border-radius:16px;background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.07)}}.metric::after{{content:"";position:absolute;right:0;bottom:0;left:0;height:2px;background:var(--c);opacity:.8}}.metric:nth-child(1){{--c:#4ade80}}.metric:nth-child(2){{--c:#f59e0b}}.metric:nth-child(3){{--c:#60a5fa}}.metric:nth-child(4){{--c:#a78bfa}}.metric-label{{color:rgba(255,255,255,.38);font-size:8px}}.metric-value{{margin-top:5px;color:var(--c);font-size:14px;font-weight:900}}
-.content{{padding:0 16px 16px}}.section{{padding:15px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);border-radius:18px;margin-top:10px}}.section-title{{font-size:11px;font-weight:800}}.section-sub{{margin-top:3px;color:rgba(255,255,255,.30);font-size:8px}}.progress-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px;color:rgba(255,255,255,.52);font-size:9px}}.progress{{height:9px;margin-top:8px;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.06)}}.progress>span{{display:block;height:100%;width:{usage_percent}%;border-radius:inherit;background:linear-gradient(90deg,#22c55e,#f59e0b)}}
-.info-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:11px}}.info-item{{padding:12px;border-radius:13px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06)}}.info-label{{color:rgba(255,255,255,.34);font-size:8px}}.info-value{{margin-top:5px;word-break:break-word;color:rgba(255,255,255,.88);font-size:9px}}.code{{direction:ltr;text-align:left;font-family:Consolas,monospace;color:#c4b5fd;word-break:break-all}}
-.downloads{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:11px}}.download{{display:block;padding:12px;border-radius:14px;text-decoration:none;color:#fff;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);transition:.2s ease}}.download:hover{{transform:translateY(-2px);border-color:rgba(129,140,248,.30);background:rgba(129,140,248,.07)}}.download strong{{display:block;font-size:9px}}.download span{{display:block;margin-top:3px;color:rgba(255,255,255,.34);font-size:8px}}.channel{{margin-top:12px;text-align:center;color:rgba(255,255,255,.34);font-size:9px}}.channel b{{color:#a5b4fc}}
-@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.info-grid,.downloads{{grid-template-columns:1fr}}.hero-top{{flex-direction:column}}}}
-</style></head><body><div class="page"><div class="card">
-<div class="hero"><div class="hero-top"><div><h1>{escape_html(snapshot.get("label","PixonPanel"))}</h1><div class="hero-sub">PixonPanel · {APP_VERSION} · UUID: {escape_html(uid)}</div></div><div class="status {status_class}">{status_text}</div></div><div class="notice"><strong>اطلاعیه:</strong> لینک SUB را داخل برنامه انتخابی خود Import کنید. برای اتصال مستقیم نیز VLESS در دسترس است. کانال تلگرام: <strong>logic_sec</strong></div></div>
-<div class="stats"><div class="metric"><div class="metric-label">مصرف فعلی</div><div class="metric-value">{escape_html(fmt_bytes(used))}</div></div><div class="metric"><div class="metric-label">باقی‌مانده حجم</div><div class="metric-value">{escape_html(remaining_value)}</div></div><div class="metric"><div class="metric-label">اتصالات</div><div class="metric-value">{len(unique_ips_for_uuid(uid))}</div></div><div class="metric"><div class="metric-label">زمان باقی‌مانده</div><div class="metric-value">{escape_html(expiry_remaining)}</div></div></div>
-<div class="content"><div class="section"><div class="section-title">نوار مصرف</div><div class="section-sub">درصد استفاده از سقف حجم سرویس</div><div class="progress-head"><span>{escape_html(usage_value)}</span><b>{usage_percent}%</b></div><div class="progress"><span></span></div></div>
-<div class="section"><div class="section-title">جزئیات سرویس</div><div class="info-grid"><div class="info-item"><div class="info-label">تاریخ انقضا</div><div class="info-value">{escape_html(expiry_display)}</div></div><div class="info-item"><div class="info-label">IP Limit</div><div class="info-value">{escape_html(ip_limit)}</div></div><div class="info-item"><div class="info-label">Connection Limit</div><div class="info-value">{escape_html(connection_limit)}</div></div><div class="info-item"><div class="info-label">Speed Limit</div><div class="info-value">{escape_html(speed_limit)}</div></div><div class="info-item"><div class="info-label">Protocol</div><div class="info-value code">{escape_html(snapshot.get("protocol","vless-ws"))}</div></div><div class="info-item"><div class="info-label">Fingerprint</div><div class="info-value code">{escape_html(snapshot.get("fingerprint","chrome"))}</div></div></div></div>
-<div class="section"><div class="section-title">لینک‌های اتصال</div><div class="info-grid"><div class="info-item"><div class="info-label">VLESS</div><div class="info-value code">{escape_html(vless_url)}</div></div><div class="info-item"><div class="info-label">SUB</div><div class="info-value code">{escape_html(sub_url)}</div></div></div></div>
-<div class="section"><div class="section-title">دانلود برنامه‌ها</div><div class="section-sub">نسخه‌های رسمی</div><div class="downloads"><a class="download" href="https://github.com/2dust/v2rayNG/releases/latest" target="_blank" rel="noopener noreferrer"><strong>v2rayNG</strong><span>Android</span></a><a class="download" href="https://github.com/2dust/v2rayN/releases/latest" target="_blank" rel="noopener noreferrer"><strong>v2rayN</strong><span>Windows / macOS / Linux</span></a><a class="download" href="https://github.com/hiddify/hiddify-app/releases/latest" target="_blank" rel="noopener noreferrer"><strong>Hiddify</strong><span>Android / Windows / macOS / Linux</span></a></div></div>
-<div class="channel">کانال تلگرام: <b>logic_sec</b></div></div></div></div></body></html>"""
+:root{{--bg:#07080d;--panel:rgba(17,19,28,.72);--line:rgba(255,255,255,.08);--muted:rgba(255,255,255,.42);--text:#f6f7fb;--green:#34d399;--blue:#60a5fa;--orange:#f59e0b;--red:#fb7185;--purple:#a78bfa}}
+*{{box-sizing:border-box}}
+html,body{{margin:0;min-height:100%;background:var(--bg)}}
+body{{font-family:"Vazirmatn",sans-serif;color:var(--text);padding:24px;background:radial-gradient(circle at 15% 0%,rgba(96,165,250,.16),transparent 30%),radial-gradient(circle at 95% 30%,rgba(167,139,250,.13),transparent 28%),radial-gradient(circle at 80% 100%,rgba(52,211,153,.08),transparent 30%),#07080d}}
+.page{{width:min(920px,100%);margin:auto}}
+.shell{{position:relative;overflow:hidden;border:1px solid var(--line);background:linear-gradient(145deg,rgba(255,255,255,.05),rgba(255,255,255,.02));backdrop-filter:blur(28px);border-radius:30px;box-shadow:0 35px 100px rgba(0,0,0,.38)}}
+.shell:before{{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(120deg,rgba(255,255,255,.04),transparent 35%,rgba(255,255,255,.02))}}
+.hero{{position:relative;padding:25px 25px 20px;border-bottom:1px solid rgba(255,255,255,.06)}}
+.hero-row{{display:flex;align-items:center;justify-content:space-between;gap:16px}}
+.brand{{display:flex;align-items:center;gap:13px}}
+.brand-icon{{width:46px;height:46px;display:grid;place-items:center;border:1px solid rgba(96,165,250,.2);background:linear-gradient(145deg,rgba(96,165,250,.14),rgba(167,139,250,.08));border-radius:15px;color:#93c5fd;font-weight:900;font-size:16px}}
+.hero h1{{margin:0;font-size:21px;font-weight:900;letter-spacing:-.35px}}
+.hero-meta{{margin-top:4px;color:var(--muted);font-size:9px;word-break:break-all}}
+.status{{display:inline-flex;align-items:center;gap:7px;padding:8px 11px;border-radius:12px;font-size:9px;font-weight:800;white-space:nowrap}}
+.status i{{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 14px currentColor}}
+.status.good{{color:#6ee7b7;border:1px solid rgba(52,211,153,.18);background:rgba(52,211,153,.08)}}
+.status.bad{{color:#fda4af;border:1px solid rgba(251,113,133,.18);background:rgba(251,113,133,.08)}}
+.notice{{margin-top:18px;display:flex;gap:11px;align-items:flex-start;padding:13px 14px;border:1px solid rgba(167,139,250,.17);background:linear-gradient(120deg,rgba(167,139,250,.10),rgba(96,165,250,.04));border-radius:16px;color:rgba(255,255,255,.62);font-size:9px;line-height:2}}
+.notice-icon{{width:25px;height:25px;flex:0 0 25px;display:grid;place-items:center;border-radius:9px;background:rgba(167,139,250,.13);border:1px solid rgba(167,139,250,.18);color:#c4b5fd;font-size:12px}}
+.notice strong{{color:#ddd6fe}}
+.dashboard{{display:grid;grid-template-columns:1.35fr .65fr;gap:12px;padding:16px}}
+.usage-card,.side-card{{border:1px solid var(--line);background:rgba(255,255,255,.025);border-radius:20px}}
+.usage-card{{padding:18px}}
+.section-kicker{{font-size:8px;color:rgba(255,255,255,.30);font-weight:800;letter-spacing:.7px;text-transform:uppercase}}
+.section-title{{margin-top:4px;font-size:13px;font-weight:900}}
+.usage-line{{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-top:16px}}
+.usage-number{{font-size:22px;font-weight:900;letter-spacing:-.5px}}
+.usage-number span{{font-size:10px;color:var(--muted);font-weight:600}}
+.usage-percent{{font-size:12px;font-weight:900;color:#86efac}}
+.track{{height:12px;margin-top:12px;border-radius:999px;background:rgba(255,255,255,.055);overflow:hidden;border:1px solid rgba(255,255,255,.035)}}
+.track span{{display:block;height:100%;width:{usage_percent}%;border-radius:inherit;background:linear-gradient(90deg,#34d399,#f59e0b);box-shadow:0 0 20px rgba(52,211,153,.18)}}
+.usage-bottom{{display:flex;justify-content:space-between;gap:10px;margin-top:9px;color:var(--muted);font-size:8px}}
+.side-card{{padding:14px}}
+.side-row{{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)}}
+.side-row:last-child{{border-bottom:0;padding-bottom:0}}
+.side-label{{font-size:8px;color:var(--muted)}}
+.side-value{{font-size:9px;font-weight:800}}
+.stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:0 16px 16px}}
+.metric{{position:relative;overflow:hidden;padding:14px 14px 13px;border-radius:18px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025)}}
+.metric:before{{content:"";position:absolute;inset:0;background:linear-gradient(145deg,rgba(255,255,255,.025),transparent 55%)}}
+.metric .dot{{width:8px;height:8px;border-radius:50%;margin-bottom:9px;background:var(--c);box-shadow:0 0 18px color-mix(in srgb,var(--c) 45%,transparent)}}
+.metric-label{{color:var(--muted);font-size:8px}}
+.metric-value{{margin-top:5px;font-size:12px;font-weight:900;color:var(--c);word-break:break-word}}
+.metric.green{{--c:#34d399}} .metric.orange{{--c:#f59e0b}} .metric.blue{{--c:#60a5fa}} .metric.purple{{--c:#a78bfa}}
+.content{{padding:0 16px 18px}}
+.section{{margin-top:10px;padding:16px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.022);border-radius:20px}}
+.section-head{{display:flex;align-items:end;justify-content:space-between;gap:10px}}
+.section-head .section-title{{margin:0}}
+.section-sub{{color:var(--muted);font-size:8px}}
+.info-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:12px}}
+.info-item{{padding:12px;border-radius:15px;border:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.13)}}
+.info-label{{font-size:8px;color:var(--muted)}}
+.info-value{{margin-top:5px;font-size:9px;font-weight:700;color:rgba(255,255,255,.86);word-break:break-word}}
+.code{{direction:ltr;text-align:left;font-family:Consolas,monospace;font-size:8.5px;color:#c4b5fd;font-weight:500}}
+.link-card{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border-radius:15px;border:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.13);margin-top:9px}}
+.link-card:first-child{{margin-top:12px}}
+.link-main{{min-width:0}}
+.link-name{{font-size:8px;color:var(--muted);font-weight:800}}
+.link-url{{margin-top:4px;direction:ltr;text-align:left;font-family:Consolas,monospace;font-size:8px;color:#c4b5fd;word-break:break-all}}
+.copy-hint{{flex:0 0 auto;font-size:8px;color:rgba(255,255,255,.28)}}
+.downloads{{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:12px}}
+.download{{display:flex;align-items:center;gap:10px;min-height:68px;padding:12px;text-decoration:none;color:#fff;border:1px solid rgba(255,255,255,.07);background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.015));border-radius:16px;transition:transform .2s ease,border-color .2s ease,background .2s ease}}
+.download:hover{{transform:translateY(-2px);border-color:rgba(96,165,250,.28);background:linear-gradient(145deg,rgba(96,165,250,.07),rgba(255,255,255,.02))}}
+.app-icon{{width:31px;height:31px;flex:0 0 31px;display:grid;place-items:center;border-radius:10px;background:rgba(96,165,250,.11);border:1px solid rgba(96,165,250,.14);color:#93c5fd;font-size:11px;font-weight:900}}
+.download strong{{display:block;font-size:9px}}
+.download span{{display:block;margin-top:2px;color:var(--muted);font-size:7.5px}}
+.channel{{margin-top:15px;padding:12px 14px;text-align:center;border:1px solid rgba(52,211,153,.12);background:rgba(52,211,153,.045);border-radius:14px;color:var(--muted);font-size:8px}}
+.channel b{{color:#6ee7b7}}
+@media(max-width:760px){{body{{padding:12px}}.dashboard{{grid-template-columns:1fr}}.stats{{grid-template-columns:repeat(2,1fr)}}.downloads{{grid-template-columns:1fr}}.hero-row{{align-items:flex-start;flex-direction:column}}}}
+</style>
+</head>
+<body>
+<div class="page"><div class="shell">
+<section class="hero">
+<div class="hero-row"><div class="brand"><div class="brand-icon">PX</div><div><h1>{escape_html(snapshot.get("label","PixonPanel"))}</h1><div class="hero-meta">0.0.0.0 · UUID: {escape_html(uid)} · PixonPanel {APP_VERSION}</div></div></div><div class="status {status_class}"><i></i>{status_text}</div></div>
+<div class="notice"><div class="notice-icon">!</div><div><strong>اطلاعیه اتصال</strong><br>لینک SUB را در برنامه‌ای که استفاده می‌کنید به‌عنوان Subscription وارد کنید. برای اتصال مستقیم نیز می‌توانید VLESS را Import کنید. <strong>کانال تلگرام: logic_sec</strong></div></div>
+</section>
+
+<section class="dashboard">
+<div class="usage-card"><div class="section-kicker">Traffic Overview</div><div class="section-title">مصرف سرویس</div><div class="usage-line"><div class="usage-number">{escape_html(fmt_bytes(used))} <span>/ {escape_html(fmt_bytes(limit)) if limit > 0 else '∞'}</span></div><div class="usage-percent">{usage_percent}%</div></div><div class="track"><span></span></div><div class="usage-bottom"><span>باقی‌مانده: {escape_html(remaining_value)}</span><span>زمان: {escape_html(expiry_remaining)}</span></div></div>
+<div class="side-card"><div class="section-kicker">Service</div><div class="side-row"><span class="side-label">انقضا</span><span class="side-value">{escape_html(expiry_display)}</span></div><div class="side-row"><span class="side-label">IP Limit</span><span class="side-value">{escape_html(ip_limit)}</span></div><div class="side-row"><span class="side-label">Connection</span><span class="side-value">{escape_html(connection_limit)}</span></div><div class="side-row"><span class="side-label">Speed</span><span class="side-value">{escape_html(speed_limit)}</span></div></div>
+</section>
+
+<section class="stats">
+<div class="metric green"><div class="dot"></div><div class="metric-label">مصرف فعلی</div><div class="metric-value">{escape_html(fmt_bytes(used))}</div></div>
+<div class="metric orange"><div class="dot"></div><div class="metric-label">باقی‌مانده</div><div class="metric-value">{escape_html(remaining_value)}</div></div>
+<div class="metric blue"><div class="dot"></div><div class="metric-label">اتصالات فعال</div><div class="metric-value">{len(unique_ips_for_uuid(uid))}</div></div>
+<div class="metric purple"><div class="dot"></div><div class="metric-label">زمان باقی‌مانده</div><div class="metric-value">{escape_html(expiry_remaining)}</div></div>
+</section>
+
+<div class="content">
+<section class="section"><div class="section-head"><div class="section-title">جزئیات فنی</div><div class="section-sub">Configuration Details</div></div><div class="info-grid"><div class="info-item"><div class="info-label">Protocol</div><div class="info-value code">{escape_html(snapshot.get("protocol","vless-ws"))}</div></div><div class="info-item"><div class="info-label">Fingerprint</div><div class="info-value code">{escape_html(snapshot.get("fingerprint","chrome"))}</div></div><div class="info-item"><div class="info-label">IP Limit</div><div class="info-value">{escape_html(ip_limit)}</div></div><div class="info-item"><div class="info-label">Connection Limit</div><div class="info-value">{escape_html(connection_limit)}</div></div><div class="info-item"><div class="info-label">Speed Limit</div><div class="info-value">{escape_html(speed_limit)}</div></div><div class="info-item"><div class="info-label">تاریخ انقضا</div><div class="info-value">{escape_html(expiry_display)}</div></div></div></section>
+
+<section class="section"><div class="section-head"><div class="section-title">لینک‌های سرویس</div><div class="section-sub">Copy / Import</div></div><div class="link-card"><div class="link-main"><div class="link-name">VLESS</div><div class="link-url">{escape_html(vless_url)}</div></div><div class="copy-hint">VLESS</div></div><div class="link-card"><div class="link-main"><div class="link-name">SUBSCRIPTION</div><div class="link-url">{escape_html(sub_url)}</div></div><div class="copy-hint">SUB</div></div></section>
+
+<section class="section"><div class="section-head"><div class="section-title">دانلود برنامه‌ها</div><div class="section-sub">Official Releases</div></div><div class="downloads"><a class="download" href="https://github.com/2dust/v2rayNG/releases/latest" target="_blank" rel="noopener noreferrer"><div class="app-icon">NG</div><div><strong>v2rayNG</strong><span>Android</span></div></a><a class="download" href="https://github.com/2dust/v2rayN/releases/latest" target="_blank" rel="noopener noreferrer"><div class="app-icon">N</div><div><strong>v2rayN</strong><span>Windows / macOS / Linux</span></div></a><a class="download" href="https://github.com/hiddify/hiddify-app/releases/latest" target="_blank" rel="noopener noreferrer"><div class="app-icon">H</div><div><strong>Hiddify</strong><span>Android / Windows / macOS / Linux</span></div></a></div></section>
+
+<div class="channel">پشتیبانی و اطلاعیه‌ها · <b>کانال تلگرام: logic_sec</b></div>
+</div></div></div>
+</body></html>"""
     return HTMLResponse(info_html)
 
 
@@ -4205,21 +4323,56 @@ async def sub_group_subscription(
         .decode()
     )
 
+    total_used = 0
+    total_limit = 0
+    expiries = []
+    valid_ids = list(sub.get("link_ids", []))
+
+    async with LINKS_LOCK:
+        for link_id in valid_ids:
+            link = LINKS.get(link_id)
+            if not link or not is_link_allowed(link):
+                continue
+            total_used += int(link.get("used_bytes", 0) or 0)
+            total_limit += int(link.get("limit_bytes", 0) or 0)
+            if link.get("expires_at"):
+                expiries.append(str(link.get("expires_at")))
+
+    # For a group subscription, expose aggregate usage/expiry in standard headers.
+    group_limit = total_limit if total_limit > 0 else 0
+    group_expiry = None
+    if expiries:
+        try:
+            group_expiry = min(
+                expiries,
+                key=lambda x: datetime.fromisoformat(x)
+            )
+        except Exception:
+            group_expiry = expiries[0]
+
+    group_volume_text = (
+        f"{fmt_bytes(total_used)}/{fmt_bytes(group_limit)}"
+        if group_limit > 0
+        else f"{fmt_bytes(total_used)}/∞"
+    )
+    group_expiry_text = group_expiry or "∞"
+    group_title = (
+        f"0.0.0.0 | {group_volume_text} | {group_expiry_text} | "
+        f"{sub['name']} | کانال تلگرام: logic_sec"
+    )
+    headers = subscription_metadata_headers(
+        total_used,
+        group_limit,
+        group_expiry,
+        host,
+        f"https://{host}/public-sub/{uuid_key}",
+        group_title,
+    )
+
     return Response(
         content=content,
-        media_type="text/plain",
-        headers={
-            "profile-title":
-                quote(
-                    sub["name"]
-                ),
-
-            "support-url":
-                SUPPORT_URL,
-
-            "profile-update-interval":
-                "12",
-        },
+        media_type="text/plain; charset=utf-8",
+        headers=headers,
     )
 
 
