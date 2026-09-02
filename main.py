@@ -1,5 +1,5 @@
 # ============================================================
-# PixonPanel 12.1.0 Beta
+# PXpanel 12.1.0 Beta
 # Railway Ready
 # ============================================================
 
@@ -40,7 +40,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # APP
 # ============================================================
 
-APP_NAME = "PixonPanel"
+APP_NAME = "PXpanel"
 APP_VERSION = "12.1.0 Beta"
 
 SUPPORT_USERNAME = "@logic_sec"
@@ -93,8 +93,8 @@ DATA_DIR.mkdir(
     exist_ok=True,
 )
 
-DATA_FILE = DATA_DIR / "pixonpanel_state.json"
-SECRET_FILE = DATA_DIR / "pixonpanel_secret.key"
+DATA_FILE = DATA_DIR / "pxpanel_state.json"
+SECRET_FILE = DATA_DIR / "pxpanel_secret.key"
 
 
 # ============================================================
@@ -745,7 +745,7 @@ def clear_login_failures(ip: str):
 # SESSION
 # ============================================================
 
-SESSION_COOKIE = "pixonpanel_session"
+SESSION_COOKIE = "pxpanel_session"
 
 SESSION_TTL = (
     60
@@ -862,7 +862,7 @@ def set_auth_cookie(
 def generate_vless_link(
     uuid: str,
     host: str,
-    remark: str = "PixonPanel",
+    remark: str = "PXpanel",
     protocol: str = DEFAULT_PROTOCOL,
     fingerprint: str | None = None,
     alpn: str | None = None,
@@ -972,7 +972,7 @@ def vless_link_for_link(
         uid,
         host,
         remark=(
-            f"PixonPanel-"
+            f"pxpanel-"
             f"{link.get('label', '')}"
         ),
         protocol=link.get(
@@ -1872,7 +1872,7 @@ LANDING_HTML = r"""
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
-<title>PixonPanel</title>
+<title>PXpanel</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2076,6 +2076,71 @@ h1{
         flex-direction:column;
     }
 }
+
+/* PXpanel 12.2 — refined home + manual best-settings action */
+:root{
+    --px-green:#22c55e;
+    --px-green-soft:rgba(34,197,94,.14);
+    --px-cyan:#22d3ee;
+    --px-surface:rgba(15,23,42,.72);
+}
+body{
+    background:
+        radial-gradient(circle at 8% 8%,rgba(34,197,94,.075),transparent 28%),
+        radial-gradient(circle at 92% 4%,rgba(34,211,238,.065),transparent 25%),
+        radial-gradient(circle at 50% 100%,rgba(99,102,241,.055),transparent 34%),
+        #070b12 !important;
+}
+.modal-actions{
+    gap:10px;
+    flex-wrap:wrap;
+}
+.modal-btn{
+    min-height:44px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease;
+}
+.modal-btn svg{width:17px;height:17px;flex:none}
+.best-settings-btn{
+    background:linear-gradient(135deg,rgba(34,197,94,.22),rgba(22,163,74,.13)) !important;
+    border:1px solid rgba(34,197,94,.48) !important;
+    color:#86efac !important;
+    box-shadow:0 8px 28px rgba(34,197,94,.09),inset 0 1px 0 rgba(255,255,255,.06);
+}
+.best-settings-btn:hover{
+    background:linear-gradient(135deg,rgba(34,197,94,.32),rgba(22,163,74,.2)) !important;
+    border-color:rgba(74,222,128,.72) !important;
+    color:#bbf7d0 !important;
+    transform:translateY(-1px);
+    box-shadow:0 12px 32px rgba(34,197,94,.16);
+}
+.best-settings-btn:active{transform:translateY(0) scale(.98)}
+.home-hero,.hero,.dashboard-hero{
+    border-color:rgba(255,255,255,.09) !important;
+    background:linear-gradient(145deg,rgba(15,23,42,.84),rgba(9,14,24,.7)) !important;
+    box-shadow:0 24px 80px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.035);
+}
+.card,.section{
+    border-color:rgba(255,255,255,.075) !important;
+    background:linear-gradient(145deg,rgba(17,24,39,.78),rgba(9,14,24,.72)) !important;
+    box-shadow:0 16px 55px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,255,255,.025);
+}
+.card:hover{
+    border-color:rgba(34,197,94,.18) !important;
+    transform:translateY(-1px);
+}
+.top-actions,.header-actions{
+    gap:8px !important;
+}
+@media(max-width:640px){
+    .modal-actions .modal-btn{flex:1 1 calc(50% - 6px)}
+    .best-settings-btn{order:1}
+    .modal-actions .primary{order:2}
+    .modal-actions .secondary{order:3}
+}
 </style>
 </head>
 
@@ -2089,7 +2154,7 @@ h1{
 
 <div>
 <div class="brand-name">
-PixonPanel
+PXpanel
 </div>
 
 <div class="version">
@@ -2110,7 +2175,7 @@ PixonPanel
 </h1>
 
 <div class="desc">
-این صفحه، درگاه عمومی PixonPanel است.
+این صفحه، درگاه عمومی PXpanel است.
 برای دسترسی به داشبورد مدیریت از مسیر ورود استفاده کنید.
 </div>
 
@@ -2141,7 +2206,7 @@ class="btn secondary"
 <div class="footer">
 
 <span>
-PixonPanel · 12.1.0 Beta
+PXpanel · 12.1.0 Beta
 </span>
 
 <a
@@ -2216,7 +2281,7 @@ name="viewport"
 content="width=device-width,initial-scale=1"
 >
 
-<title>ورود | PixonPanel</title>
+<title>ورود | PXpanel</title>
 
 <link
 rel="preconnect"
@@ -2407,7 +2472,7 @@ P
 </div>
 
 <h1>
-ورود به PixonPanel
+ورود به PXpanel
 </h1>
 
 <div class="version">
@@ -3111,7 +3176,7 @@ async def create_auto_link(
 
             note=(
                 "Auto generated by "
-                "PixonPanel"
+                "PXpanel"
             ),
 
             # IMPORTANT:
@@ -3819,7 +3884,7 @@ async def subscription_single(
     limit = int(link.get("limit_bytes", 0) or 0)
     volume_text = f"{fmt_bytes(used)}/{fmt_bytes(limit)}" if limit > 0 else f"{fmt_bytes(used)}/∞"
     expiry_text = str(link.get("expires_at") or "∞")
-    profile_title = f"0.0.0.0 | {volume_text} | {expiry_text} | {link.get('label','PixonPanel')} | کانال تلگرام: logic_sec"
+    profile_title = f"0.0.0.0 | {volume_text} | {expiry_text} | {link.get('label','PXpanel')} | کانال تلگرام: logic_sec"
     headers = subscription_metadata_headers(
         used,
         limit,
@@ -3941,7 +4006,7 @@ async def info_page(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>{escape_html(snapshot.get("label","PixonPanel"))} | INFO</title>
+<title>{escape_html(snapshot.get("label","PXpanel"))} | INFO</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -4020,7 +4085,7 @@ body{{font-family:"Vazirmatn",sans-serif;color:var(--text);padding:24px;backgrou
 <body>
 <div class="page"><div class="shell">
 <section class="hero">
-<div class="hero-row"><div class="brand"><div class="brand-icon">PX</div><div><h1>{escape_html(snapshot.get("label","PixonPanel"))}</h1><div class="hero-meta">0.0.0.0 · UUID: {escape_html(uid)} · PixonPanel {APP_VERSION}</div></div></div><div class="status {status_class}"><i></i>{status_text}</div></div>
+<div class="hero-row"><div class="brand"><div class="brand-icon">PX</div><div><h1>{escape_html(snapshot.get("label","PXpanel"))}</h1><div class="hero-meta">0.0.0.0 · UUID: {escape_html(uid)} · PXpanel {APP_VERSION}</div></div></div><div class="status {status_class}"><i></i>{status_text}</div></div>
 <div class="notice"><div class="notice-icon">!</div><div><strong>اطلاعیه اتصال</strong><br>لینک SUB را در برنامه‌ای که استفاده می‌کنید به‌عنوان Subscription وارد کنید. برای اتصال مستقیم نیز می‌توانید VLESS را Import کنید. <strong>کانال تلگرام: logic_sec</strong></div></div>
 </section>
 
@@ -4510,7 +4575,7 @@ content="width=device-width,initial-scale=1"
 >
 
 <title>
-PixonPanel
+PXpanel
 </title>
 
 <style>
@@ -4605,7 +4670,7 @@ h1{
 <div class="card">
 
 <h1>
-PixonPanel
+PXpanel
 </h1>
 
 <div class="version">
@@ -5448,7 +5513,7 @@ content="width=device-width,initial-scale=1"
 />
 
 <title>
-PixonPanel 12.1.0 Beta
+PXpanel 12.1.0 Beta
 </title>
 
 <link
@@ -6247,7 +6312,7 @@ P
 <div>
 
 <div class="brand-name">
-PixonPanel
+PXpanel
 </div>
 
 <div class="brand-desc">
@@ -6937,6 +7002,15 @@ class="modal-btn secondary"
 onclick="closeManualModal()"
 >
 انصراف
+</button>
+
+<button
+class="modal-btn best-settings-btn"
+onclick="applyBestManualSettings()"
+type="button"
+>
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z"/><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/></svg>
+بهترین تنظیمات
 </button>
 
 <button
@@ -7927,7 +8001,33 @@ async function createAuto(){
 }
 
 
-async function createManual(){
+async function applyBestManualSettings(){
+    const setValue = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    };
+
+    // Recommended general-purpose profile: stable, compatible and unlimited.
+    setValue("manualName", "pxpanel_best");
+    setValue("manualProtocol", "vless-ws");
+    setValue("manualVolume", "0");
+    setValue("manualVolumeUnit", "GB");
+    setValue("manualDays", "0");
+    setValue("manualIpLimit", "0");
+    setValue("manualConnections", "0");
+    setValue("manualSpeed", "0");
+    setValue("manualFingerprint", "chrome");
+    setValue("manualFragment", "balanced");
+    setValue("manualPort", "443");
+    setValue("manualAlpn", "http/1.1");
+
+    const note = document.getElementById("manualNote");
+    if (note) note.value = "پروفایل پیشنهادی PXpanel — بدون ساخت کانفیگ";
+
+    showToast("بهترین تنظیمات اعمال شد؛ هنوز چیزی ساخته نشده است");
+}
+
+function createManual(){
 
     const body = {
 
@@ -8555,7 +8655,7 @@ async def global_exception_handler(
             padding:40px;
         ">
             <h2>
-            خطای داخلی PixonPanel
+            خطای داخلی PXpanel
             </h2>
 
             <p>
