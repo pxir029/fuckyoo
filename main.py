@@ -674,6 +674,73 @@ AUTH = {
 
 
 # ============================================================
+# LOGIN BRUTE-FORCE PROTECTION
+# ============================================================
+# Maximum failed login attempts per IP inside the rolling window.
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 15 * 60
+LOGIN_LOCKOUT_SECONDS = 15 * 60
+
+LOGIN_FAILURES = defaultdict(deque)
+LOGIN_LOCKED_UNTIL = {}
+
+
+def _cleanup_login_state(ip: str, now: float | None = None):
+    now = now if now is not None else time.time()
+
+    locked_until = LOGIN_LOCKED_UNTIL.get(ip, 0)
+    if locked_until and locked_until <= now:
+        LOGIN_LOCKED_UNTIL.pop(ip, None)
+
+    failures = LOGIN_FAILURES.get(ip)
+    if not failures:
+        return
+
+    cutoff = now - LOGIN_WINDOW_SECONDS
+    while failures and failures[0] <= cutoff:
+        failures.popleft()
+
+    if not failures:
+        LOGIN_FAILURES.pop(ip, None)
+
+
+def login_is_blocked(ip: str):
+    now = time.time()
+    _cleanup_login_state(ip, now)
+
+    locked_until = LOGIN_LOCKED_UNTIL.get(ip, 0)
+    if locked_until > now:
+        return True, max(1, int(locked_until - now))
+
+    return False, 0
+
+
+def register_login_failure(ip: str):
+    now = time.time()
+    _cleanup_login_state(ip, now)
+
+    failures = LOGIN_FAILURES.setdefault(ip, deque())
+    failures.append(now)
+
+    if len(failures) >= LOGIN_MAX_ATTEMPTS:
+        LOGIN_LOCKED_UNTIL[ip] = now + LOGIN_LOCKOUT_SECONDS
+        failures.clear()
+        log_activity(
+            "auth",
+            f"IP به دلیل تلاش‌های متعدد ورود ناموفق به مدت {LOGIN_LOCKOUT_SECONDS // 60} دقیقه مسدود شد: {ip}",
+            "err",
+        )
+        return True, LOGIN_LOCKOUT_SECONDS
+
+    return False, max(0, LOGIN_MAX_ATTEMPTS - len(failures))
+
+
+def clear_login_failures(ip: str):
+    LOGIN_FAILURES.pop(ip, None)
+    LOGIN_LOCKED_UNTIL.pop(ip, None)
+
+
+# ============================================================
 # SESSION
 # ============================================================
 
@@ -2490,8 +2557,21 @@ async def login_form(
             status_code=400,
         )
 
-    if not password:
+    ip = client_ip(request)
 
+    blocked, retry_after = login_is_blocked(ip)
+    if blocked:
+        minutes = max(1, (retry_after + 59) // 60)
+        return HTMLResponse(
+            login_error_html(
+                f"به دلیل تلاش‌های ناموفق متعدد، ورود موقتاً مسدود شده است. حدود {minutes} دقیقه دیگر دوباره تلاش کنید."
+            ),
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if not password:
+        register_login_failure(ip)
         return HTMLResponse(
             login_error_html(
                 "رمز عبور را وارد کنید."
@@ -2504,28 +2584,39 @@ async def login_form(
         != AUTH["password_hash"]
     ):
 
-        ip = client_ip(request)
+        locked, value = register_login_failure(ip)
+        if locked:
+            return HTMLResponse(
+                login_error_html(
+                    "تعداد تلاش‌های ناموفق بیش از حد مجاز بود. این IP برای ۱۵ دقیقه مسدود شد."
+                ),
+                status_code=429,
+                headers={"Retry-After": str(LOGIN_LOCKOUT_SECONDS)},
+            )
 
+        remaining = value
         log_activity(
             "auth",
             (
-                f"تلاش ورود ناموفق "
-                f"از {ip}"
+                f"تلاش ورود ناموفق از {ip}؛ "
+                f"{remaining} تلاش باقی مانده"
             ),
             "err",
         )
 
         return HTMLResponse(
             login_error_html(
-                "رمز عبور اشتباه است."
+                f"رمز عبور اشتباه است. {remaining} تلاش دیگر باقی مانده است."
             ),
             status_code=401,
         )
 
+    clear_login_failures(ip)
+
     token = await create_session()
 
     response = RedirectResponse(
-        "/dashboard",
+        "/dashboard?login=1",
         status_code=303,
     )
 
@@ -2569,24 +2660,49 @@ async def api_login(
 
     ip = client_ip(request)
 
+    blocked, retry_after = login_is_blocked(ip)
+    if blocked:
+        raise HTTPException(
+            status_code=429,
+            detail=f"ورود موقتاً مسدود است. حدود {max(1, (retry_after + 59) // 60)} دقیقه دیگر تلاش کنید.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if not password:
+        register_login_failure(ip)
+        raise HTTPException(
+            status_code=400,
+            detail="رمز عبور را وارد کنید",
+        )
+
     if (
         hash_password(password)
         != AUTH["password_hash"]
     ):
 
+        locked, value = register_login_failure(ip)
+        if locked:
+            raise HTTPException(
+                status_code=429,
+                detail="تعداد تلاش‌های ناموفق بیش از حد مجاز بود. این IP برای ۱۵ دقیقه مسدود شد.",
+                headers={"Retry-After": str(LOGIN_LOCKOUT_SECONDS)},
+            )
+
         log_activity(
             "auth",
             (
-                f"تلاش ورود ناموفق "
-                f"از {ip}"
+                f"تلاش ورود ناموفق از {ip}؛ "
+                f"{value} تلاش باقی مانده"
             ),
             "err",
         )
 
         raise HTTPException(
             status_code=401,
-            detail="رمز عبور اشتباه است",
+            detail=f"رمز عبور اشتباه است؛ {value} تلاش دیگر باقی مانده است",
         )
+
+    clear_login_failures(ip)
 
     token = await create_session()
 
@@ -8050,6 +8166,170 @@ setInterval(
     1000
 );
 
+</script>
+
+<!-- ===================================================== -->
+<!-- POST LOGIN REGION / DOMAIN NOTICE -->
+<!-- ===================================================== -->
+
+<div
+    id="regionNotice"
+    style="
+        display:none;
+        position:fixed;
+        inset:0;
+        z-index:99999;
+        align-items:center;
+        justify-content:center;
+        padding:20px;
+        background:rgba(2,6,23,.78);
+        backdrop-filter:blur(18px);
+        -webkit-backdrop-filter:blur(18px);
+    "
+>
+    <div
+        style="
+            width:min(560px,100%);
+            position:relative;
+            overflow:hidden;
+            border:1px solid rgba(245,158,11,.28);
+            border-radius:26px;
+            padding:26px;
+            background:linear-gradient(145deg,rgba(30,25,8,.98),rgba(10,12,20,.98));
+            box-shadow:0 30px 100px rgba(0,0,0,.55),0 0 60px rgba(245,158,11,.10);
+            font-family:"Vazirmatn",sans-serif;
+        "
+    >
+        <div
+            style="
+                position:absolute;
+                width:180px;
+                height:180px;
+                left:-70px;
+                top:-90px;
+                border-radius:999px;
+                background:rgba(245,158,11,.12);
+                filter:blur(35px);
+                pointer-events:none;
+            "
+        ></div>
+
+        <div style="display:flex;align-items:flex-start;gap:14px;position:relative;">
+            <div
+                style="
+                    flex:0 0 auto;
+                    width:54px;
+                    height:54px;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    border-radius:17px;
+                    color:#fbbf24;
+                    border:1px solid rgba(251,191,36,.25);
+                    background:rgba(245,158,11,.10);
+                "
+            >
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M12 3 2.8 19a1.4 1.4 0 0 0 1.22 2h15.96a1.4 1.4 0 0 0 1.22-2L12 3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                    <path d="M12 9v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    <circle cx="12" cy="16.8" r="1" fill="currentColor"/>
+                </svg>
+            </div>
+
+            <div style="min-width:0;flex:1;">
+                <div style="font-size:18px;font-weight:900;color:#fff;line-height:1.5;">هشدار مهم قبل ساخت کانفیگ</div>
+                <div style="margin-top:5px;font-size:11px;color:rgba(255,255,255,.45);">بررسی دامنه و محدودیت‌های منطقه‌ای</div>
+            </div>
+
+            <button
+                type="button"
+                onclick="closeRegionNotice()"
+                aria-label="بستن"
+                style="
+                    width:38px;
+                    height:38px;
+                    flex:0 0 auto;
+                    border:1px solid rgba(255,255,255,.08);
+                    border-radius:12px;
+                    color:rgba(255,255,255,.65);
+                    background:rgba(255,255,255,.04);
+                    cursor:pointer;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                "
+            >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                </svg>
+            </button>
+        </div>
+
+        <div
+            style="
+                position:relative;
+                margin-top:20px;
+                padding:17px;
+                border:1px solid rgba(251,191,36,.16);
+                border-radius:18px;
+                background:rgba(245,158,11,.055);
+                color:rgba(255,255,255,.82);
+                font-size:13px;
+                line-height:2.05;
+                text-align:right;
+            "
+        >
+            <strong style="color:#fbbf24;">⚠️⚠️</strong> اگه براتون پنل نصب شد ولی کانفیگ ها پینگ ندادن — دامنه فیلتر شده — دوباره بسازید <strong style="color:#fbbf24;">⚠️⚠️</strong>
+            <div style="margin-top:10px;color:rgba(255,255,255,.48);font-size:11px;line-height:1.9;">
+                ممکنه دسترسی دامنه به‌دلیل محدودیت‌های منطقه‌ای، اپراتور یا ISP متفاوت باشه. در این شرایط یک دامنه جدید امتحان کنید.
+            </div>
+        </div>
+
+        <button
+            type="button"
+            onclick="closeRegionNotice()"
+            style="
+                position:relative;
+                width:100%;
+                margin-top:15px;
+                min-height:46px;
+                border:1px solid rgba(251,191,36,.20);
+                border-radius:15px;
+                color:#17120a;
+                background:linear-gradient(135deg,#fbbf24,#f59e0b);
+                font-family:inherit;
+                font-weight:900;
+                cursor:pointer;
+            "
+        >
+            متوجه شدم
+        </button>
+    </div>
+</div>
+
+<script>
+(function(){
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("login") === "1") {
+        const modal = document.getElementById("regionNotice");
+        if (modal) {
+            modal.style.display = "flex";
+            document.body.style.overflow = "hidden";
+        }
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+    }
+})();
+
+function closeRegionNotice(){
+    const modal = document.getElementById("regionNotice");
+    if (modal) modal.style.display = "none";
+    document.body.style.overflow = "";
+}
+
+document.addEventListener("keydown", function(event){
+    if (event.key === "Escape") closeRegionNotice();
+});
 </script>
 
 </body>
