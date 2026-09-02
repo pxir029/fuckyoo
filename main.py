@@ -895,6 +895,41 @@ def generate_vless_link(
     )
 
 
+def vless_info_link_for_link(
+    link: dict,
+    uid: str,
+):
+    """
+    Creates a second, intentionally non-routable VLESS entry for clients
+    that display subscription items as a list. Its host is 0.0.0.0 and
+    the remark carries subscription usage/expiry information.
+    """
+    used = int(link.get("used_bytes", 0) or 0)
+    limit = int(link.get("limit_bytes", 0) or 0)
+    volume = (
+        f"{fmt_bytes(used)}/{fmt_bytes(limit)}"
+        if limit > 0 else
+        f"{fmt_bytes(used)}/∞"
+    )
+    expiry = str(link.get("expires_at") or "∞")
+    label = str(link.get("label") or "PixonPanel")
+    remark = (
+        f"PixonPanel INFO | 0.0.0.0 | "
+        f"حجم {volume} | انقضا {expiry} | "
+        f"{label} | کانال تلگرام: logic_sec"
+    )
+
+    return generate_vless_link(
+        uid,
+        "0.0.0.0",
+        remark=remark,
+        protocol=link.get("protocol", DEFAULT_PROTOCOL),
+        fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
+        alpn=link.get("alpn"),
+        port=link.get("port", DEFAULT_PORT),
+    )
+
+
 def vless_link_for_link(
     link: dict,
     uid: str,
@@ -1007,6 +1042,10 @@ def get_link_info(
             link,
             uid,
             host,
+        ),
+        "vless_info": vless_info_link_for_link(
+            link,
+            uid,
         ),
         "sub": (
             f"https://{host}"
@@ -2325,6 +2364,105 @@ button{
 
     font-size:11px;
 }
+
+<style>
+/* ============================================================
+   PIxonPanel PRO UI LAYER
+   ============================================================ */
+.topbar{
+    position:relative;
+    overflow:hidden;
+    padding:18px 19px;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:22px;
+    background:
+        radial-gradient(circle at 8% 20%,rgba(99,102,241,.15),transparent 30%),
+        radial-gradient(circle at 95% 10%,rgba(34,211,238,.09),transparent 28%),
+        linear-gradient(135deg,rgba(255,255,255,.045),rgba(255,255,255,.018));
+    box-shadow:0 20px 80px rgba(0,0,0,.28);
+}
+.topbar:after{
+    content:"";
+    position:absolute;
+    inset:auto 8% -40px 8%;
+    height:90px;
+    background:linear-gradient(90deg,transparent,rgba(99,102,241,.10),transparent);
+    filter:blur(22px);
+    pointer-events:none;
+}
+.brand{position:relative;z-index:1}
+.logo{
+    width:46px!important;
+    height:46px!important;
+    border-radius:15px!important;
+    background:linear-gradient(135deg,#6366f1,#8b5cf6 55%,#22d3ee)!important;
+    box-shadow:0 12px 30px rgba(99,102,241,.26);
+    border:1px solid rgba(255,255,255,.14)!important;
+}
+.brand-name{font-size:15px!important;font-weight:900!important;letter-spacing:-.2px}
+.brand-desc{font-size:9px!important;color:rgba(255,255,255,.42)!important}
+.brand-version{
+    display:inline-flex!important;
+    margin-top:5px!important;
+    padding:3px 7px!important;
+    border-radius:999px!important;
+    background:rgba(99,102,241,.08)!important;
+    border:1px solid rgba(99,102,241,.14)!important;
+    color:#a5b4fc!important;
+}
+.top-actions{position:relative;z-index:2;gap:6px!important}
+.top-btn{
+    border:1px solid rgba(255,255,255,.08)!important;
+    background:rgba(255,255,255,.035)!important;
+    backdrop-filter:blur(12px);
+    transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+.top-btn:hover{
+    transform:translateY(-1px);
+    border-color:rgba(129,140,248,.26)!important;
+    background:rgba(129,140,248,.08)!important;
+}
+.top-btn.primary{
+    background:linear-gradient(135deg,rgba(99,102,241,.30),rgba(139,92,246,.22))!important;
+    border-color:rgba(129,140,248,.30)!important;
+    box-shadow:0 8px 28px rgba(99,102,241,.12);
+}
+.stats-grid{margin-top:12px!important;gap:10px!important}
+.stat{
+    border-radius:18px!important;
+    background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.018))!important;
+    transition:transform .18s ease,border-color .18s ease,background .18s ease;
+}
+.stat:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.13)!important;background:rgba(255,255,255,.05)!important}
+.stat-value{font-size:20px!important}
+.panel{
+    border-radius:22px!important;
+    background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.018))!important;
+    box-shadow:0 18px 70px rgba(0,0,0,.16);
+}
+.panel-head{padding:15px 16px!important}
+.panel-title{font-size:12.5px!important}
+.table-wrap{background:linear-gradient(180deg,rgba(255,255,255,.012),transparent)}
+thead tr{background:rgba(255,255,255,.018)}
+tbody tr{transition:background .16s ease}
+tbody tr:hover{background:rgba(99,102,241,.035)}
+.action{
+    border:1px solid rgba(255,255,255,.055)!important;
+    transition:transform .16s ease,border-color .16s ease,background .16s ease;
+}
+.action:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.14)!important;background:rgba(255,255,255,.08)!important}
+.action.primary:hover{background:rgba(99,102,241,.24)!important}
+.action.danger:hover{background:rgba(239,68,68,.12)!important;border-color:rgba(248,113,113,.18)!important}
+.download{
+    position:relative;
+    overflow:hidden;
+    background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.015))!important;
+    transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
+}
+.download:after{content:"";position:absolute;inset:auto -25% -35px;height:70px;background:rgba(99,102,241,.08);filter:blur(22px);pointer-events:none}
+.download:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(0,0,0,.16)}
+@media(max-width:700px){.panel[style*="Control Center"] + .stats-grid{grid-template-columns:repeat(2,1fr)!important}.topbar{padding:14px}.top-actions{width:100%;display:grid!important;grid-template-columns:1fr 1fr;}.top-actions .top-btn,.top-actions a{width:100%;text-align:center}.top-actions .primary{grid-column:1/-1}}
+</style>
 
 </style>
 
@@ -3690,10 +3828,20 @@ async def subscription_single(
         host,
     )
 
+    info_vless = vless_info_link_for_link(
+        link,
+        uuid,
+    )
+
+    # Two subscription entries:
+    # 1) Real working configuration
+    # 2) Visual information entry with 0.0.0.0 host
+    subscription_lines = f"{vless}\n{info_vless}"
+
     content = (
         base64
         .b64encode(
-            vless.encode()
+            subscription_lines.encode()
         )
         .decode()
     )
@@ -4310,6 +4458,12 @@ async def sub_group_subscription(
                         link,
                         link_id,
                         host,
+                    )
+                )
+                lines.append(
+                    vless_info_link_for_link(
+                        link,
+                        link_id,
                     )
                 )
 
@@ -6091,6 +6245,24 @@ class="top-btn danger"
 
 </div>
 
+<div class="panel" style="margin-top:12px;overflow:hidden;position:relative;background:radial-gradient(circle at 5% 30%,rgba(99,102,241,.10),transparent 28%),radial-gradient(circle at 90% 10%,rgba(34,211,238,.07),transparent 26%),rgba(255,255,255,.025)!important">
+    <div style="padding:18px 18px 14px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+        <div>
+            <div style="font-size:8px;color:rgba(255,255,255,.28);letter-spacing:.8px;text-transform:uppercase;font-weight:800">Control Center</div>
+            <div style="margin-top:5px;font-size:16px;font-weight:900;letter-spacing:-.3px">مرکز مدیریت سرویس</div>
+            <div style="margin-top:4px;color:rgba(255,255,255,.38);font-size:9px;line-height:1.9">مدیریت کانفیگ، مصرف، اتصال و لینک‌های اشتراک در یک نمای سریع و یکپارچه.</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:7px;padding:9px 11px;border-radius:13px;border:1px solid rgba(52,211,153,.13);background:rgba(52,211,153,.045);color:#86efac;font-size:8px;font-weight:800">
+            <span style="width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor"></span>
+            سیستم آنلاین و آماده مدیریت
+        </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px;padding:0 14px 14px">
+        <div style="padding:11px 12px;border-radius:15px;border:1px solid rgba(255,255,255,.055);background:rgba(255,255,255,.018)"><div style="font-size:8px;color:rgba(255,255,255,.30)">Subscription</div><div style="margin-top:4px;font-size:9px;font-weight:800;color:#a5b4fc">/sub/</div></div>
+        <div style="padding:11px 12px;border-radius:15px;border:1px solid rgba(255,255,255,.055);background:rgba(255,255,255,.018)"><div style="font-size:8px;color:rgba(255,255,255,.30)">Information</div><div style="margin-top:4px;font-size:9px;font-weight:800;color:#67e8f9">/info/</div></div>
+        <div style="padding:11px 12px;border-radius:15px;border:1px solid rgba(255,255,255,.055);background:rgba(255,255,255,.018)"><div style="font-size:8px;color:rgba(255,255,255,.30)">Support</div><div style="margin-top:4px;font-size:9px;font-weight:800;color:#86efac">logic_sec</div></div>
+    </div>
+</div>
 
 <div class="stats-grid">
 
