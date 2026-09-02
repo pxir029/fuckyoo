@@ -1,5 +1,5 @@
 # ============================================================
-# PixonPanel 12.0.1 Beta
+# LogicPanel 13.0.0 Beta
 # Railway Ready
 # ============================================================
 
@@ -41,7 +41,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "LogicPanel"
-APP_VERSION = "12.2.0 Beta"
+APP_VERSION = "13.0.0 Beta"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -52,6 +52,13 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(APP_NAME)
+
+if not logger.handlers:
+    _stdout_handler = logging.StreamHandler()
+    _stdout_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(_stdout_handler)
+logger.setLevel(logging.INFO)
+logger.propagate = False
 
 
 # ============================================================
@@ -1617,27 +1624,10 @@ async def create_sub_group(
     uuid_key = secrets.token_urlsafe(16)
 
     record = {
-        "name":
-            name,
-
-        "desc":
-            desc,
-
-        "password_hash":
-            (
-                hash_password(password)
-                if password
-                else None
-            ),
-
-        "uuid_key":
-            uuid_key,
-
-        "created_at":
-            datetime.now().isoformat(),
-
-        "link_ids":
-            [],
+        "name": name,
+        "desc": desc,
+        "created_at": datetime.now().isoformat(),
+        "link_ids": [],
     }
 
     async with SUBS_LOCK:
@@ -4019,7 +4009,7 @@ body{{font-family:"Vazirmatn",sans-serif;color:var(--text);padding:24px;backgrou
 .channel b{{color:#6ee7b7}}
 @media(max-width:760px){{body{{padding:12px}}.dashboard{{grid-template-columns:1fr}}.stats{{grid-template-columns:repeat(2,1fr)}}.downloads{{grid-template-columns:1fr}}.hero-row{{align-items:flex-start;flex-direction:column}}}}
 </style>
-<style>.copy-btn{border:0;padding:8px 10px;border-radius:9px;color:#fff;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.16);font-family:inherit;font-size:8px;cursor:pointer;flex:0 0 auto}.copy-btn:hover{background:rgba(96,165,250,.18)}</style>
+<style>.copy-btn{{border:0;padding:8px 10px;border-radius:9px;color:#fff;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.16);font-family:inherit;font-size:8px;cursor:pointer;flex:0 0 auto}}.copy-btn:hover{{background:rgba(96,165,250,.18)}}</style>
 </head>
 <body>
 <div class="page"><div class="shell">
@@ -4091,52 +4081,22 @@ async def create_sub_api(
     request: Request,
     _=Depends(require_auth),
 ):
-
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail="JSON نامعتبر است",
-        )
+        raise HTTPException(status_code=400, detail="JSON نامعتبر است")
 
-    sub_id, sub = await create_sub_group(
-        name=body.get(
-            "name",
-            "گروه جدید",
-        ),
-        desc=body.get(
-            "desc",
-            "",
-        ),
-        password=body.get(
-            "password",
-            "",
-        ),
+    sub_id, group = await create_sub_group(
+        name=body.get("name", "گروه جدید"),
+        desc=body.get("desc", ""),
+        password="",
     )
 
-    host = get_host(request)
-
     return {
-        "sub_id":
-            sub_id,
-
-        **sub,
-
-        "password_hash":
-            None,
-
-        "public_url":
-            (
-                f"https://{host}"
-                f"/p/{sub['uuid_key']}"
-            ),
-
-        "sub_url":
-            (
-                f"https://{host}"
-                f"/sub-group/{sub['uuid_key']}"
-            ),
+        "ok": True,
+        "group_id": sub_id,
+        "sub_id": sub_id,
+        **group,
     }
 
 
@@ -4145,7 +4105,6 @@ async def list_subs_api(
     request: Request,
     _=Depends(require_auth),
 ):
-
     host = get_host(request)
 
     async with SUBS_LOCK:
@@ -4155,103 +4114,54 @@ async def list_subs_api(
         snapshot_links = dict(LINKS)
 
     result = []
-
-    for sid, sub in snapshot_subs.items():
-
-        link_ids = sub.get(
-            "link_ids",
-            [],
-        )
-
-        active_count = sum(
-            1
-            for lid in link_ids
-            if is_link_allowed(
-                snapshot_links.get(
-                    lid
-                )
-            )
-        )
-
-        total_used = sum(
-            snapshot_links[
-                lid
-            ].get(
-                "used_bytes",
-                0,
-            )
-
-            for lid in link_ids
-
-            if lid in snapshot_links
-        )
-
+    for group_id, group in snapshot_subs.items():
+        link_ids = list(group.get("link_ids", []))
         group_links = []
-        for lid in link_ids:
-            item = snapshot_links.get(lid)
-            if item:
-                group_links.append({
-                    "uuid": lid,
-                    "label": item.get("label", lid),
-                    "active": is_link_allowed(item),
-                })
+        total_used = 0
+        total_limit = 0
+        active_count = 0
+        expiries = []
 
-        result.append(
-            {
-                "sub_id":
-                    sid,
+        for link_id in link_ids:
+            item = snapshot_links.get(link_id)
+            if not item:
+                continue
+            active = is_link_allowed(item)
+            active_count += 1 if active else 0
+            used = int(item.get("used_bytes", 0) or 0)
+            limit = int(item.get("limit_bytes", 0) or 0)
+            total_used += used
+            total_limit += limit
+            if item.get("expires_at"):
+                expiries.append(str(item.get("expires_at")))
+            group_links.append({
+                "uuid": link_id,
+                "label": item.get("label", link_id),
+                "active": active,
+                "used_bytes": used,
+                "limit_bytes": limit,
+                "used_fmt": fmt_bytes(used),
+                "limit_fmt": fmt_bytes(limit) if limit else "∞",
+            })
 
-                **sub,
-                "links": group_links,
+        result.append({
+            "group_id": group_id,
+            "sub_id": group_id,
+            "name": group.get("name", "گروه"),
+            "desc": group.get("desc", ""),
+            "created_at": group.get("created_at", ""),
+            "links": group_links,
+            "links_count": len(group_links),
+            "active_count": active_count,
+            "total_used_bytes": total_used,
+            "total_used_fmt": fmt_bytes(total_used),
+            "total_limit_bytes": total_limit,
+            "total_limit_fmt": fmt_bytes(total_limit) if total_limit else "∞",
+            "info_url": f"https://{host}{public_info_path()}/group/{group_id}",
+        })
 
-                "password_hash":
-                    None,
-
-                "has_password":
-                    sub.get(
-                        "password_hash"
-                    ) is not None,
-
-                "links_count":
-                    len(link_ids),
-
-                "active_count":
-                    active_count,
-
-                "total_used_bytes":
-                    total_used,
-
-                "total_used_fmt":
-                    fmt_bytes(
-                        total_used
-                    ),
-
-                "public_url":
-                    (
-                        f"https://{host}"
-                        f"/p/{sub['uuid_key']}"
-                    ),
-
-                "sub_url":
-                    (
-                        f"https://{host}"
-                        f"/sub-group/{sub['uuid_key']}"
-                    ),
-            }
-        )
-
-    result.sort(
-        key=lambda item:
-            item.get(
-                "created_at",
-                "",
-            ),
-        reverse=True,
-    )
-
-    return {
-        "subs": result
-    }
+    result.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+    return {"subs": result}
 
 
 @app.patch("/api/subs/{sub_id}")
@@ -4260,61 +4170,22 @@ async def update_sub_api(
     request: Request,
     _=Depends(require_auth),
 ):
-
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail="JSON نامعتبر است",
-        )
+        raise HTTPException(status_code=400, detail="JSON نامعتبر است")
 
     async with SUBS_LOCK:
-
-        if sub_id not in SUBS:
-            raise HTTPException(
-                status_code=404,
-                detail="sub not found",
-            )
-
-        sub = SUBS[sub_id]
-
+        group = SUBS.get(sub_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="group not found")
         if "name" in body:
-            sub["name"] = str(
-                body["name"]
-            )[:60]
-
+            group["name"] = str(body.get("name") or "گروه")[:60].strip() or "گروه"
         if "desc" in body:
-            sub["desc"] = str(
-                body["desc"]
-            )[:200]
-
-        if "password" in body:
-
-            password = str(
-                body.get(
-                    "password",
-                    "",
-                )
-            ).strip()
-
-            sub["password_hash"] = (
-                hash_password(password)
-                if password
-                else None
-            )
-
-        if "link_ids" in body:
-
-            sub["link_ids"] = list(
-                body["link_ids"]
-            )
+            group["desc"] = str(body.get("desc") or "")[:200].strip()
 
     await save_state()
-
-    return {
-        "ok": True
-    }
+    return {"ok": True}
 
 
 @app.delete("/api/subs/{sub_id}")
@@ -4393,604 +4264,72 @@ async def assign_link_to_sub(
     }
 
 
+
 # ============================================================
-# GROUP SUB
+# GROUP INFO PAGE
+# Groups are dashboard categorization only; there is NO group SUB endpoint.
 # ============================================================
 
-@app.get("/sub-group/{uuid_key}")
-async def sub_group_subscription(
-    uuid_key: str,
-    request: Request,
-):
-
+@app.get("/info/group/{group_id}", response_class=HTMLResponse)
+async def group_info_page(group_id: str, request: Request):
     async with SUBS_LOCK:
-
-        sub = next(
-            (
-                item
-                for item
-                in SUBS.values()
-                if item.get(
-                    "uuid_key"
-                ) == uuid_key
-            ),
-            None,
-        )
-
-    if not sub:
-        raise HTTPException(
-            status_code=404,
-            detail="not found",
-        )
-
-    if sub.get(
-        "password_hash"
-    ):
-
-        password = (
-            request.query_params.get(
-                "pw",
-                "",
+        group = SUBS.get(group_id)
+        if not group:
+            return HTMLResponse(
+                "<html lang='fa' dir='rtl'><body style='margin:0;background:#07080d;color:#fff;font-family:sans-serif;padding:40px'><h2>گروه پیدا نشد</h2></body></html>",
+                status_code=404,
             )
-        )
-
-        if (
-            hash_password(password)
-            != sub["password_hash"]
-        ):
-
-            raise HTTPException(
-                status_code=403,
-                detail="wrong password",
-            )
-
-    host = get_host(request)
+        group_snapshot = dict(group)
 
     async with LINKS_LOCK:
-
-        lines = []
-
-        for link_id in sub.get(
-            "link_ids",
-            [],
-        ):
-
-            link = LINKS.get(
-                link_id
-            )
-
-            if (
-                link
-                and is_link_allowed(
-                    link
-                )
-            ):
-
-                used = int(link.get("used_bytes", 0) or 0)
-                limit = int(link.get("limit_bytes", 0) or 0)
-                volume_text = (
-                    f"{fmt_bytes(used)}/{fmt_bytes(limit)}"
-                    if limit > 0
-                    else f"{fmt_bytes(used)}/∞"
-                )
-                expiry_text = str(link.get("expires_at") or "∞")
-                info_remark = f"ℹ️ {volume_text} | ⏳ {expiry_text} | 📢 logic_sec"
-                lines.append(
-                    generate_vless_link(
-                        link_id,
-                        "0.0.0.0",
-                        remark=info_remark,
-                        protocol=link.get("protocol", DEFAULT_PROTOCOL),
-                        fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
-                        alpn=link.get("alpn"),
-                        port=link.get("port", DEFAULT_PORT),
-                    )
-                )
-                lines.append(
-                    vless_link_for_link(
-                        link,
-                        link_id,
-                        host,
-                    )
-                )
-
-    content = (
-        base64
-        .b64encode(
-            "\n".join(
-                lines
-            ).encode()
-        )
-        .decode()
-    )
-
-    total_used = 0
-    total_limit = 0
-    expiries = []
-    valid_ids = list(sub.get("link_ids", []))
-
-    async with LINKS_LOCK:
-        for link_id in valid_ids:
-            link = LINKS.get(link_id)
-            if not link or not is_link_allowed(link):
+        items = []
+        total_used = 0
+        total_limit = 0
+        expiries = []
+        for uid in group_snapshot.get("link_ids", []):
+            link = LINKS.get(uid)
+            if not link:
                 continue
-            total_used += int(link.get("used_bytes", 0) or 0)
-            total_limit += int(link.get("limit_bytes", 0) or 0)
+            used = int(link.get("used_bytes", 0) or 0)
+            limit = int(link.get("limit_bytes", 0) or 0)
+            total_used += used
+            total_limit += limit
             if link.get("expires_at"):
                 expiries.append(str(link.get("expires_at")))
-
-    # For a group subscription, expose aggregate usage/expiry in standard headers.
-    group_limit = total_limit if total_limit > 0 else 0
-    group_expiry = None
-    if expiries:
-        try:
-            group_expiry = min(
-                expiries,
-                key=lambda x: datetime.fromisoformat(x)
-            )
-        except Exception:
-            group_expiry = expiries[0]
-
-    group_volume_text = (
-        f"{fmt_bytes(total_used)}/{fmt_bytes(group_limit)}"
-        if group_limit > 0
-        else f"{fmt_bytes(total_used)}/∞"
-    )
-    group_expiry_text = group_expiry or "∞"
-    group_title = (
-        f"0.0.0.0 | {group_volume_text} | {group_expiry_text} | "
-        f"{sub['name']} | کانال تلگرام: logic_sec"
-    )
-    headers = subscription_metadata_headers(
-        total_used,
-        group_limit,
-        group_expiry,
-        host,
-        f"https://{host}/public-sub/{uuid_key}",
-        group_title,
-    )
-
-    return Response(
-        content=content,
-        media_type="text/plain; charset=utf-8",
-        headers=headers,
-    )
-
-
-# ============================================================
-# PUBLIC GROUP
-# ============================================================
-
-PUBLIC_SUB_HTML = r"""
-<!DOCTYPE html>
-<html lang="fa" dir="rtl">
-
-<head>
-<meta charset="UTF-8">
-
-<meta
-name="viewport"
-content="width=device-width,initial-scale=1"
->
-
-<title>
-PixonPanel
-</title>
-
-<style>
-
-*{
-    box-sizing:border-box;
-}
-
-body{
-    margin:0;
-    min-height:100vh;
-
-    display:flex;
-    justify-content:center;
-    align-items:center;
-
-    padding:20px;
-
-    font-family:Arial,sans-serif;
-
-    color:#fff;
-
-    background:
-        radial-gradient(
-            circle at top right,
-            rgba(99,102,241,.17),
-            transparent 30%
-        ),
-        #07070a;
-}
-
-.card{
-    width:100%;
-    max-width:560px;
-
-    padding:28px;
-    border-radius:25px;
-
-    background:rgba(255,255,255,.045);
-
-    border:
-        1px solid
-        rgba(255,255,255,.08);
-
-    backdrop-filter:blur(25px);
-}
-
-h1{
-    margin-top:0;
-}
-
-.text{
-    color:rgba(255,255,255,.55);
-    line-height:2;
-    font-size:13px;
-}
-
-.url{
-    margin-top:20px;
-    padding:14px;
-
-    border-radius:13px;
-
-    background:rgba(0,0,0,.22);
-
-    color:#c4b5fd;
-
-    direction:ltr;
-    word-break:break-all;
-
-    font-family:Consolas,monospace;
-}
-
-.support{
-    display:inline-block;
-    margin-top:18px;
-
-    color:#a78bfa;
-    text-decoration:none;
-}
-
-.version{
-    color:#a78bfa;
-    font-size:11px;
-}
-
-</style>
-</head>
-
-<body>
-
-<div class="card">
-
-<h1>
-LogicPanel
-</h1>
-
-<div class="version">
-12.0.1 Beta
-</div>
-
-<div class="text">
-اشتراک شما آماده است.
-</div>
-
-<div
-class="url"
-id="subUrl"
-></div>
-
-<a
-class="support"
-href="https://t.me/Pixonal"
-target="_blank"
-rel="noopener"
->
-پشتیبانی @Pixonal
-</a>
-
-</div>
-
-<script>
-
-const url =
-    location.origin +
-    location.pathname.replace(
-        "/p/",
-        "/sub-group/"
-    );
-
-document.getElementById(
-    "subUrl"
-).textContent = url;
-
-</script>
-
-</body>
-</html>
-"""
-
-
-@app.get(
-    "/p/{uuid_key}",
-    response_class=HTMLResponse,
-)
-async def public_sub_page(
-    uuid_key: str,
-):
-
-    async with SUBS_LOCK:
-
-        exists = any(
-            item.get(
-                "uuid_key"
-            ) == uuid_key
-            for item in SUBS.values()
-        )
-
-    if not exists:
-
-        return HTMLResponse(
-            """
-            <h2
-            style="
-            font-family:sans-serif;
-            padding:40px;
-            "
-            >
-            گروه پیدا نشد
-            </h2>
-            """,
-            status_code=404,
-        )
-
-    return HTMLResponse(
-        PUBLIC_SUB_HTML
-    )
-
-
-@app.get("/api/public/sub/{uuid_key}")
-async def public_sub_data(
-    uuid_key: str,
-    request: Request,
-):
-
-    async with SUBS_LOCK:
-
-        entry = next(
-            (
-                (
-                    sid,
-                    item,
-                )
-
-                for sid, item
-                in SUBS.items()
-
-                if item.get(
-                    "uuid_key"
-                ) == uuid_key
-            ),
-            None,
-        )
-
-    if not entry:
-        raise HTTPException(
-            status_code=404,
-            detail="not found",
-        )
-
-    _, sub = entry
-
-    has_password = (
-        sub.get(
-            "password_hash"
-        ) is not None
-    )
-
-    if has_password:
-
-        password = (
-            request
-            .query_params
-            .get(
-                "pw",
-                "",
-            )
-        )
-
-        if (
-            hash_password(password)
-            != sub[
-                "password_hash"
-            ]
-        ):
-
-            return JSONResponse(
-                {
-                    "locked": True,
-                    "name":
-                        sub["name"],
-                }
-            )
+            items.append((uid, dict(link)))
 
     host = get_host(request)
+    group_name = escape_html(group_snapshot.get("name", "Group"))
+    group_desc = escape_html(group_snapshot.get("desc", ""))
+    used_text = escape_html(fmt_bytes(total_used))
+    limit_text = escape_html(fmt_bytes(total_limit) if total_limit else "∞")
+    ratio = round((total_used / total_limit) * 100, 1) if total_limit else 0
+    ratio = max(0, min(100, ratio))
 
-    async with LINKS_LOCK:
-        snapshot = dict(LINKS)
-
-    links_out = []
-
-    active_connections = 0
-
-    for link_id in sub.get(
-        "link_ids",
-        [],
-    ):
-
-        link = snapshot.get(
-            link_id
+    cards = []
+    for uid, link in items:
+        used = int(link.get("used_bytes", 0) or 0)
+        limit = int(link.get("limit_bytes", 0) or 0)
+        pct = round((used / limit) * 100, 1) if limit else 0
+        pct = max(0, min(100, pct))
+        vless = vless_link_for_link(link, uid, host)
+        sub_url = public_sub_url(host, uid)
+        cards.append(
+            f"""
+            <article class='config'>
+              <div class='config-head'><div><strong>{escape_html(link.get('label', uid))}</strong><span>{escape_html(link.get('protocol', DEFAULT_PROTOCOL))}</span></div><b>{'فعال' if is_link_allowed(link) else 'غیرفعال'}</b></div>
+              <div class='mini-track'><i style='width:{pct}%'></i></div>
+              <div class='config-meta'><span>{escape_html(fmt_bytes(used))} / {escape_html(fmt_bytes(limit)) if limit else '∞'}</span><span>{escape_html(str(link.get('expires_at') or '∞'))}</span></div>
+              <div class='link-row'><code>{escape_html(vless)}</code><button onclick='copyValue(this, {json.dumps(vless, ensure_ascii=False)})'>کپی VLESS</button></div>
+              <div class='link-row'><code>{escape_html(sub_url)}</code><button onclick='copyValue(this, {json.dumps(sub_url, ensure_ascii=False)})'>کپی SUB</button></div>
+            </article>
+            """
         )
 
-        if not link:
-            continue
-
-        allowed = is_link_allowed(
-            link
-        )
-
-        connection_count = sum(
-            1
-            for item in connections.values()
-            if item.get("uuid") == link_id
-        )
-
-        active_connections += (
-            connection_count
-        )
-
-        links_out.append(
-            {
-                "uuid":
-                    link_id,
-
-                "label":
-                    link.get(
-                        "label"
-                    ),
-
-                "active":
-                    allowed,
-
-                "protocol":
-                    link.get(
-                        "protocol",
-                        DEFAULT_PROTOCOL,
-                    ),
-
-                "used_bytes":
-                    link.get(
-                        "used_bytes",
-                        0,
-                    ),
-
-                "used_fmt":
-                    fmt_bytes(
-                        link.get(
-                            "used_bytes",
-                            0,
-                        )
-                    ),
-
-                "limit_bytes":
-                    link.get(
-                        "limit_bytes",
-                        0,
-                    ),
-
-                "limit_fmt":
-                    (
-                        "∞"
-                        if not link.get(
-                            "limit_bytes",
-                            0,
-                        )
-                        else fmt_bytes(
-                            link[
-                                "limit_bytes"
-                            ]
-                        )
-                    ),
-
-                "expires_at":
-                    link.get(
-                        "expires_at"
-                    ),
-
-                "vless_link":
-                    vless_link_for_link(
-                        link,
-                        link_id,
-                        host,
-                    ),
-
-                "sub_url":
-                    (
-                        f"https://{host}"
-                        f"/sub/{link_id}"
-                    ),
-
-                "info_url":
-                    (
-                        f"https://{host}"
-                        f"/info/{link_id}"
-                    ),
-
-                "connections":
-                    connection_count,
-
-                "ip_limit":
-                    link.get(
-                        "ip_limit",
-                        0,
-                    ),
-
-                "speed_limit_bytes":
-                    link.get(
-                        "speed_limit_bytes",
-                        0,
-                    ),
-
-                "connection_limit":
-                    link.get(
-                        "connection_limit",
-                        0,
-                    ),
-            }
-        )
-
-    total_used = sum(
-        item["used_bytes"]
-        for item in links_out
-    )
-
-    return {
-        "locked": False,
-
-        "name":
-            sub["name"],
-
-        "desc":
-            sub.get(
-                "desc",
-                "",
-            ),
-
-        "sub_url":
-            (
-                f"https://{host}"
-                f"/sub-group/{uuid_key}"
-            ),
-
-        "active_connections":
-            active_connections,
-
-        "total_used_fmt":
-            fmt_bytes(
-                total_used
-            ),
-
-        "support":
-            SUPPORT_USERNAME,
-
-        "links":
-            links_out,
-    }
+    html = f"""<!doctype html><html lang='fa' dir='rtl'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{group_name} | INFO</title><link rel='preconnect' href='https://fonts.googleapis.com'><link rel='preconnect' href='https://fonts.gstatic.com' crossorigin><link href='https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap' rel='stylesheet'><style>
+    :root{{--bg:#06070b;--panel:rgba(16,18,27,.75);--line:rgba(255,255,255,.08);--muted:rgba(255,255,255,.43);--text:#f7f8fb;--blue:#60a5fa;--green:#34d399;--orange:#f59e0b;--purple:#a78bfa;--red:#fb7185}}*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;padding:22px;font-family:'Vazirmatn',sans-serif;color:var(--text);background:radial-gradient(circle at 15% 0%,rgba(96,165,250,.15),transparent 28%),radial-gradient(circle at 95% 20%,rgba(167,139,250,.13),transparent 24%),#06070b}}.wrap{{width:min(920px,100%);margin:auto}}.shell{{overflow:hidden;border:1px solid var(--line);background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.018));border-radius:28px;backdrop-filter:blur(25px);box-shadow:0 35px 90px rgba(0,0,0,.38)}}.hero{{padding:24px;border-bottom:1px solid rgba(255,255,255,.06)}}.hero-row{{display:flex;align-items:center;justify-content:space-between;gap:14px}}.title{{font-size:21px;font-weight:900}}.sub{{margin-top:5px;color:var(--muted);font-size:9px}}.pill{{padding:8px 11px;border-radius:11px;color:#6ee7b7;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.16);font-size:9px;font-weight:800}}.overview{{display:grid;grid-template-columns:1.2fr .8fr;gap:12px;padding:16px}}.card{{padding:17px;border-radius:19px;border:1px solid var(--line);background:rgba(255,255,255,.025)}}.kicker{{color:rgba(255,255,255,.29);font-size:8px;text-transform:uppercase;font-weight:800;letter-spacing:.7px}}.big{{margin-top:6px;font-size:21px;font-weight:900}}.bar{{height:11px;margin-top:13px;border-radius:999px;background:rgba(255,255,255,.055);overflow:hidden}}.bar i,.mini-track i{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--orange));border-radius:inherit}}.meta{{display:flex;justify-content:space-between;gap:10px;margin-top:8px;color:var(--muted);font-size:8px}}.list{{padding:0 16px 18px;display:grid;gap:10px}}.config{{padding:15px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.022);border-radius:18px}}.config-head{{display:flex;justify-content:space-between;gap:10px;align-items:center}}.config-head strong{{display:block;font-size:11px}}.config-head span{{display:block;color:var(--muted);font-size:8px;margin-top:3px}}.config-head b{{font-size:8px;color:#6ee7b7}}.mini-track{{height:7px;margin-top:12px;border-radius:99px;background:rgba(255,255,255,.05);overflow:hidden}}.config-meta{{display:flex;justify-content:space-between;margin-top:7px;color:var(--muted);font-size:8px}}.link-row{{display:flex;gap:8px;align-items:center;margin-top:9px}}code{{direction:ltr;text-align:left;display:block;min-width:0;flex:1;padding:9px 10px;border-radius:10px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.05);font-family:Consolas,monospace;font-size:7.5px;color:#c4b5fd;word-break:break-all}}button{{border:0;padding:9px 10px;border-radius:10px;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.16);color:#dbeafe;font-family:inherit;font-size:8px;cursor:pointer;white-space:nowrap}}button:hover{{background:rgba(96,165,250,.19)}}@media(max-width:700px){{body{{padding:12px}}.overview{{grid-template-columns:1fr}}.hero-row{{align-items:flex-start;flex-direction:column}}.link-row{{align-items:stretch;flex-direction:column}}}}
+    </style></head><body><div class='wrap'><div class='shell'><section class='hero'><div class='hero-row'><div><div class='title'>{group_name}</div><div class='sub'>{group_desc or 'گروه کانفیگ ها'} · {len(items)} کانفیگ · logic_sec</div></div><div class='pill'>INFO</div></div></section><section class='overview'><div class='card'><div class='kicker'>Traffic</div><div class='big'>{used_text} <span style='font-size:10px;color:var(--muted)'>/ {limit_text}</span></div><div class='bar'><i style='width:{ratio}%'></i></div><div class='meta'><span>مصرف</span><span>{ratio}%</span></div></div><div class='card'><div class='kicker'>Group</div><div class='meta' style='margin-top:13px'><span>کانفیگ</span><strong>{len(items)}</strong></div><div class='meta'><span>فعال</span><strong>{sum(1 for uid, link in items if is_link_allowed(link))}</strong></div><div class='meta'><span>حجم</span><strong>{limit_text}</strong></div></div></section><section class='list'>{''.join(cards) or '<div class="card" style="text-align:center;color:var(--muted);font-size:10px">گروه خالی است</div>'}</section></div></div><script>async function copyValue(btn,text){{try{{await navigator.clipboard.writeText(String(text||''));const old=btn.textContent;btn.textContent='کپی شد';setTimeout(()=>btn.textContent=old,900)}}catch(e){{const a=document.createElement('textarea');a.value=text;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();}}}}</script></body></html>"""
+    return HTMLResponse(html)
 
 
 # ============================================================
@@ -7094,7 +6433,6 @@ onclick="createAuto()"
 <div class="form-grid">
 <div class="field full"><label>نام گروه</label><input id="groupName" placeholder="مثلاً VIP 01"></div>
 <div class="field full"><label>توضیحات</label><textarea id="groupDesc" placeholder="توضیحات اختیاری"></textarea></div>
-<div class="field full"><label>رمز اشتراک گروه</label><input id="groupPassword" type="password" placeholder="اختیاری"></div>
 </div>
 <div class="modal-actions"><button class="modal-btn secondary" onclick="closeGroupModal()">انصراف</button><button class="modal-btn primary" onclick="createGroup()">ساخت گروه</button></div>
 </div></div>
@@ -7913,38 +7251,46 @@ function closeAutoModal(){
 
 
 async function loadGroups(){
-    const result = await api("/api/subs");
-    const select = document.getElementById("manualGroup");
-    const list = document.getElementById("groupsList");
-    if (select) {
-        const current = select.value;
-        select.innerHTML = '<option value="">بدون گروه</option>';
-        if (result && Array.isArray(result.subs)) {
-            result.subs.forEach(group => {
-                const option = document.createElement("option");
-                option.value = group.sub_id;
-                option.textContent = `${group.name} (${group.links_count || 0})`;
-                select.appendChild(option);
-            });
-            if (current) select.value = current;
+    return api("/api/subs").then(result => {
+        const select = document.getElementById("manualGroup");
+        const list = document.getElementById("groupsList");
+        if (select) {
+            const current = select.value;
+            select.innerHTML = '<option value="">بدون گروه</option>';
+            if (result && Array.isArray(result.subs)) {
+                result.subs.forEach(group => {
+                    const option = document.createElement("option");
+                    option.value = group.group_id || group.sub_id;
+                    option.textContent = `${group.name} (${group.links_count || 0})`;
+                    select.appendChild(option);
+                });
+                if (current) select.value = current;
+            }
         }
-    }
-    if (list) {
+        if (!list) return;
         if (!result || !Array.isArray(result.subs) || !result.subs.length) {
             list.innerHTML = '<div class="empty">هنوز گروهی ساخته نشده است.</div>';
             return;
         }
         list.innerHTML = result.subs.map(group => {
-            const url = group.sub_url || "";
-            return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025);border-radius:14px;margin-bottom:8px">
-                <div style="min-width:0"><div style="font-weight:800;font-size:10px">${escapeHtml(group.name || "-")}</div><div style="margin-top:4px;color:rgba(255,255,255,.3);font-size:8px">${escapeHtml(group.desc || "بدون توضیح")} · ${group.links_count || 0} کانفیگ</div><div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:5px">${(group.links||[]).map(item => `<span style="padding:4px 6px;border-radius:7px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.05);font-size:7px;color:${item.active ? '#86efac' : '#fca5a5'}">${escapeHtml(item.label || item.uuid)}</span>`).join("") || '<span style="color:rgba(255,255,255,.25);font-size:7px">بدون کانفیگ</span>'}</div><div style="margin-top:5px;direction:ltr;text-align:left;color:#c4b5fd;font-family:Consolas,monospace;font-size:8px;word-break:break-all">${escapeHtml(url)}</div></div>
-                <div style="display:flex;gap:5px;flex-shrink:0"><button class="action primary" type="button" onclick="copyText('${String(url).replace(/'/g,"\\'")}')">SUB</button><button class="action danger" type="button" onclick="deleteGroup('${String(group.sub_id).replace(/'/g,"\\'")}')">حذف</button></div>
+            const gid = String(group.group_id || group.sub_id || "");
+            const infoUrl = group.info_url || "";
+            const names = (group.links || []).map(item => `<span style="padding:4px 6px;border-radius:7px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.05);font-size:7px;color:${item.active ? '#86efac' : '#fca5a5'}">${escapeHtml(item.label || item.uuid)}</span>`).join("");
+            return `<div style="min-width:0;padding:13px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025);border-radius:14px;margin-bottom:8px">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                    <div style="min-width:0"><div style="font-weight:800;font-size:10px">${escapeHtml(group.name || "-")}</div><div style="margin-top:4px;color:rgba(255,255,255,.3);font-size:8px">${escapeHtml(group.desc || "بدون توضیح")} · ${group.links_count || 0} کانفیگ · ${group.active_count || 0} فعال</div></div>
+                    <div style="display:flex;gap:5px;flex-shrink:0"><button class="action primary" type="button" data-group-info="${escapeHtml(infoUrl)}">INFO</button><button class="action danger" type="button" data-group-delete="${escapeHtml(gid)}">حذف</button></div>
+                </div>
+                <div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:5px">${names || '<span style="color:rgba(255,255,255,.25);font-size:7px">بدون کانفیگ</span>'}</div>
+                <div style="margin-top:8px;display:flex;gap:12px;color:rgba(255,255,255,.34);font-size:8px"><span>مصرف: ${escapeHtml(group.total_used_fmt || "0 B")}</span><span>سقف: ${escapeHtml(group.total_limit_fmt || "∞")}</span></div>
             </div>`;
         }).join("");
-    }
+        list.querySelectorAll("[data-group-info]").forEach(btn => btn.addEventListener("click", () => window.open(btn.dataset.groupInfo, "_blank", "noopener,noreferrer")));
+        list.querySelectorAll("[data-group-delete]").forEach(btn => btn.addEventListener("click", () => deleteGroup(btn.dataset.groupDelete)));
+    });
 }
 
-function openGroupModal(){
+function openGroupModalfunction openGroupModal(){
     document.getElementById("groupModal").classList.add("open");
 }
 
@@ -7955,14 +7301,12 @@ function closeGroupModal(){
 async function createGroup(){
     const result = await api("/api/subs", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
         name: document.getElementById("groupName").value.trim(),
-        desc: document.getElementById("groupDesc").value.trim(),
-        password: document.getElementById("groupPassword").value
+        desc: document.getElementById("groupDesc").value.trim()
     })});
-    if (!result || !result.ok && !result.sub_id) return;
+    if (!result || result.ok !== true) return;
     closeGroupModal();
     document.getElementById("groupName").value = "";
     document.getElementById("groupDesc").value = "";
-    document.getElementById("groupPassword").value = "";
     showToast("گروه ساخته شد");
     await loadGroups();
 }
