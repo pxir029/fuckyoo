@@ -1,3 +1,8 @@
+# ============================================================
+# PixonPanel - Railway Ready
+# Version: 12.0.1 Beta
+# ============================================================
+
 import asyncio
 import base64
 import hashlib
@@ -6,70 +11,98 @@ import logging
 import os
 import secrets
 import time
-from collections import deque
+
+from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote, parse_qs
 
 import aiofiles
+import httpx
 import uvicorn
 
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import (
+    FastAPI,
+    Request,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    Depends,
+)
+
+from fastapi.responses import (
+    Response,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+)
+
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 
 # ============================================================
-# PixonPanel
+# APP
 # ============================================================
 
 APP_NAME = "PixonPanel"
-APP_VERSION = "12.0"
+APP_VERSION = "12.0.1 Beta"
 
 SUPPORT_USERNAME = "@Pixonal"
 SUPPORT_URL = "https://t.me/Pixonal"
 
-PORT = int(os.environ.get("PORT", "8000"))
+
+# ============================================================
+# TIMEZONE
+# ============================================================
+
+try:
+    from zoneinfo import ZoneInfo
+
+    IRAN_TZ = ZoneInfo("Asia/Tehran")
+
+except Exception:
+    IRAN_TZ = None
+
+
+# ============================================================
+# RAILWAY
+# ============================================================
+
+PORT = int(
+    os.environ.get(
+        "PORT",
+        "8000",
+    )
+)
 
 DATA_DIR = Path(
     os.environ.get(
         "RAILWAY_VOLUME_MOUNT_PATH",
-        os.environ.get("DATA_DIR", "./data")
+        os.environ.get(
+            "DATA_DIR",
+            "./data",
+        ),
     )
 )
 
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-DATA_FILE = DATA_DIR / "pixonpanel_state.json"
-SECRET_FILE = DATA_DIR / "pixonpanel_secret.key"
-
-SESSION_COOKIE = "pixonpanel_session"
-SESSION_TTL = 60 * 60 * 24 * 365
-
-DEFAULT_PASSWORD = os.environ.get(
-    "ADMIN_PASSWORD",
-    "pxpanel2026"
+DATA_DIR.mkdir(
+    parents=True,
+    exist_ok=True,
 )
 
-DEFAULT_PROTOCOL = "vless-ws"
-DEFAULT_FINGERPRINT = "chrome"
-DEFAULT_PORT = 443
-
-
-# ============================================================
-# Logging
-# ============================================================
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+DATA_FILE = (
+    DATA_DIR
+    / "pixonpanel_state.json"
 )
 
-logger = logging.getLogger(APP_NAME)
+SECRET_FILE = (
+    DATA_DIR
+    / "pixonpanel_secret.key"
+)
 
 
 # ============================================================
-# App
+# FASTAPI
 # ============================================================
 
 app = FastAPI(
@@ -89,73 +122,17 @@ app.add_middleware(
 
 
 # ============================================================
-# Locks
+# LOCKS
 # ============================================================
 
-STATE_LOCK = asyncio.Lock()
-SESSION_LOCK = asyncio.Lock()
-ACTIVITY_LOCK = asyncio.Lock()
-
-
-# ============================================================
-# Runtime
-# ============================================================
-
-START_TIME = time.time()
-
-TOTAL_REQUESTS = 0
-TOTAL_BYTES = 0
-TOTAL_ERRORS = 0
-
-LINKS = {}
-SESSIONS = {}
-
-ACTIVITY_LOG = deque(maxlen=300)
-ERROR_LOG = deque(maxlen=100)
-
-# اگر Relay واقعی بعداً وصل شود
-ACTIVE_CONNECTIONS = {}
-
-# ============================================================
-# Protocols / options
-# ============================================================
-
-PROTOCOLS = [
-    "vless-ws",
-    "xhttp-packet-up",
-    "xhttp-stream-up",
-    "xhttp-stream-one",
-]
-
-FINGERPRINTS = [
-    "chrome",
-    "firefox",
-    "safari",
-    "ios",
-    "android",
-    "edge",
-    "360",
-    "qq",
-    "random",
-    "randomized",
-]
-
-FRAGMENTS = {
-    "off": None,
-
-    "safe":
-        "packets=1-3;length=1-1;interval=10-20",
-
-    "balanced":
-        "packets=1-3,10-20;length=1-1;interval=10-20",
-
-    "aggressive":
-        "packets=1-3,10-20;length=1-2;interval=5-15",
-}
+SAVE_LOCK = asyncio.Lock()
+LINKS_LOCK = asyncio.Lock()
+SUBS_LOCK = asyncio.Lock()
+SESSIONS_LOCK = asyncio.Lock()
 
 
 # ============================================================
-# Secret
+# SECRET
 # ============================================================
 
 def load_or_create_secret():
@@ -171,90 +148,220 @@ def load_or_create_secret():
 
         if SECRET_FILE.exists():
 
-            value = SECRET_FILE.read_text(
-                encoding="utf-8"
-            ).strip()
+            current = (
+                SECRET_FILE
+                .read_text(
+                    encoding="utf-8"
+                )
+                .strip()
+            )
 
-            if value:
-                return value
+            if current:
+                return current
 
-        value = secrets.token_urlsafe(
-            48
+        generated = (
+            secrets.token_urlsafe(48)
         )
 
         SECRET_FILE.write_text(
-            value,
-            encoding="utf-8"
+            generated,
+            encoding="utf-8",
         )
 
-        return value
+        return generated
 
     except Exception as exc:
 
         logger.warning(
             "Could not persist secret: %s",
-            exc
+            exc,
         )
 
-        return secrets.token_urlsafe(
-            48
-        )
+        return secrets.token_urlsafe(48)
+
+
+# ============================================================
+# LOGGING
+# ============================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format=(
+        "%(asctime)s "
+        "[%(levelname)s] "
+        "%(message)s"
+    ),
+)
+
+logger = logging.getLogger(
+    APP_NAME
+)
 
 
 SECRET_KEY = load_or_create_secret()
 
 
 # ============================================================
-# Password
+# PASSWORD
 # ============================================================
 
-def hash_password(password: str):
+def hash_password(
+    password: str,
+):
 
-    raw = (
+    payload = (
         str(password)
         + SECRET_KEY
-    ).encode("utf-8")
+    ).encode(
+        "utf-8"
+    )
 
     return hashlib.sha256(
-        raw
+        payload
     ).hexdigest()
 
+
+DEFAULT_ADMIN_PASSWORD = os.environ.get(
+    "ADMIN_PASSWORD",
+    "pxpanel2026",
+)
 
 AUTH = {
     "password_hash":
         hash_password(
-            DEFAULT_PASSWORD
+            DEFAULT_ADMIN_PASSWORD
         )
 }
 
 
 # ============================================================
-# Helpers
+# STATE
 # ============================================================
 
-def now_iso():
-    return datetime.now().isoformat()
+LINKS = {}
+SUBS = {}
+SESSIONS = {}
+
+connections = {}
+
+activity_logs = deque(
+    maxlen=300
+)
+
+error_logs = deque(
+    maxlen=100
+)
+
+hourly_traffic = defaultdict(
+    int
+)
+
+stats = {
+    "total_bytes": 0,
+    "total_requests": 0,
+    "total_errors": 0,
+    "start_time": time.time(),
+}
 
 
-def safe_int(value, default=0):
-
-    try:
-        return int(value)
-    except Exception:
-        return default
+http_client = None
 
 
-def safe_float(value, default=0.0):
+# ============================================================
+# SESSION
+# ============================================================
 
-    try:
-        return float(value)
-    except Exception:
-        return default
+SESSION_COOKIE = (
+    "pixonpanel_session"
+)
 
+SESSION_TTL = (
+    60
+    * 60
+    * 24
+    * 365
+)
+
+
+# ============================================================
+# PROTOCOL
+# ============================================================
+
+PROTOCOLS = (
+    "vless-ws",
+    "xhttp-packet-up",
+    "xhttp-stream-up",
+    "xhttp-stream-one",
+)
+
+DEFAULT_PROTOCOL = "vless-ws"
+
+FINGERPRINTS = (
+    "chrome",
+    "firefox",
+    "safari",
+    "ios",
+    "android",
+    "edge",
+    "360",
+    "qq",
+    "random",
+    "randomized",
+)
+
+DEFAULT_FINGERPRINT = "chrome"
+
+DEFAULT_ALPN_BY_PROTOCOL = {
+    "vless-ws":
+        "http/1.1",
+
+    "xhttp-packet-up":
+        "h2,http/1.1",
+
+    "xhttp-stream-up":
+        "h2,http/1.1",
+
+    "xhttp-stream-one":
+        "h2,http/1.1",
+}
+
+DEFAULT_PORT = 443
+
+MIN_PORT = 1
+MAX_PORT = 65535
+
+DEFAULT_SPEED_LIMIT = 0
+
+
+# ============================================================
+# FRAGMENT
+# ============================================================
+
+FRAGMENT_PROFILES = {
+
+    "off":
+        None,
+
+    "safe":
+        "packets=1-3;length=1-1;interval=10-20",
+
+    "balanced":
+        "packets=1-3,10-20;length=1-1;interval=10-20",
+
+    "aggressive":
+        "packets=1-3,10-20;length=1-2;interval=5-15",
+}
+
+
+# ============================================================
+# HELPERS
+# ============================================================
 
 def generate_uuid():
 
-    raw = secrets.token_hex(16)
+    raw = secrets.token_hex(
+        16
+    )
 
     return (
         f"{raw[:8]}-"
@@ -277,10 +384,58 @@ def generate_auto_name():
         for _ in range(6)
     )
 
-    return f"pxpanel_{suffix}"
+    return (
+        f"pxpanel_"
+        f"{suffix}"
+    )
 
 
-def format_bytes(value):
+def now_iso():
+
+    return datetime.now().isoformat()
+
+
+def now_ir():
+
+    if IRAN_TZ:
+        return datetime.now(
+            IRAN_TZ
+        )
+
+    return datetime.now()
+
+
+def safe_int(
+    value,
+    default=0,
+):
+
+    try:
+        return int(
+            value
+        )
+
+    except Exception:
+        return default
+
+
+def safe_float(
+    value,
+    default=0.0,
+):
+
+    try:
+        return float(
+            value
+        )
+
+    except Exception:
+        return default
+
+
+def fmt_bytes(
+    value,
+):
 
     value = max(
         0,
@@ -288,38 +443,59 @@ def format_bytes(value):
     )
 
     if value < 1024:
-        return f"{value} B"
+
+        return (
+            f"{value} B"
+        )
 
     if value < 1024 ** 2:
-        return f"{value / 1024:.2f} KB"
+
+        return (
+            f"{value / 1024:.2f} KB"
+        )
 
     if value < 1024 ** 3:
-        return f"{value / 1024 ** 2:.2f} MB"
+
+        return (
+            f"{value / 1024**2:.2f} MB"
+        )
 
     if value < 1024 ** 4:
-        return f"{value / 1024 ** 3:.2f} GB"
 
-    return f"{value / 1024 ** 4:.2f} TB"
+        return (
+            f"{value / 1024**3:.2f} GB"
+        )
+
+    return (
+        f"{value / 1024**4:.2f} TB"
+    )
 
 
-def format_uptime(seconds):
+def uptime():
 
-    seconds = max(
-        0,
-        safe_int(seconds)
+    seconds = int(
+        time.time()
+        - stats[
+            "start_time"
+        ]
     )
 
     days = seconds // 86400
 
     hours = (
-        seconds % 86400
+        seconds
+        % 86400
     ) // 3600
 
     minutes = (
-        seconds % 3600
+        seconds
+        % 3600
     ) // 60
 
-    secs = seconds % 60
+    secs = (
+        seconds
+        % 60
+    )
 
     base = (
         f"{hours:02d}:"
@@ -328,19 +504,23 @@ def format_uptime(seconds):
     )
 
     if days:
-        return f"{days}d {base}"
+
+        return (
+            f"{days}d "
+            f"{base}"
+        )
 
     return base
 
 
-def parse_size(
+def parse_size_to_bytes(
     value,
-    unit
+    unit,
 ):
 
-    number = safe_float(value)
+    value = safe_float(value)
 
-    if number <= 0:
+    if value <= 0:
         return 0
 
     unit = str(
@@ -348,40 +528,37 @@ def parse_size(
     ).upper()
 
     if unit == "MB":
+
         return int(
-            number
-            * 1024
-            * 1024
+            value
+            * 1024 ** 2
         )
 
     if unit == "GB":
+
         return int(
-            number
-            * 1024
-            * 1024
-            * 1024
+            value
+            * 1024 ** 3
         )
 
     if unit == "TB":
+
         return int(
-            number
-            * 1024
-            * 1024
-            * 1024
-            * 1024
+            value
+            * 1024 ** 4
         )
 
-    return int(number)
+    return int(value)
 
 
-def parse_speed(
+def parse_speed_to_bytes(
     value,
-    unit
+    unit,
 ):
 
-    number = safe_float(value)
+    value = safe_float(value)
 
-    if number <= 0:
+    if value <= 0:
         return 0
 
     unit = str(
@@ -391,7 +568,7 @@ def parse_speed(
     if unit == "MBIT":
 
         return int(
-            number
+            value
             * 1024
             * 1024
             / 8
@@ -400,7 +577,7 @@ def parse_speed(
     if unit == "GBIT":
 
         return int(
-            number
+            value
             * 1024
             * 1024
             * 1024
@@ -410,7 +587,7 @@ def parse_speed(
     if unit == "MB":
 
         return int(
-            number
+            value
             * 1024
             * 1024
         )
@@ -418,48 +595,82 @@ def parse_speed(
     if unit == "KB":
 
         return int(
-            number
+            value
             * 1024
         )
 
-    return int(number)
+    return int(value)
 
 
-def get_public_host(
-    request: Request
+def is_link_expired(
+    link,
 ):
 
-    forwarded = request.headers.get(
-        "x-forwarded-host"
+    expiry = link.get(
+        "expires_at"
     )
 
-    if forwarded:
+    if not expiry:
+        return False
+
+    try:
+
         return (
-            forwarded
-            .split(",")[0]
-            .strip()
-            .split(":")[0]
+            datetime.now()
+            >= datetime.fromisoformat(
+                expiry
+            )
         )
 
-    host = request.headers.get(
-        "host"
+    except Exception:
+
+        return False
+
+
+def is_link_allowed(
+    link,
+):
+
+    if not link:
+        return False
+
+    if not link.get(
+        "active",
+        True
+    ):
+        return False
+
+    if is_link_expired(
+        link
+    ):
+        return False
+
+    limit = safe_int(
+        link.get(
+            "limit_bytes",
+            0,
+        )
     )
 
-    if host:
-        return host.split(":")[0]
-
-    railway = os.environ.get(
-        "RAILWAY_PUBLIC_DOMAIN"
+    used = safe_int(
+        link.get(
+            "used_bytes",
+            0,
+        )
     )
 
-    if railway:
-        return railway
+    if (
+        limit > 0
+        and
+        used >= limit
+    ):
+        return False
 
-    return "localhost"
+    return True
 
 
 def client_ip(
-    request: Request
+    request: Request,
 ):
 
     forwarded = request.headers.get(
@@ -467,6 +678,7 @@ def client_ip(
     )
 
     if forwarded:
+
         return (
             forwarded
             .split(",")[0]
@@ -478,7 +690,7 @@ def client_ip(
     )
 
     if real:
-        return real
+        return real.strip()
 
     if request.client:
         return request.client.host
@@ -486,66 +698,175 @@ def client_ip(
     return "unknown"
 
 
-def escape_html(
-    value
+def get_host(
+    request=None,
 ):
 
-    return (
-        str(value or "")
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&#039;")
+    if request:
+
+        forwarded = request.headers.get(
+            "x-forwarded-host"
+        )
+
+        if forwarded:
+
+            return (
+                forwarded
+                .split(",")[0]
+                .strip()
+                .split(":")[0]
+            )
+
+        host = request.headers.get(
+            "host"
+        )
+
+        if host:
+
+            return host.split(
+                ":"
+            )[0]
+
+    railway = os.environ.get(
+        "RAILWAY_PUBLIC_DOMAIN"
+    )
+
+    if railway:
+        return railway
+
+    return "localhost"
+
+
+# ============================================================
+# ACTIVITY
+# ============================================================
+
+def log_activity(
+    kind,
+    message,
+    level="info",
+):
+
+    activity_logs.append(
+        {
+            "kind":
+                kind,
+
+            "message":
+                message,
+
+            "level":
+                level,
+
+            "time":
+                now_iso(),
+        }
     )
 
 
 # ============================================================
-# Activity
+# PERSISTENCE
 # ============================================================
 
-async def add_activity(
-    message,
-    level="info",
-    kind="system"
-):
+async def load_state():
 
-    async with ACTIVITY_LOCK:
+    try:
 
-        ACTIVITY_LOG.append({
-            "time": now_iso(),
-            "message": message,
-            "level": level,
-            "kind": kind,
-        })
+        if not DATA_FILE.exists():
+            return
 
+        async with aiofiles.open(
+            DATA_FILE,
+            "r",
+            encoding="utf-8",
+        ) as file:
 
-# ============================================================
-# Persistence
-# ============================================================
+            raw = await file.read()
+
+        data = json.loads(
+            raw
+        )
+
+        LINKS.update(
+            data.get(
+                "links",
+                {}
+            )
+        )
+
+        SUBS.update(
+            data.get(
+                "subs",
+                {}
+            )
+        )
+
+        stored_password = data.get(
+            "password_hash"
+        )
+
+        if stored_password:
+
+            AUTH[
+                "password_hash"
+            ] = stored_password
+
+        logger.info(
+            "Loaded %d links / %d subs",
+            len(LINKS),
+            len(SUBS),
+        )
+
+    except Exception as exc:
+
+        logger.exception(
+            "load_state failed"
+        )
+
+        error_logs.append(
+            {
+                "time":
+                    now_iso(),
+
+                "error":
+                    str(exc),
+            }
+        )
+
 
 async def save_state():
 
-    async with STATE_LOCK:
-
-        payload = {
-            "links": LINKS,
-            "password_hash":
-                AUTH["password_hash"],
-            "saved_at":
-                now_iso(),
-        }
-
-        temp_file = (
-            DATA_FILE.with_suffix(".tmp")
-        )
+    async with SAVE_LOCK:
 
         try:
 
+            payload = {
+
+                "links":
+                    dict(LINKS),
+
+                "subs":
+                    dict(SUBS),
+
+                "password_hash":
+                    AUTH[
+                        "password_hash"
+                    ],
+
+                "saved_at":
+                    now_iso(),
+            }
+
+            temp = (
+                DATA_FILE.with_suffix(
+                    ".tmp"
+                )
+            )
+
             async with aiofiles.open(
-                temp_file,
+                temp,
                 "w",
-                encoding="utf-8"
+                encoding="utf-8",
             ) as file:
 
                 await file.write(
@@ -556,7 +877,7 @@ async def save_state():
                     )
                 )
 
-            temp_file.replace(
+            temp.replace(
                 DATA_FILE
             )
 
@@ -566,59 +887,9 @@ async def save_state():
                 "save_state failed"
             )
 
-            ERROR_LOG.append({
-                "time": now_iso(),
-                "error": str(exc),
-            })
-
-
-async def load_state():
-
-    if not DATA_FILE.exists():
-        return
-
-    try:
-
-        async with aiofiles.open(
-            DATA_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            raw = await file.read()
-
-        payload = json.loads(
-            raw
-        )
-
-        LINKS.clear()
-
-        LINKS.update(
-            payload.get(
-                "links",
-                {}
-            )
-        )
-
-        stored_password = payload.get(
-            "password_hash"
-        )
-
-        if stored_password:
-
-            AUTH[
-                "password_hash"
-            ] = stored_password
-
-    except Exception as exc:
-
-        logger.exception(
-            "load_state failed"
-        )
-
 
 # ============================================================
-# Sessions
+# SESSIONS
 # ============================================================
 
 async def create_session():
@@ -627,7 +898,7 @@ async def create_session():
         48
     )
 
-    async with SESSION_LOCK:
+    async with SESSIONS_LOCK:
 
         SESSIONS[
             token
@@ -639,23 +910,23 @@ async def create_session():
     return token
 
 
-async def valid_session(
-    token
+async def is_valid_session(
+    token,
 ):
 
     if not token:
         return False
 
-    async with SESSION_LOCK:
+    async with SESSIONS_LOCK:
 
-        expires = SESSIONS.get(
+        expiry = SESSIONS.get(
             token
         )
 
-        if expires is None:
+        if expiry is None:
             return False
 
-        if expires < time.time():
+        if expiry < time.time():
 
             SESSIONS.pop(
                 token,
@@ -668,13 +939,13 @@ async def valid_session(
 
 
 async def destroy_session(
-    token
+    token,
 ):
 
     if not token:
         return
 
-    async with SESSION_LOCK:
+    async with SESSIONS_LOCK:
 
         SESSIONS.pop(
             token,
@@ -683,255 +954,85 @@ async def destroy_session(
 
 
 async def require_auth(
-    request: Request
+    request: Request,
 ):
 
     token = request.cookies.get(
         SESSION_COOKIE
     )
 
-    if not await valid_session(
+    if not await is_valid_session(
         token
     ):
 
         raise HTTPException(
             status_code=401,
-            detail="unauthorized"
+            detail="unauthorized",
         )
 
     return token
 
 
 # ============================================================
-# Link state
-# ============================================================
-
-def is_expired(
-    link
-):
-
-    expires = link.get(
-        "expires_at"
-    )
-
-    if not expires:
-        return False
-
-    try:
-
-        return (
-            datetime.now()
-            >= datetime.fromisoformat(
-                expires
-            )
-        )
-
-    except Exception:
-
-        return False
-
-
-def is_active(
-    link
-):
-
-    if not link.get(
-        "active",
-        True
-    ):
-        return False
-
-    if is_expired(
-        link
-    ):
-        return False
-
-    limit = safe_int(
-        link.get(
-            "limit_bytes",
-            0
-        )
-    )
-
-    used = safe_int(
-        link.get(
-            "used_bytes",
-            0
-        )
-    )
-
-    if (
-        limit > 0
-        and used >= limit
-    ):
-        return False
-
-    return True
-
-
-def connection_count(
-    uuid
-):
-
-    return sum(
-        1
-        for item
-        in ACTIVE_CONNECTIONS.values()
-        if item.get(
-            "uuid"
-        ) == uuid
-    )
-
-
-def current_ips(
-    uuid
-):
-
-    return {
-        item.get("ip")
-        for item
-        in ACTIVE_CONNECTIONS.values()
-        if (
-            item.get("uuid")
-            == uuid
-            and item.get("ip")
-        )
-    }
-
-
-def can_accept_connection(
-    uuid,
-    ip
-):
-
-    link = LINKS.get(
-        uuid
-    )
-
-    if not link:
-        return False
-
-    if not is_active(
-        link
-    ):
-        return False
-
-    limit = safe_int(
-        link.get(
-            "concurrent_limit",
-            0
-        )
-    )
-
-    if (
-        limit > 0
-        and
-        connection_count(
-            uuid
-        ) >= limit
-    ):
-
-        return False
-
-    ip_limit = safe_int(
-        link.get(
-            "ip_limit",
-            0
-        )
-    )
-
-    if ip_limit > 0:
-
-        ips = current_ips(
-            uuid
-        )
-
-        if (
-            ip not in ips
-            and len(ips)
-            >= ip_limit
-        ):
-
-            return False
-
-    return True
-
-
-# ============================================================
 # VLESS
 # ============================================================
 
-def build_vless(
-    uid,
-    link,
-    host
+def generate_vless_link(
+    uuid: str,
+    host: str,
+    remark: str = "PixonPanel",
+    protocol: str = DEFAULT_PROTOCOL,
+    fingerprint: str | None = None,
+    alpn: str | None = None,
+    port: int | None = None,
 ):
 
-    protocol = link.get(
-        "protocol",
-        DEFAULT_PROTOCOL
-    )
-
-    if protocol not in PROTOCOLS:
-
-        protocol = DEFAULT_PROTOCOL
-
-    fingerprint = link.get(
-        "fingerprint",
-        DEFAULT_FINGERPRINT
-    )
-
-    if (
+    fp = (
         fingerprint
-        not in FINGERPRINTS
-    ):
+        or DEFAULT_FINGERPRINT
+    ).strip().lower()
 
-        fingerprint = DEFAULT_FINGERPRINT
+    if fp not in FINGERPRINTS:
 
-    port = safe_int(
-        link.get(
-            "port",
-            DEFAULT_PORT
-        ),
-        DEFAULT_PORT
+        fp = DEFAULT_FINGERPRINT
+
+    port_value = (
+        port
+        or DEFAULT_PORT
     )
 
     if not (
-        1
-        <= port
-        <= 65535
+        MIN_PORT
+        <= port_value
+        <= MAX_PORT
     ):
 
-        port = DEFAULT_PORT
+        port_value = DEFAULT_PORT
 
-    alpn = (
-        link.get(
-            "alpn",
-            ""
-        )
-        or (
-            "http/1.1"
-            if protocol == "vless-ws"
-            else "h2,http/1.1"
+    alpn_value = (
+        (
+            alpn
+            or ""
+        ).strip()
+        or DEFAULT_ALPN_BY_PROTOCOL.get(
+            protocol,
+            "http/1.1",
         )
     )
 
-    params = {
-        "encryption":
-            "none",
-        "security":
-            "tls",
-        "sni":
-            host,
-        "fp":
-            fingerprint,
-        "alpn":
-            alpn,
-    }
+    # --------------------------------------------------------
+    # Keep the working VLESS WS endpoint exactly the same.
+    # --------------------------------------------------------
 
     if protocol == "vless-ws":
 
-        params.update({
+        params = {
+
+            "encryption":
+                "none",
+
+            "security":
+                "tls",
 
             "type":
                 "ws",
@@ -940,17 +1041,32 @@ def build_vless(
                 host,
 
             "path":
-                f"/ws/{uid}",
-        })
+                f"/ws/{uuid}",
+
+            "sni":
+                host,
+
+            "fp":
+                fp,
+
+            "alpn":
+                alpn_value,
+        }
 
     else:
 
         mode = protocol.replace(
             "xhttp-",
-            ""
+            "",
         )
 
-        params.update({
+        params = {
+
+            "encryption":
+                "none",
+
+            "security":
+                "tls",
 
             "type":
                 "xhttp",
@@ -965,171 +1081,1516 @@ def build_vless(
                 (
                     f"/xhttp-siz10/"
                     f"{mode}/"
-                    f"{uid}"
+                    f"{uuid}"
                 ),
-        })
 
-    fragment = link.get(
-        "fragment"
-    )
+            "sni":
+                host,
 
-    if fragment:
+            "fp":
+                fp,
 
-        params[
-            "fragment"
-        ] = fragment
+            "alpn":
+                alpn_value,
+        }
 
     query = "&".join(
         (
             f"{key}="
-            f"{quote(str(value), safe='')}"
+            f"{quote(str(value))}"
         )
 
         for key, value
         in params.items()
-
-        if value is not None
-        and str(value) != ""
-    )
-
-    remark = (
-        link.get(
-            "label",
-            APP_NAME
-        )
-        or APP_NAME
     )
 
     return (
         f"vless://"
-        f"{uid}@"
+        f"{uuid}@"
         f"{host}:"
-        f"{port}?"
+        f"{port_value}?"
         f"{query}#"
         f"{quote(remark)}"
     )
 
 
-def serialize_link(
-    uid,
+def vless_link_for_link(
     link,
-    host
+    uid,
+    host,
 ):
 
-    used = safe_int(
-        link.get(
-            "used_bytes",
-            0
-        )
+    return generate_vless_link(
+        uuid=uid,
+
+        host=host,
+
+        remark=(
+            f"PixonPanel-"
+            f"{link.get('label', '')}"
+        ),
+
+        protocol=link.get(
+            "protocol",
+            DEFAULT_PROTOCOL,
+        ),
+
+        fingerprint=link.get(
+            "fingerprint",
+            DEFAULT_FINGERPRINT,
+        ),
+
+        alpn=link.get(
+            "alpn",
+            "",
+        ),
+
+        port=link.get(
+            "port",
+            DEFAULT_PORT,
+        ),
     )
 
-    limit = safe_int(
-        link.get(
-            "limit_bytes",
-            0
-        )
-    )
 
-    percentage = (
-        0
-        if limit <= 0
-        else min(
-            100,
-            round(
-                (
-                    used
-                    / limit
-                )
-                * 100,
-                1
-            )
-        )
-    )
+# ============================================================
+# CONNECTION HELPERS
+# ============================================================
+
+def unique_ips_for_uuid(
+    uuid,
+):
 
     return {
+        value.get("ip")
 
-        "uuid":
-            uid,
+        for value
+        in connections.values()
 
-        **link,
+        if value.get("uuid")
+        == uuid
 
-        "expired":
-            is_expired(
-                link
-            ),
-
-        "online":
-            is_active(
-                link
-            ),
-
-        "connections":
-            connection_count(
-                uid
-            ),
-
-        "usage_percent":
-            percentage,
-
-        "used_fmt":
-            format_bytes(
-                used
-            ),
-
-        "limit_fmt":
-            (
-                "نامحدود"
-                if limit <= 0
-                else format_bytes(
-                    limit
-                )
-            ),
-
-        "vless_link":
-            build_vless(
-                uid,
-                link,
-                host
-            ),
-
-        "sub_url":
-            (
-                f"https://"
-                f"{host}/sub/"
-                f"{uid}"
-            ),
-
-        "info_url":
-            (
-                f"https://"
-                f"{host}/info/"
-                f"{uid}"
-            ),
+        and value.get("ip")
     }
 
 
+def active_connections_for_uuid(
+    uuid,
+):
+
+    return sum(
+        1
+
+        for value
+        in connections.values()
+
+        if value.get(
+            "uuid"
+        )
+        == uuid
+    )
+
+
+def can_accept_connection(
+    uuid,
+    ip,
+):
+
+    link = LINKS.get(
+        uuid
+    )
+
+    if not link:
+
+        return (
+            False,
+            "not_found"
+        )
+
+    if not is_link_allowed(
+        link
+    ):
+
+        return (
+            False,
+            "inactive"
+        )
+
+    concurrent_limit = safe_int(
+        link.get(
+            "concurrent_limit",
+            0,
+        )
+    )
+
+    if (
+        concurrent_limit > 0
+        and
+        active_connections_for_uuid(
+            uuid
+        )
+        >= concurrent_limit
+    ):
+
+        return (
+            False,
+            "concurrent_limit"
+        )
+
+    ip_limit = safe_int(
+        link.get(
+            "ip_limit",
+            0,
+        )
+    )
+
+    if ip_limit > 0:
+
+        ips = unique_ips_for_uuid(
+            uuid
+        )
+
+        if (
+            ip not in ips
+            and
+            len(ips)
+            >= ip_limit
+        ):
+
+            return (
+                False,
+                "ip_limit"
+            )
+
+    return (
+        True,
+        "ok"
+    )
+
+
 # ============================================================
-# Automatic config
+# DEFAULT
+# ============================================================
+
+async def ensure_default_link():
+
+    if any(
+        item.get(
+            "is_default"
+        )
+        for item
+        in LINKS.values()
+    ):
+        return
+
+    digest = hashlib.sha256(
+        (
+            "pixon-default-"
+            + SECRET_KEY
+        ).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+
+    uid = (
+        f"{digest[:8]}-"
+        f"{digest[8:12]}-"
+        f"{digest[12:16]}-"
+        f"{digest[16:20]}-"
+        f"{digest[20:32]}"
+    )
+
+    LINKS[
+        uid
+    ] = {
+
+        "label":
+            "لینک پیش‌فرض",
+
+        "limit_bytes":
+            0,
+
+        "used_bytes":
+            0,
+
+        "created_at":
+            now_iso(),
+
+        "updated_at":
+            now_iso(),
+
+        "active":
+            True,
+
+        "expires_at":
+            None,
+
+        "note":
+            "Default PixonPanel link",
+
+        "is_default":
+            True,
+
+        "sub_id":
+            None,
+
+        "protocol":
+            DEFAULT_PROTOCOL,
+
+        "fingerprint":
+            DEFAULT_FINGERPRINT,
+
+        "alpn":
+            "http/1.1",
+
+        "port":
+            443,
+
+        "ip_limit":
+            0,
+
+        "concurrent_limit":
+            0,
+
+        "speed_limit_bytes":
+            0,
+
+        "fragment":
+            None,
+
+        "fragment_profile":
+            "off",
+    }
+
+    await save_state()
+
+
+# ============================================================
+# STARTUP
+# ============================================================
+
+@app.on_event(
+    "startup"
+)
+async def startup():
+
+    global http_client
+
+    http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            30.0,
+            connect=10.0,
+        ),
+        follow_redirects=True,
+    )
+
+    await load_state()
+    await ensure_default_link()
+
+    log_activity(
+        "system",
+        (
+            f"{APP_NAME} "
+            f"{APP_VERSION} "
+            "started"
+        ),
+        "ok",
+    )
+
+    logger.info(
+        "%s %s started on %s",
+        APP_NAME,
+        APP_VERSION,
+        PORT,
+    )
+
+
+@app.on_event(
+    "shutdown"
+)
+async def shutdown():
+
+    await save_state()
+
+    if http_client:
+
+        await http_client.aclose()
+
+
+# ============================================================
+# LANDING
+# ============================================================
+
+LANDING_HTML = r"""
+<!DOCTYPE html>
+
+<html lang="fa" dir="rtl">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+/>
+
+<title>
+PixonPanel 12.0.1 Beta
+</title>
+
+<link
+    rel="preconnect"
+    href="https://fonts.googleapis.com"
+/>
+
+<link
+    rel="preconnect"
+    href="https://fonts.gstatic.com"
+    crossorigin
+/>
+
+<link
+    href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet"
+/>
+
+<style>
+
+*{
+    box-sizing:border-box;
+}
+
+body{
+
+    margin:0;
+    min-height:100vh;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    padding:20px;
+
+    color:#fff;
+
+    font-family:
+        "Vazirmatn",
+        sans-serif;
+
+    background:
+        radial-gradient(
+            circle at 15% 10%,
+            rgba(99,102,241,.22),
+            transparent 30%
+        ),
+
+        radial-gradient(
+            circle at 90% 90%,
+            rgba(168,85,247,.15),
+            transparent 30%
+        ),
+
+        #07070a;
+}
+
+.card{
+
+    width:100%;
+    max-width:560px;
+
+    padding:32px;
+
+    border:
+        1px solid
+        rgba(255,255,255,.09);
+
+    border-radius:30px;
+
+    background:
+        rgba(255,255,255,.045);
+
+    backdrop-filter:
+        blur(30px);
+
+    box-shadow:
+        0 40px 100px
+        rgba(0,0,0,.48);
+}
+
+.logo{
+
+    width:52px;
+    height:52px;
+
+    display:flex;
+
+    align-items:center;
+    justify-content:center;
+
+    border-radius:17px;
+
+    font-weight:900;
+
+    background:
+        linear-gradient(
+            135deg,
+            #6366f1,
+            #8b5cf6
+        );
+}
+
+.version{
+
+    display:inline-flex;
+
+    margin-top:17px;
+
+    padding:
+        6px 9px;
+
+    border-radius:999px;
+
+    color:#c4b5fd;
+
+    background:
+        rgba(139,92,246,.08);
+
+    border:
+        1px solid
+        rgba(139,92,246,.15);
+
+    font-size:9px;
+}
+
+.status{
+
+    margin-top:12px;
+
+    color:#86efac;
+
+    font-size:10px;
+}
+
+h1{
+
+    margin:10px 0 0;
+
+    font-size:29px;
+
+    line-height:1.55;
+
+    font-weight:900;
+}
+
+p{
+
+    color:
+        rgba(255,255,255,.53);
+
+    line-height:2;
+
+    font-size:12px;
+}
+
+.command{
+
+    margin-top:20px;
+
+    padding:14px;
+
+    border-radius:14px;
+
+    border:
+        1px solid
+        rgba(255,255,255,.07);
+
+    background:
+        rgba(0,0,0,.18);
+
+    direction:ltr;
+
+    text-align:left;
+
+    font-family:
+        Consolas,
+        monospace;
+
+    color:#c4b5fd;
+}
+
+.actions{
+
+    display:flex;
+
+    gap:8px;
+
+    margin-top:18px;
+}
+
+.button{
+
+    flex:1;
+
+    padding:13px;
+
+    border-radius:13px;
+
+    text-decoration:none;
+
+    text-align:center;
+
+    font-size:11px;
+
+    font-weight:800;
+}
+
+.primary{
+
+    color:#fff;
+
+    background:
+        linear-gradient(
+            135deg,
+            #6366f1,
+            #8b5cf6
+        );
+}
+
+.secondary{
+
+    color:
+        rgba(255,255,255,.75);
+
+    background:
+        rgba(255,255,255,.035);
+
+    border:
+        1px solid
+        rgba(255,255,255,.08);
+}
+
+.footer{
+
+    display:flex;
+
+    justify-content:
+        space-between;
+
+    margin-top:19px;
+
+    padding-top:16px;
+
+    border-top:
+        1px solid
+        rgba(255,255,255,.07);
+
+    color:
+        rgba(255,255,255,.28);
+
+    font-size:9px;
+}
+
+a{
+    color:inherit;
+}
+
+.support{
+    color:#a78bfa;
+    text-decoration:none;
+}
+
+@media(max-width:600px){
+
+    .card{
+        padding:24px;
+        border-radius:23px;
+    }
+
+    h1{
+        font-size:24px;
+    }
+
+    .actions{
+        flex-direction:column;
+    }
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="card">
+
+<div class="logo">
+P
+</div>
+
+<div class="version">
+12.0.1 Beta
+</div>
+
+<div class="status">
+● سیستم آنلاین و فعال است
+</div>
+
+<h1>
+برای ورود به پنل
+<br>
+ابتدا وارد شوید
+</h1>
+
+<p>
+به PixonPanel خوش آمدید.
+برای مدیریت کانفیگ‌ها و سرویس‌ها وارد پنل شوید.
+</p>
+
+<div class="command">
+/login
+</div>
+
+<div class="actions">
+
+<a
+    href="/login"
+    class="button primary"
+>
+ورود به پنل
+</a>
+
+<a
+    href="https://t.me/Pixonal"
+    target="_blank"
+    rel="noopener"
+    class="button secondary"
+>
+پشتیبانی
+</a>
+
+</div>
+
+<div class="footer">
+
+<span>
+PixonPanel · 12.0.1 Beta
+</span>
+
+<a
+    href="https://t.me/Pixonal"
+    target="_blank"
+    class="support"
+>
+@Pixonal
+</a>
+
+</div>
+
+</div>
+
+</body>
+
+</html>
+"""
+
+
+@app.get(
+    "/",
+    response_class=HTMLResponse
+)
+async def root(
+    request: Request
+):
+
+    if await is_valid_session(
+        request.cookies.get(
+            SESSION_COOKIE
+        )
+    ):
+
+        return RedirectResponse(
+            "/dashboard"
+        )
+
+    return HTMLResponse(
+        LANDING_HTML
+    )
+
+
+# ============================================================
+# LOGIN
+# ============================================================
+
+LOGIN_HTML = r"""
+<!DOCTYPE html>
+
+<html lang="fa" dir="rtl">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+/>
+
+<title>
+Login · PixonPanel
+</title>
+
+<link
+    rel="preconnect"
+    href="https://fonts.googleapis.com"
+/>
+
+<link
+    rel="preconnect"
+    href="https://fonts.gstatic.com"
+    crossorigin
+/>
+
+<link
+    href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet"
+/>
+
+<style>
+
+*{
+    box-sizing:border-box;
+}
+
+body{
+
+    margin:0;
+
+    min-height:100vh;
+
+    display:flex;
+
+    align-items:center;
+    justify-content:center;
+
+    padding:20px;
+
+    color:#fff;
+
+    font-family:
+        "Vazirmatn",
+        sans-serif;
+
+    background:
+        radial-gradient(
+            circle at top right,
+            rgba(99,102,241,.20),
+            transparent 32%
+        ),
+        #07070a;
+}
+
+.card{
+
+    width:100%;
+    max-width:420px;
+
+    padding:30px;
+
+    border-radius:26px;
+
+    border:
+        1px solid
+        rgba(255,255,255,.08);
+
+    background:
+        rgba(255,255,255,.045);
+
+    backdrop-filter:
+        blur(28px);
+
+    box-shadow:
+        0 35px 90px
+        rgba(0,0,0,.45);
+}
+
+.logo{
+
+    width:49px;
+    height:49px;
+
+    display:flex;
+
+    align-items:center;
+    justify-content:center;
+
+    margin-bottom:20px;
+
+    border-radius:16px;
+
+    background:
+        linear-gradient(
+            135deg,
+            #6366f1,
+            #8b5cf6
+        );
+
+    font-weight:900;
+}
+
+.version{
+
+    color:#a78bfa;
+
+    font-size:9px;
+
+    margin-bottom:7px;
+}
+
+h1{
+
+    margin:0;
+
+    font-size:24px;
+}
+
+.desc{
+
+    margin-top:7px;
+
+    color:
+        rgba(255,255,255,.43);
+
+    line-height:1.9;
+
+    font-size:11px;
+}
+
+form{
+
+    margin-top:22px;
+}
+
+label{
+
+    display:block;
+
+    margin-bottom:7px;
+
+    color:
+        rgba(255,255,255,.50);
+
+    font-size:10px;
+}
+
+.input{
+
+    width:100%;
+
+    padding:13px;
+
+    border-radius:13px;
+
+    border:
+        1px solid
+        rgba(255,255,255,.08);
+
+    outline:none;
+
+    color:#fff;
+
+    background:
+        rgba(0,0,0,.18);
+
+    direction:ltr;
+
+    font-family:
+        "Vazirmatn",
+        sans-serif;
+}
+
+.input:focus{
+
+    border-color:
+        rgba(129,140,248,.55);
+}
+
+button{
+
+    width:100%;
+
+    margin-top:12px;
+
+    padding:13px;
+
+    border:0;
+
+    border-radius:13px;
+
+    color:#fff;
+
+    background:
+        linear-gradient(
+            135deg,
+            #6366f1,
+            #8b5cf6
+        );
+
+    font-family:
+        "Vazirmatn",
+        sans-serif;
+
+    font-weight:800;
+
+    cursor:pointer;
+}
+
+.error{
+
+    margin-top:12px;
+
+    padding:10px;
+
+    border-radius:11px;
+
+    color:#fca5a5;
+
+    background:
+        rgba(239,68,68,.07);
+
+    border:
+        1px solid
+        rgba(239,68,68,.13);
+
+    font-size:10px;
+}
+
+.support{
+
+    display:block;
+
+    margin-top:17px;
+
+    text-align:center;
+
+    color:#a78bfa;
+
+    text-decoration:none;
+
+    font-size:10px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="card">
+
+<div class="logo">
+P
+</div>
+
+<div class="version">
+PixonPanel · 12.0.1 Beta
+</div>
+
+<h1>
+ورود به پنل
+</h1>
+
+<div class="desc">
+رمز عبور مدیریت را وارد کنید.
+</div>
+
+<form
+    method="post"
+    action="/login"
+>
+
+<label>
+رمز عبور
+</label>
+
+<input
+    class="input"
+    type="password"
+    name="password"
+    autocomplete="current-password"
+    autofocus
+    placeholder="رمز عبور"
+/>
+
+<button type="submit">
+ورود
+</button>
+
+</form>
+
+<a
+    class="support"
+    href="https://t.me/Pixonal"
+    target="_blank"
+>
+پشتیبانی @Pixonal
+</a>
+
+</div>
+
+</body>
+
+</html>
+"""
+
+
+@app.get(
+    "/login",
+    response_class=HTMLResponse
+)
+async def login_page(
+    request: Request
+):
+
+    if await is_valid_session(
+        request.cookies.get(
+            SESSION_COOKIE
+        )
+    ):
+
+        return RedirectResponse(
+            "/dashboard"
+        )
+
+    return HTMLResponse(
+        LOGIN_HTML
+    )
+
+
+@app.post(
+    "/login"
+)
+async def login(
+    request: Request
+):
+
+    try:
+
+        raw = await request.body()
+
+        form = parse_qs(
+            raw.decode(
+                "utf-8",
+                errors="ignore"
+            )
+        )
+
+        password = (
+            form
+            .get(
+                "password",
+                [""]
+            )[0]
+            .strip()
+        )
+
+    except Exception:
+
+        return HTMLResponse(
+            LOGIN_HTML.replace(
+                "</form>",
+                """
+                <div class="error">
+                    خطا در پردازش فرم.
+                </div>
+                </form>
+                """
+            ),
+            status_code=400
+        )
+
+    if (
+        hash_password(password)
+        != AUTH[
+            "password_hash"
+        ]
+    ):
+
+        log_activity(
+            "auth",
+            (
+                "تلاش ناموفق "
+                "برای ورود"
+            ),
+            "warn"
+        )
+
+        return HTMLResponse(
+            LOGIN_HTML.replace(
+                "</form>",
+                """
+                <div class="error">
+                    رمز عبور اشتباه است.
+                </div>
+                </form>
+                """
+            ),
+            status_code=401
+        )
+
+    token = await create_session()
+
+    response = RedirectResponse(
+        "/dashboard",
+        status_code=303
+    )
+
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        max_age=SESSION_TTL,
+        httponly=True,
+        samesite="lax",
+        secure=True,
+        path="/"
+    )
+
+    log_activity(
+        "auth",
+        "ورود موفق به پنل",
+        "ok"
+    )
+
+    return response
+
+
+@app.get(
+    "/logout"
+)
+async def logout(
+    request: Request
+):
+
+    await destroy_session(
+        request.cookies.get(
+            SESSION_COOKIE
+        )
+    )
+
+    response = RedirectResponse(
+        "/login"
+    )
+
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/"
+    )
+
+    return response
+
+
+# ============================================================
+# CREATE MANUAL
 # ============================================================
 
 @app.post(
-    "/api/links/auto"
+    "/api/links"
 )
-async def create_auto(
+async def create_link_api(
     request: Request,
     _=Depends(require_auth)
 ):
 
-    global TOTAL_REQUESTS
+    body = await request.json()
 
-    TOTAL_REQUESTS += 1
+    label = str(
+        body.get(
+            "label",
+            ""
+        )
+    ).strip()
+
+    if not label:
+
+        raise HTTPException(
+            status_code=400,
+            detail=
+                "نام کانفیگ الزامی است."
+        )
+
+    volume = safe_float(
+        body.get(
+            "volume_value",
+            0
+        )
+    )
+
+    volume_unit = str(
+        body.get(
+            "volume_unit",
+            "GB"
+        )
+    )
+
+    limit_bytes = (
+        parse_size_to_bytes(
+            volume,
+            volume_unit
+        )
+    )
+
+    days = max(
+        0,
+        safe_int(
+            body.get(
+                "duration_days",
+                0
+            )
+        )
+    )
+
+    expires_at = (
+        (
+            datetime.now()
+            + timedelta(
+                days=days
+            )
+        ).isoformat()
+        if days > 0
+        else None
+    )
+
+    concurrent = max(
+        0,
+        safe_int(
+            body.get(
+                "concurrent_limit",
+                0
+            )
+        )
+    )
+
+    ip_limit = max(
+        0,
+        safe_int(
+            body.get(
+                "ip_limit",
+                0
+            )
+        )
+    )
+
+    speed = parse_speed_to_bytes(
+        body.get(
+            "speed_limit_value",
+            0
+        ),
+        body.get(
+            "speed_limit_unit",
+            "MBIT"
+        )
+    )
+
+    protocol = str(
+        body.get(
+            "protocol",
+            DEFAULT_PROTOCOL
+        )
+    )
+
+    if protocol not in PROTOCOLS:
+
+        protocol = DEFAULT_PROTOCOL
+
+    fingerprint = str(
+        body.get(
+            "fingerprint",
+            DEFAULT_FINGERPRINT
+        )
+    ).lower()
+
+    if fingerprint not in FINGERPRINTS:
+
+        fingerprint = DEFAULT_FINGERPRINT
+
+    fragment_profile = str(
+        body.get(
+            "fragment",
+            "off"
+        )
+    )
+
+    if fragment_profile not in FRAGMENT_PROFILES:
+
+        fragment_profile = "off"
+
+    fragment = FRAGMENT_PROFILES[
+        fragment_profile
+    ]
+
+    port = safe_int(
+        body.get(
+            "port",
+            DEFAULT_PORT
+        ),
+        DEFAULT_PORT
+    )
+
+    if not (
+        MIN_PORT
+        <= port
+        <= MAX_PORT
+    ):
+
+        port = DEFAULT_PORT
 
     uid = generate_uuid()
 
     link = {
 
         "label":
+            label[:80],
+
+        "limit_bytes":
+            limit_bytes,
+
+        "used_bytes":
+            0,
+
+        "duration_days":
+            days,
+
+        "expires_at":
+            expires_at,
+
+        "active":
+            True,
+
+        "protocol":
+            protocol,
+
+        "fingerprint":
+            fingerprint,
+
+        "fragment":
+            fragment,
+
+        "fragment_profile":
+            fragment_profile,
+
+        "alpn":
+            str(
+                body.get(
+                    "alpn",
+                    ""
+                )
+            )[:100],
+
+        "port":
+            port,
+
+        "ip_limit":
+            ip_limit,
+
+        "concurrent_limit":
+            concurrent,
+
+        "speed_limit_bytes":
+            speed,
+
+        "note":
+            str(
+                body.get(
+                    "note",
+                    ""
+                )
+            )[:300],
+
+        "created_at":
+            now_iso(),
+
+        "updated_at":
+            now_iso(),
+
+        "is_default":
+            False,
+
+        "sub_id":
+            None,
+    }
+
+    async with LINKS_LOCK:
+
+        LINKS[
+            uid
+        ] = link
+
+    await save_state()
+
+    log_activity(
+        "link",
+        (
+            f"کانفیگ "
+            f"«{label}» ساخته شد"
+        ),
+        "ok"
+    )
+
+    host = get_host(
+        request
+    )
+
+    return {
+
+        "ok":
+            True,
+
+        "uuid":
+            uid,
+
+        **link,
+
+        "vless_link":
+            vless_link_for_link(
+                link,
+                uid,
+                host
+            ),
+
+        "sub_url":
+            f"https://{host}/sub/{uid}",
+
+        "info_url":
+            f"https://{host}/info/{uid}",
+    }
+
+
+# ============================================================
+# AUTO CREATE
+# ============================================================
+
+@app.post(
+    "/api/links/auto"
+)
+async def auto_create(
+    request: Request,
+    _=Depends(require_auth)
+):
+
+    uid = generate_uuid()
+
+    link = {
+
+        # ----------------------------------------------------
+        # AUTO NAME
+        # ----------------------------------------------------
+
+        "label":
             generate_auto_name(),
+
+        # ----------------------------------------------------
+        # EVERYTHING UNLIMITED
+        # ----------------------------------------------------
 
         "limit_bytes":
             0,
@@ -1142,6 +2603,19 @@ async def create_auto(
 
         "expires_at":
             None,
+
+        "concurrent_limit":
+            0,
+
+        "ip_limit":
+            0,
+
+        "speed_limit_bytes":
+            0,
+
+        # ----------------------------------------------------
+        # Stable configuration
+        # ----------------------------------------------------
 
         "active":
             True,
@@ -1164,15 +2638,6 @@ async def create_auto(
         "port":
             443,
 
-        "concurrent_limit":
-            0,
-
-        "ip_limit":
-            0,
-
-        "speed_limit_bytes":
-            0,
-
         "note":
             "Auto generated by PixonPanel",
 
@@ -1184,299 +2649,60 @@ async def create_auto(
 
         "is_default":
             False,
+
+        "sub_id":
+            None,
     }
 
-    LINKS[
-        uid
-    ] = link
+    async with LINKS_LOCK:
+
+        LINKS[
+            uid
+        ] = link
 
     await save_state()
 
-    await add_activity(
+    log_activity(
+        "link",
         (
             f"کانفیگ خودکار "
             f"«{link['label']}» "
             "ساخته شد"
         ),
-        "ok",
-        "link"
+        "ok"
     )
 
-    host = get_public_host(
+    host = get_host(
         request
     )
 
     return {
+
         "ok":
             True,
 
-        **serialize_link(
+        "uuid":
             uid,
-            link,
-            host
-        )
-    }
 
+        **link,
 
-# ============================================================
-# Manual create
-# ============================================================
-
-@app.post(
-    "/api/links/manual"
-)
-async def create_manual(
-    request: Request,
-    _=Depends(require_auth)
-):
-
-    global TOTAL_REQUESTS
-
-    TOTAL_REQUESTS += 1
-
-    data = await request.json()
-
-    label = str(
-        data.get(
-            "label",
-            ""
-        )
-    ).strip()
-
-    if not label:
-
-        raise HTTPException(
-            status_code=400,
-            detail=
-                "نام کانفیگ الزامی است."
-        )
-
-    volume_value = safe_float(
-        data.get(
-            "volume_value",
-            0
-        )
-    )
-
-    volume_unit = str(
-        data.get(
-            "volume_unit",
-            "GB"
-        )
-    )
-
-    days = max(
-        0,
-        safe_int(
-            data.get(
-                "duration_days",
-                0
-            )
-        )
-    )
-
-    concurrent = max(
-        0,
-        safe_int(
-            data.get(
-                "concurrent_limit",
-                0
-            )
-        )
-    )
-
-    ip_limit = max(
-        0,
-        safe_int(
-            data.get(
-                "ip_limit",
-                0
-            )
-        )
-    )
-
-    speed = parse_speed(
-        data.get(
-            "speed_limit_value",
-            0
-        ),
-        data.get(
-            "speed_limit_unit",
-            "MBIT"
-        )
-    )
-
-    protocol = str(
-        data.get(
-            "protocol",
-            DEFAULT_PROTOCOL
-        )
-    )
-
-    if protocol not in PROTOCOLS:
-        protocol = DEFAULT_PROTOCOL
-
-    fingerprint = str(
-        data.get(
-            "fingerprint",
-            DEFAULT_FINGERPRINT
-        )
-    ).lower()
-
-    if fingerprint not in FINGERPRINTS:
-        fingerprint = DEFAULT_FINGERPRINT
-
-    fragment_key = str(
-        data.get(
-            "fragment",
-            "off"
-        )
-    )
-
-    if fragment_key not in FRAGMENTS:
-        fragment_key = "off"
-
-    try:
-        port = int(
-            data.get(
-                "port",
-                DEFAULT_PORT
-            )
-        )
-    except Exception:
-        port = DEFAULT_PORT
-
-    if not (
-        1
-        <= port
-        <= 65535
-    ):
-        port = DEFAULT_PORT
-
-    if days > 0:
-
-        expires_at = (
-            datetime.now()
-            + timedelta(
-                days=days
-            )
-        ).isoformat()
-
-    else:
-
-        expires_at = None
-
-    uid = generate_uuid()
-
-    link = {
-
-        "label":
-            label[:80],
-
-        "limit_bytes":
-            parse_size(
-                volume_value,
-                volume_unit
+        "vless_link":
+            vless_link_for_link(
+                link,
+                uid,
+                host
             ),
 
-        "used_bytes":
-            0,
+        "sub_url":
+            f"https://{host}/sub/{uid}",
 
-        "duration_days":
-            days,
-
-        "expires_at":
-            expires_at,
-
-        "active":
-            True,
-
-        "protocol":
-            protocol,
-
-        "fingerprint":
-            fingerprint,
-
-        "fragment":
-            FRAGMENTS[
-                fragment_key
-            ],
-
-        "fragment_profile":
-            fragment_key,
-
-        "alpn":
-            str(
-                data.get(
-                    "alpn",
-                    ""
-                )
-            )[:100],
-
-        "port":
-            port,
-
-        "concurrent_limit":
-            concurrent,
-
-        "ip_limit":
-            ip_limit,
-
-        "speed_limit_bytes":
-            speed,
-
-        "note":
-            str(
-                data.get(
-                    "note",
-                    ""
-                )
-            )[:300],
-
-        "created_at":
-            now_iso(),
-
-        "updated_at":
-            now_iso(),
-
-        "is_default":
-            False,
-    }
-
-    LINKS[
-        uid
-    ] = link
-
-    await save_state()
-
-    await add_activity(
-        (
-            f"کانفیگ دستی "
-            f"«{label}» "
-            "ساخته شد"
-        ),
-        "ok",
-        "link"
-    )
-
-    host = get_public_host(
-        request
-    )
-
-    return {
-        "ok":
-            True,
-
-        **serialize_link(
-            uid,
-            link,
-            host
-        )
+        "info_url":
+            f"https://{host}/info/{uid}",
     }
 
 
 # ============================================================
-# List
+# LIST
 # ============================================================
 
 @app.get(
@@ -1487,25 +2713,106 @@ async def list_links(
     _=Depends(require_auth)
 ):
 
-    host = get_public_host(
+    host = get_host(
         request
     )
 
-    result = [
+    result = []
 
-        serialize_link(
-            uid,
-            link,
-            host
+    async with LINKS_LOCK:
+
+        snapshot = dict(
+            LINKS
         )
 
-        for uid, link
-        in LINKS.items()
-    ]
+    for uid, link in snapshot.items():
+
+        result.append({
+
+            "uuid":
+                uid,
+
+            **link,
+
+            "expired":
+                is_link_expired(
+                    link
+                ),
+
+            "active":
+                bool(
+                    link.get(
+                        "active",
+                        True
+                    )
+                ),
+
+            "online":
+                is_link_allowed(
+                    link
+                ),
+
+            "connections":
+                active_connections_for_uuid(
+                    uid
+                ),
+
+            "connected_ips":
+                len(
+                    unique_ips_for_uuid(
+                        uid
+                    )
+                ),
+
+            "used_fmt":
+                fmt_bytes(
+                    link.get(
+                        "used_bytes",
+                        0
+                    )
+                ),
+
+            "limit_fmt":
+                (
+                    "نامحدود"
+
+                    if not link.get(
+                        "limit_bytes",
+                        0
+                    )
+
+                    else fmt_bytes(
+                        link[
+                            "limit_bytes"
+                        ]
+                    )
+                ),
+
+            "vless_link":
+                vless_link_for_link(
+                    link,
+                    uid,
+                    host
+                ),
+
+            "sub_url":
+                (
+                    f"https://"
+                    f"{host}/sub/"
+                    f"{uid}"
+                ),
+
+            "info_url":
+                (
+                    f"https://"
+                    f"{host}/info/"
+                    f"{uid}"
+                ),
+        })
 
     result.sort(
-        key=lambda item:
-            item.get(
+        key=lambda x:
+            x.get(
                 "created_at",
                 ""
             ),
@@ -1519,7 +2826,7 @@ async def list_links(
 
 
 # ============================================================
-# Update
+# EDIT
 # ============================================================
 
 @app.patch(
@@ -1531,255 +2838,276 @@ async def update_link(
     _=Depends(require_auth)
 ):
 
-    if uid not in LINKS:
+    body = await request.json()
 
-        raise HTTPException(
-            status_code=404,
-            detail=
-                "کانفیگ پیدا نشد."
+    async with LINKS_LOCK:
+
+        link = LINKS.get(
+            uid
         )
 
-    data = await request.json()
+        if not link:
 
-    link = LINKS[
-        uid
-    ]
-
-    if "label" in data:
-
-        label = str(
-            data.get(
-                "label",
-                ""
+            raise HTTPException(
+                status_code=404,
+                detail=
+                    "کانفیگ پیدا نشد."
             )
-        ).strip()
 
-        if label:
+        if "label" in body:
+
+            value = str(
+                body.get(
+                    "label",
+                    ""
+                )
+            ).strip()
+
+            if value:
+
+                link[
+                    "label"
+                ] = value[:80]
+
+        if "active" in body:
+
             link[
-                "label"
-            ] = label[:80]
-
-    if "active" in data:
-
-        link[
-            "active"
-        ] = bool(
-            data[
                 "active"
-            ]
-        )
-
-    if "protocol" in data:
-
-        protocol = str(
-            data.get(
-                "protocol"
+            ] = bool(
+                body[
+                    "active"
+                ]
             )
-        )
 
-        if protocol in PROTOCOLS:
+        if "protocol" in body:
 
-            link[
-                "protocol"
-            ] = protocol
-
-    if "fingerprint" in data:
-
-        fingerprint = str(
-            data.get(
-                "fingerprint"
-            )
-        ).lower()
-
-        if fingerprint in FINGERPRINTS:
-
-            link[
-                "fingerprint"
-            ] = fingerprint
-
-    if "fragment" in data:
-
-        key = str(
-            data.get(
-                "fragment"
-            )
-        )
-
-        if key in FRAGMENTS:
-
-            link[
-                "fragment_profile"
-            ] = key
-
-            link[
-                "fragment"
-            ] = FRAGMENTS[
-                key
-            ]
-
-    if "volume_value" in data:
-
-        link[
-            "limit_bytes"
-        ] = parse_size(
-            data.get(
-                "volume_value",
-                0
-            ),
-            data.get(
-                "volume_unit",
-                "GB"
-            )
-        )
-
-    if "duration_days" in data:
-
-        days = max(
-            0,
-            safe_int(
-                data.get(
-                    "duration_days",
-                    0
+            protocol = str(
+                body.get(
+                    "protocol"
                 )
             )
-        )
 
-        link[
-            "duration_days"
-        ] = days
+            if protocol in PROTOCOLS:
 
-        if days:
+                link[
+                    "protocol"
+                ] = protocol
+
+        if "fingerprint" in body:
+
+            fp = str(
+                body.get(
+                    "fingerprint"
+                )
+            ).lower()
+
+            if fp in FINGERPRINTS:
+
+                link[
+                    "fingerprint"
+                ] = fp
+
+        if "fragment" in body:
+
+            profile = str(
+                body.get(
+                    "fragment",
+                    "off"
+                )
+            )
+
+            if profile in FRAGMENT_PROFILES:
+
+                link[
+                    "fragment_profile"
+                ] = profile
+
+                link[
+                    "fragment"
+                ] = FRAGMENT_PROFILES[
+                    profile
+                ]
+
+        if "volume_value" in body:
+
+            link[
+                "limit_bytes"
+            ] = parse_size_to_bytes(
+                body.get(
+                    "volume_value",
+                    0
+                ),
+                body.get(
+                    "volume_unit",
+                    "GB"
+                )
+            )
+
+        if "duration_days" in body:
+
+            days = max(
+                0,
+                safe_int(
+                    body.get(
+                        "duration_days",
+                        0
+                    )
+                )
+            )
+
+            link[
+                "duration_days"
+            ] = days
 
             link[
                 "expires_at"
             ] = (
-                datetime.now()
-                + timedelta(
-                    days=days
-                )
-            ).isoformat()
 
-        else:
+                (
+                    datetime.now()
+                    + timedelta(
+                        days=days
+                    )
+                ).isoformat()
+
+                if days > 0
+
+                else None
+            )
+
+        if "concurrent_limit" in body:
 
             link[
-                "expires_at"
-            ] = None
-
-    if "concurrent_limit" in data:
-
-        link[
-            "concurrent_limit"
-        ] = max(
-            0,
-            safe_int(
-                data.get(
-                    "concurrent_limit",
-                    0
+                "concurrent_limit"
+            ] = max(
+                0,
+                safe_int(
+                    body.get(
+                        "concurrent_limit",
+                        0
+                    )
                 )
             )
-        )
 
-    if "ip_limit" in data:
+        if "ip_limit" in body:
 
-        link[
-            "ip_limit"
-        ] = max(
-            0,
-            safe_int(
-                data.get(
-                    "ip_limit",
-                    0
+            link[
+                "ip_limit"
+            ] = max(
+                0,
+                safe_int(
+                    body.get(
+                        "ip_limit",
+                        0
+                    )
                 )
             )
-        )
 
-    if "speed_limit_value" in data:
+        if "speed_limit_value" in body:
 
-        link[
-            "speed_limit_bytes"
-        ] = parse_speed(
-            data.get(
-                "speed_limit_value",
-                0
-            ),
-            data.get(
-                "speed_limit_unit",
-                "MBIT"
+            link[
+                "speed_limit_bytes"
+            ] = parse_speed_to_bytes(
+                body.get(
+                    "speed_limit_value",
+                    0
+                ),
+                body.get(
+                    "speed_limit_unit",
+                    "MBIT"
+                )
             )
-        )
 
-    if "port" in data:
+        if "port" in body:
 
-        port = safe_int(
-            data.get(
-                "port",
+            port = safe_int(
+                body.get(
+                    "port",
+                    443
+                ),
                 443
-            ),
-            443
-        )
+            )
 
-        if (
-            1
-            <= port
-            <= 65535
-        ):
+            if (
+                MIN_PORT
+                <= port
+                <= MAX_PORT
+            ):
+
+                link[
+                    "port"
+                ] = port
+
+        if "alpn" in body:
 
             link[
-                "port"
-            ] = port
+                "alpn"
+            ] = str(
+                body.get(
+                    "alpn",
+                    ""
+                )
+            )[:100]
 
-    if "alpn" in data:
+        if "note" in body:
+
+            link[
+                "note"
+            ] = str(
+                body.get(
+                    "note",
+                    ""
+                )
+            )[:300]
 
         link[
-            "alpn"
-        ] = str(
-            data.get(
-                "alpn",
-                ""
-            )
-        )[:100]
+            "updated_at"
+        ] = now_iso()
 
-    if "note" in data:
-
-        link[
-            "note"
-        ] = str(
-            data.get(
-                "note",
-                ""
-            )
-        )[:300]
-
-    link[
-        "updated_at"
-    ] = now_iso()
+        snapshot = dict(
+            link
+        )
 
     await save_state()
 
-    await add_activity(
+    log_activity(
+        "link",
         (
             f"کانفیگ "
-            f"«{link['label']}» "
+            f"«{snapshot['label']}» "
             "ویرایش شد"
         ),
-        "info",
-        "link"
+        "info"
+    )
+
+    host = get_host(
+        request
     )
 
     return {
+
         "ok":
             True,
 
-        **serialize_link(
-            uid,
-            link,
-            get_public_host(request)
-        )
+        **snapshot,
+
+        "vless_link":
+            vless_link_for_link(
+                snapshot,
+                uid,
+                host
+            ),
+
+        "sub_url":
+            f"https://{host}/sub/{uid}",
+
+        "info_url":
+            f"https://{host}/info/{uid}",
     }
 
 
 # ============================================================
-# Delete
+# DELETE
 # ============================================================
 
 @app.delete(
@@ -1790,48 +3118,49 @@ async def delete_link(
     _=Depends(require_auth)
 ):
 
-    link = LINKS.get(
-        uid
-    )
+    async with LINKS_LOCK:
 
-    if not link:
-
-        raise HTTPException(
-            status_code=404,
-            detail=
-                "کانفیگ پیدا نشد."
+        link = LINKS.get(
+            uid
         )
 
-    if link.get(
-        "is_default"
-    ):
+        if not link:
 
-        raise HTTPException(
-            status_code=400,
-            detail=
-                "کانفیگ پیش‌فرض حذف نمی‌شود."
+            raise HTTPException(
+                status_code=404,
+                detail=
+                    "کانفیگ پیدا نشد."
+            )
+
+        if link.get(
+            "is_default"
+        ):
+
+            raise HTTPException(
+                status_code=400,
+                detail=
+                    "کانفیگ پیش‌فرض قابل حذف نیست."
+            )
+
+        label = link.get(
+            "label",
+            uid
         )
 
-    name = link.get(
-        "label",
-        uid
-    )
-
-    LINKS.pop(
-        uid,
-        None
-    )
+        LINKS.pop(
+            uid,
+            None
+        )
 
     await save_state()
 
-    await add_activity(
+    log_activity(
+        "link",
         (
             f"کانفیگ "
-            f"«{name}» "
-            "حذف شد"
+            f"«{label}» حذف شد"
         ),
-        "warn",
-        "link"
+        "warn"
     )
 
     return {
@@ -1841,7 +3170,7 @@ async def delete_link(
 
 
 # ============================================================
-# Reset Usage
+# RESET TRAFFIC
 # ============================================================
 
 @app.post(
@@ -1852,36 +3181,38 @@ async def reset_usage(
     _=Depends(require_auth)
 ):
 
-    if uid not in LINKS:
+    async with LINKS_LOCK:
 
-        raise HTTPException(
-            status_code=404,
-            detail=
-                "کانفیگ پیدا نشد."
+        link = LINKS.get(
+            uid
         )
 
-    LINKS[
-        uid
-    ][
-        "used_bytes"
-    ] = 0
+        if not link:
 
-    LINKS[
-        uid
-    ][
-        "updated_at"
-    ] = now_iso()
+            raise HTTPException(
+                status_code=404,
+                detail=
+                    "کانفیگ پیدا نشد."
+            )
+
+        link[
+            "used_bytes"
+        ] = 0
+
+        link[
+            "updated_at"
+        ] = now_iso()
 
     await save_state()
 
-    await add_activity(
+    log_activity(
+        "traffic",
         (
-            f"مصرف کانفیگ "
-            f"«{LINKS[uid]['label']}» "
+            f"مصرف "
+            f"«{link['label']}» "
             "ریست شد"
         ),
-        "info",
-        "traffic"
+        "info"
     )
 
     return {
@@ -1891,20 +3222,135 @@ async def reset_usage(
 
 
 # ============================================================
-# Subscription
+# PASSWORD CHANGE
+# ============================================================
+
+@app.post(
+    "/api/change-password"
+)
+async def change_password(
+    request: Request,
+    token=Depends(require_auth)
+):
+
+    body = await request.json()
+
+    current = str(
+        body.get(
+            "current_password",
+            ""
+        )
+    )
+
+    new_password = str(
+        body.get(
+            "new_password",
+            ""
+        )
+    )
+
+    confirm = str(
+        body.get(
+            "confirm_password",
+            ""
+        )
+    )
+
+    if not current:
+
+        raise HTTPException(
+            status_code=400,
+            detail=
+                "رمز فعلی را وارد کنید."
+        )
+
+    if not new_password:
+
+        raise HTTPException(
+            status_code=400,
+            detail=
+                "رمز جدید را وارد کنید."
+        )
+
+    if new_password != confirm:
+
+        raise HTTPException(
+            status_code=400,
+            detail=
+                "تکرار رمز جدید مطابقت ندارد."
+        )
+
+    if len(new_password) < 8:
+
+        raise HTTPException(
+            status_code=400,
+            detail=
+                "رمز جدید حداقل ۸ کاراکتر باشد."
+        )
+
+    if (
+        hash_password(
+            current
+        )
+        != AUTH[
+            "password_hash"
+        ]
+    ):
+
+        raise HTTPException(
+            status_code=400,
+            detail=
+                "رمز فعلی اشتباه است."
+        )
+
+    AUTH[
+        "password_hash"
+    ] = hash_password(
+        new_password
+    )
+
+    await save_state()
+
+    async with SESSIONS_LOCK:
+
+        SESSIONS.clear()
+
+        SESSIONS[
+            token
+        ] = (
+            time.time()
+            + SESSION_TTL
+        )
+
+    log_activity(
+        "security",
+        "رمز عبور تغییر کرد",
+        "ok"
+    )
+
+    return {
+        "ok":
+            True
+    }
+
+
+# ============================================================
+# SUBSCRIPTION
 # ============================================================
 
 @app.get(
-    "/sub/{uid}"
+    "/sub/{uuid}"
 )
 async def subscription(
-    uid: str,
+    uuid: str,
     request: Request
 ):
 
-    link = LINKS.get(
-        uid
-    )
+    async with LINKS_LOCK:
+
+        link = LINKS.get(
+            uuid
+        )
 
     if not link:
 
@@ -1913,7 +3359,7 @@ async def subscription(
             detail="not found"
         )
 
-    if not is_active(
+    if not is_link_allowed(
         link
     ):
 
@@ -1922,21 +3368,27 @@ async def subscription(
             detail="inactive"
         )
 
-    host = get_public_host(
+    host = get_host(
         request
     )
 
-    vless = build_vless(
-        uid,
-        link,
-        host
+    vless = (
+        vless_link_for_link(
+            link,
+            uuid,
+            host
+        )
     )
 
     encoded = (
         base64.b64encode(
-            vless.encode()
+            vless.encode(
+                "utf-8"
+            )
         )
-        .decode()
+        .decode(
+            "ascii"
+        )
     )
 
     used = safe_int(
@@ -1957,7 +3409,8 @@ async def subscription(
 
         content=encoded,
 
-        media_type="text/plain",
+        media_type=
+            "text/plain",
 
         headers={
 
@@ -1969,11 +3422,11 @@ async def subscription(
                     )
                 ),
 
-            "profile-update-interval":
-                "1",
-
             "support-url":
                 SUPPORT_URL,
+
+            "profile-update-interval":
+                "1",
 
             "subscription-userinfo":
                 (
@@ -1982,17 +3435,14 @@ async def subscription(
                     f"total={total}"
                 ),
 
-            "x-pixonpanel-info":
-                (
-                    f"https://"
-                    f"{host}/info/{uid}"
-                ),
+            "x-pixonpanel-version":
+                APP_VERSION,
         }
     )
 
 
 # ============================================================
-# Info
+# INFO PAGE
 # ============================================================
 
 @app.get(
@@ -2011,33 +3461,19 @@ async def info_page(
 
         return HTMLResponse(
             """
-            <h2
+            <body
                 style="
-                    font-family:Tahoma;
-                    padding:40px;
                     background:#07070a;
                     color:white;
-                    min-height:100vh;
+                    font-family:Tahoma;
+                    padding:40px
                 "
             >
-                کانفیگ پیدا نشد
-            </h2>
+                کانفیگ پیدا نشد.
+            </body>
             """,
             status_code=404
         )
-
-    return HTMLResponse(
-        build_info_html(
-            uid,
-            link
-        )
-    )
-
-
-def build_info_html(
-    uid,
-    link
-):
 
     used = safe_int(
         link.get(
@@ -2053,15 +3489,11 @@ def build_info_html(
         )
     )
 
-    connections = (
-        connection_count(
-            uid
-        )
-    )
-
     percent = (
         0
+
         if limit <= 0
+
         else min(
             100,
             round(
@@ -2073,39 +3505,36 @@ def build_info_html(
         )
     )
 
-    if link.get(
-        "expires_at"
-    ):
-
-        expiry = escape_html(
-            link[
-                "expires_at"
-            ]
+    active_conn = (
+        active_connections_for_uuid(
+            uid
         )
+    )
 
-    else:
+    conn_limit = safe_int(
+        link.get(
+            "concurrent_limit",
+            0
+        )
+    )
 
-        expiry = "بدون انقضا"
-
-    return f"""
+    return HTMLResponse(
+        f"""
 <!DOCTYPE html>
+
 <html lang="fa" dir="rtl">
+
 <head>
 
 <meta charset="UTF-8">
 
 <meta
     name="viewport"
-    content="width=device-width, initial-scale=1"
+    content="width=device-width,initial-scale=1"
 />
 
 <title>
-{escape_html(
-    link.get(
-        "label",
-        APP_NAME
-    )
-)}
+{escape_html(link.get("label"))}
 </title>
 
 <link
@@ -2126,14 +3555,11 @@ def build_info_html(
 
 <style>
 
-* {{
-    box-sizing:border-box;
-}}
+*{{box-sizing:border-box;}}
 
-body {{
+body{{
 
     margin:0;
-
     min-height:100vh;
 
     padding:20px;
@@ -2148,25 +3574,24 @@ body {{
         radial-gradient(
             circle at top right,
             rgba(99,102,241,.18),
-            transparent 32%
+            transparent 30%
         ),
         #07070a;
 }}
 
-.container {{
+.container{{
 
     width:100%;
-
     max-width:760px;
 
     margin:auto;
 }}
 
-.card {{
-
-    border-radius:28px;
+.card{{
 
     padding:25px;
+
+    border-radius:27px;
 
     border:
         1px solid
@@ -2177,23 +3602,19 @@ body {{
 
     backdrop-filter:
         blur(28px);
-
-    box-shadow:
-        0 40px 100px
-        rgba(0,0,0,.42);
 }}
 
-.logo {{
+.logo{{
 
-    width:46px;
-    height:46px;
-
-    border-radius:15px;
+    width:47px;
+    height:47px;
 
     display:flex;
 
     align-items:center;
     justify-content:center;
+
+    border-radius:15px;
 
     background:
         linear-gradient(
@@ -2203,28 +3624,44 @@ body {{
         );
 
     font-weight:900;
-
-    margin-bottom:17px;
 }}
 
-h1 {{
+.badge{{
 
-    margin:0;
+    display:inline-flex;
 
-    font-size:22px;
+    margin-top:12px;
+
+    padding:6px 9px;
+
+    border-radius:999px;
+
+    color:#c4b5fd;
+
+    background:
+        rgba(139,92,246,.08);
+
+    font-size:9px;
 }}
 
-.meta {{
+h1{{
+
+    margin:13px 0 0;
+
+    font-size:23px;
+}}
+
+.meta{{
 
     margin-top:4px;
 
     color:
-        rgba(255,255,255,.38);
+        rgba(255,255,255,.35);
 
-    font-size:10px;
+    font-size:9px;
 }}
 
-.stats {{
+.grid{{
 
     display:grid;
 
@@ -2234,68 +3671,51 @@ h1 {{
             1fr
         );
 
-    gap:10px;
+    gap:9px;
 
-    margin-top:20px;
+    margin-top:18px;
 }}
 
-.item {{
+.item{{
 
-    padding:14px;
+    padding:13px;
 
     border-radius:15px;
 
-    border:
-        1px solid
-        rgba(255,255,255,.07);
-
     background:
         rgba(255,255,255,.03);
+
+    border:
+        1px solid
+        rgba(255,255,255,.06);
 }}
 
-.item-title {{
+.label{{
 
     color:
-        rgba(255,255,255,.35);
+        rgba(255,255,255,.34);
 
-    font-size:9px;
+    font-size:8px;
 }}
 
-.item-value {{
+.value{{
 
-    margin-top:5px;
+    margin-top:4px;
 
-    font-size:12px;
+    font-size:11px;
 
     font-weight:800;
 
     word-break:break-word;
 }}
 
-.progress-wrap {{
+.progress{{
 
     margin-top:18px;
-}}
-
-.progress-head {{
-
-    display:flex;
-
-    justify-content:space-between;
-
-    color:
-        rgba(255,255,255,.40);
-
-    font-size:9px;
-}}
-
-.progress {{
-
-    margin-top:7px;
 
     height:8px;
 
-    border-radius:99px;
+    border-radius:999px;
 
     overflow:hidden;
 
@@ -2303,7 +3723,7 @@ h1 {{
         rgba(255,255,255,.07);
 }}
 
-.fill {{
+.fill{{
 
     width:{percent}%;
 
@@ -2319,45 +3739,46 @@ h1 {{
         );
 }}
 
-.section {{
+.section{{
 
     margin-top:18px;
 
-    padding-top:17px;
+    padding-top:16px;
 
     border-top:
         1px solid
         rgba(255,255,255,.07);
 }}
 
-.title {{
+.title{{
 
-    margin-bottom:9px;
-
-    font-size:12px;
+    font-size:11px;
 
     font-weight:800;
+
+    margin-bottom:8px;
 }}
 
-.linkbox {{
+.link{{
 
-    padding:12px;
+    display:block;
 
-    border-radius:12px;
+    padding:11px;
 
-    direction:ltr;
+    border-radius:11px;
 
-    text-align:left;
-
-    color:
-        #c4b5fd;
+    color:#c4b5fd;
 
     background:
-        rgba(0,0,0,.20);
+        rgba(0,0,0,.18);
 
     border:
         1px solid
         rgba(255,255,255,.07);
+
+    direction:ltr;
+
+    text-align:left;
 
     word-break:break-all;
 
@@ -2365,19 +3786,14 @@ h1 {{
         Consolas,
         monospace;
 
-    font-size:9px;
+    font-size:8px;
+
+    text-decoration:none;
 }}
 
-.notice {{
+.notice{{
 
-    color:
-        rgba(255,255,255,.58);
-
-    line-height:2;
-
-    font-size:10px;
-
-    padding:15px;
+    padding:14px;
 
     border-radius:15px;
 
@@ -2387,9 +3803,16 @@ h1 {{
     border:
         1px solid
         rgba(255,255,255,.06);
+
+    color:
+        rgba(255,255,255,.58);
+
+    line-height:2;
+
+    font-size:9px;
 }}
 
-.apps {{
+.apps{{
 
     display:grid;
 
@@ -2399,21 +3822,21 @@ h1 {{
             1fr
         );
 
-    gap:7px;
+    gap:6px;
 
-    margin-top:10px;
+    margin-top:9px;
 }}
 
-.app {{
+.app{{
+
+    padding:9px;
+
+    border-radius:10px;
 
     color:
         rgba(255,255,255,.72);
 
     text-decoration:none;
-
-    padding:10px;
-
-    border-radius:11px;
 
     background:
         rgba(255,255,255,.035);
@@ -2422,14 +3845,14 @@ h1 {{
         1px solid
         rgba(255,255,255,.06);
 
-    font-size:9px;
+    font-size:8px;
 }}
 
-.support {{
+.support{{
 
     margin-top:18px;
 
-    padding-top:17px;
+    padding-top:16px;
 
     border-top:
         1px solid
@@ -2438,25 +3861,25 @@ h1 {{
     text-align:center;
 
     color:
-        rgba(255,255,255,.38);
+        rgba(255,255,255,.35);
 
-    font-size:10px;
+    font-size:9px;
 }}
 
-.support a {{
+.support a{{
 
     color:#a78bfa;
 
     text-decoration:none;
 }}
 
-@media(max-width:600px) {{
+@media(max-width:600px){{
 
-    .stats {{
+    .grid{{
         grid-template-columns:1fr;
     }}
 
-    .apps {{
+    .apps{{
         grid-template-columns:1fr;
     }}
 
@@ -2476,52 +3899,27 @@ h1 {{
 P
 </div>
 
+<div class="badge">
+PixonPanel · 12.0.1 Beta
+</div>
+
 <h1>
-{escape_html(
-    link.get(
-        "label",
-        APP_NAME
-    )
-)}
+{escape_html(link.get("label"))}
 </h1>
 
 <div class="meta">
-PixonPanel · اطلاعات سرویس
+اطلاعات سرویس و اشتراک
 </div>
 
-<div class="progress-wrap">
-
-<div class="progress-head">
-
-<span>
-مصرف
-</span>
-
-<span>
-{format_bytes(used)}
-/
-{
-    "نامحدود"
-    if limit <= 0
-    else format_bytes(limit)
-}
-</span>
-
-</div>
-
-<div class="progress">
-<div class="fill"></div>
-</div>
-
-</div>
-
-<div class="stats">
+<div class="grid">
 
 <div class="item">
-<div class="item-title">
+
+<div class="label">
 Protocol
 </div>
-<div class="item-value">
+
+<div class="value">
 {escape_html(
     link.get(
         "protocol",
@@ -2529,13 +3927,17 @@ Protocol
     )
 )}
 </div>
+
 </div>
 
+
 <div class="item">
-<div class="item-title">
+
+<div class="label">
 Fingerprint
 </div>
-<div class="item-value">
+
+<div class="value">
 {escape_html(
     link.get(
         "fingerprint",
@@ -2543,13 +3945,17 @@ Fingerprint
     )
 )}
 </div>
+
 </div>
 
+
 <div class="item">
-<div class="item-title">
+
+<div class="label">
 Fragment
 </div>
-<div class="item-value">
+
+<div class="value">
 {escape_html(
     link.get(
         "fragment_profile",
@@ -2557,30 +3963,32 @@ Fragment
     )
 )}
 </div>
+
 </div>
 
+
 <div class="item">
-<div class="item-title">
-اتصال همزمان
+
+<div class="label">
+اتصالات فعال
 </div>
-<div class="item-value">
-{connections}
+
+<div class="value">
+{active_conn}
 /
-{
-    link.get(
-        "concurrent_limit",
-        0
-    )
-    or "∞"
-}
-</div>
+{conn_limit or "∞"}
 </div>
 
+</div>
+
+
 <div class="item">
-<div class="item-title">
+
+<div class="label">
 محدودیت IP
 </div>
-<div class="item-value">
+
+<div class="value">
 {
     link.get(
         "ip_limit",
@@ -2589,30 +3997,73 @@ Fragment
     or "∞"
 }
 </div>
+
 </div>
+
 
 <div class="item">
-<div class="item-title">
-تاریخ انقضا
+
+<div class="label">
+انقضا
 </div>
-<div class="item-value">
-{expiry}
-</div>
+
+<div class="value">
+{
+    escape_html(
+        link.get(
+            "expires_at"
+        )
+        or "بدون انقضا"
+    )
+}
 </div>
 
 </div>
+
+</div>
+
+
+<div class="progress">
+
+<div class="fill"></div>
+
+</div>
+
+
+<div
+    style="
+        margin-top:7px;
+        color:rgba(255,255,255,.36);
+        font-size:8px;
+    "
+>
+مصرف:
+{fmt_bytes(used)}
+/
+{
+    "نامحدود"
+    if limit <= 0
+    else fmt_bytes(limit)
+}
+</div>
+
 
 <div class="section">
 
 <div class="title">
-SUB
+Subscription
 </div>
 
-<div class="linkbox">
-/sub/{uid}
-</div>
+<a
+    class="link"
+    href="/sub/{uid}"
+    target="_blank"
+>
+https://{get_public_host_placeholder()}/sub/{uid}
+</a>
 
 </div>
+
 
 <div class="section">
 
@@ -2649,7 +4100,7 @@ SUB
     href="https://play.google.com/store/apps/details?id=com.happproxy"
     target="_blank"
 >
-Happ
+Happ · Google Play
 </a>
 
 <a
@@ -2657,7 +4108,7 @@ Happ
     href="https://dl.v2rayng.org/releases/latest/v2rayNG_2.2.6_arm64-v8a.apk"
     target="_blank"
 >
-v2rayNG
+v2rayNG · APK
 </a>
 
 <a
@@ -2665,7 +4116,7 @@ v2rayNG
     href="https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box"
     target="_blank"
 >
-V2Box
+V2Box · Google Play
 </a>
 
 </div>
@@ -2741,7 +4192,13 @@ Happ
 <br><br>
 
 ⚠️ اگر از نسخه قدیمی برنامه استفاده می‌کنید،
-قبل از استفاده از کانفیگ‌های جدید، برنامه را آپدیت کنید.
+حتماً قبل از استفاده از کانفیگ‌های جدید،
+برنامه را به آخرین نسخه آپدیت کنید.
+
+<br><br>
+
+🚀 کانفیگ‌های جدید با نسخه‌های جدید برنامه‌ها
+سازگاری و عملکرد بهتری دارند.
 
 <br><br>
 
@@ -2750,6 +4207,7 @@ Happ
 </div>
 
 </div>
+
 
 <div class="support">
 
@@ -2772,24 +4230,37 @@ Happ
 
 </html>
 """
+    )
 
 
 # ============================================================
-# Stats
+# Placeholder helper for INFO
+# ============================================================
+
+def get_public_host_placeholder():
+
+    railway = os.environ.get(
+        "RAILWAY_PUBLIC_DOMAIN"
+    )
+
+    if railway:
+        return railway
+
+    return "YOUR-DOMAIN"
+
+
+# ============================================================
+# STATS
 # ============================================================
 
 @app.get(
-    "/api/stats"
+    "/stats"
 )
-async def stats_api(
+async def get_stats(
     _=Depends(require_auth)
 ):
 
-    global TOTAL_REQUESTS
-
-    TOTAL_REQUESTS += 1
-
-    used = sum(
+    total_used = sum(
         safe_int(
             link.get(
                 "used_bytes",
@@ -2802,7 +4273,10 @@ async def stats_api(
 
     return {
 
-        "links":
+        "version":
+            APP_VERSION,
+
+        "links_count":
             len(
                 LINKS
             ),
@@ -2812,7 +4286,7 @@ async def stats_api(
                 1
                 for link
                 in LINKS.values()
-                if is_active(
+                if is_link_allowed(
                     link
                 )
             ),
@@ -2822,995 +4296,260 @@ async def stats_api(
                 1
                 for link
                 in LINKS.values()
-                if is_expired(
+                if is_link_expired(
                     link
                 )
             ),
 
-        "connections":
+        "active_connections":
             len(
-                ACTIVE_CONNECTIONS
+                connections
             ),
+
+        "total_bytes":
+            stats[
+                "total_bytes"
+            ],
+
+        "total_traffic":
+            fmt_bytes(
+                stats[
+                    "total_bytes"
+                ]
+            ),
+
+        "total_requests":
+            stats[
+                "total_requests"
+            ],
+
+        "total_errors":
+            stats[
+                "total_errors"
+            ],
 
         "usage":
-            used,
+            total_used,
 
         "usage_fmt":
-            format_bytes(
-                used
+            fmt_bytes(
+                total_used
             ),
 
-        "requests":
-            TOTAL_REQUESTS,
-
-        "errors":
-            TOTAL_ERRORS,
+        "uptime":
+            uptime(),
 
         "uptime_seconds":
             int(
                 time.time()
-                - START_TIME
-            ),
-
-        "uptime":
-            format_uptime(
-                time.time()
-                - START_TIME
+                -
+                stats[
+                    "start_time"
+                ]
             ),
 
         "server_time":
             now_iso(),
-
-        "version":
-            APP_VERSION,
     }
 
 
 @app.get(
     "/api/activity"
 )
-async def activity_api(
+async def get_activity(
     _=Depends(require_auth)
 ):
 
-    async with ACTIVITY_LOCK:
-
-        values = list(
-            ACTIVITY_LOG
-        )
-
-    values.reverse()
-
     return {
-        "items":
-            values
+        "logs":
+            list(
+                activity_logs
+            )[-150:]
     }
 
 
 # ============================================================
-# Change password
+# HEALTH
 # ============================================================
-
-@app.post(
-    "/api/change-password"
-)
-async def change_password(
-    request: Request,
-    _=Depends(require_auth)
-):
-
-    data = await request.json()
-
-    current = str(
-        data.get(
-            "current_password",
-            ""
-        )
-    )
-
-    new = str(
-        data.get(
-            "new_password",
-            ""
-        )
-    )
-
-    confirm = str(
-        data.get(
-            "confirm_password",
-            ""
-        )
-    )
-
-    if not current:
-
-        raise HTTPException(
-            status_code=400,
-            detail=
-                "رمز فعلی را وارد کنید."
-        )
-
-    if not new:
-
-        raise HTTPException(
-            status_code=400,
-            detail=
-                "رمز جدید را وارد کنید."
-        )
-
-    if new != confirm:
-
-        raise HTTPException(
-            status_code=400,
-            detail=
-                "تکرار رمز جدید مطابقت ندارد."
-        )
-
-    if len(new) < 8:
-
-        raise HTTPException(
-            status_code=400,
-            detail=
-                "رمز جدید باید حداقل ۸ کاراکتر باشد."
-        )
-
-    if (
-        hash_password(current)
-        != AUTH[
-            "password_hash"
-        ]
-    ):
-
-        raise HTTPException(
-            status_code=400,
-            detail=
-                "رمز فعلی اشتباه است."
-        )
-
-    AUTH[
-        "password_hash"
-    ] = hash_password(
-        new
-    )
-
-    await save_state()
-
-    await add_activity(
-        "رمز عبور مدیریت تغییر کرد",
-        "ok",
-        "security"
-    )
-
-    return {
-        "ok":
-            True
-    }
-
-
-# ============================================================
-# Landing
-# ============================================================
-
-LANDING_HTML = r"""
-<!DOCTYPE html>
-
-<html lang="fa" dir="rtl">
-
-<head>
-
-<meta charset="UTF-8">
-
-<meta
-    name="viewport"
-    content="width=device-width,initial-scale=1"
-/>
-
-<title>
-PixonPanel
-</title>
-
-<link
-    rel="preconnect"
-    href="https://fonts.googleapis.com"
-/>
-
-<link
-    rel="preconnect"
-    href="https://fonts.gstatic.com"
-    crossorigin
-/>
-
-<link
-    href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap"
-    rel="stylesheet"
-/>
-
-<style>
-
-* {
-    box-sizing:border-box;
-}
-
-body {
-
-    margin:0;
-
-    min-height:100vh;
-
-    display:flex;
-
-    align-items:center;
-    justify-content:center;
-
-    padding:20px;
-
-    color:#fff;
-
-    font-family:
-        "Vazirmatn",
-        sans-serif;
-
-    background:
-        radial-gradient(
-            circle at 15% 10%,
-            rgba(99,102,241,.20),
-            transparent 32%
-        ),
-        radial-gradient(
-            circle at 85% 90%,
-            rgba(168,85,247,.14),
-            transparent 32%
-        ),
-        #07070a;
-}
-
-.card {
-
-    width:100%;
-
-    max-width:560px;
-
-    padding:32px;
-
-    border-radius:30px;
-
-    border:
-        1px solid
-        rgba(255,255,255,.09);
-
-    background:
-        rgba(255,255,255,.045);
-
-    backdrop-filter:
-        blur(30px);
-
-    box-shadow:
-        0 40px 100px
-        rgba(0,0,0,.45);
-}
-
-.logo {
-
-    width:50px;
-    height:50px;
-
-    display:flex;
-
-    align-items:center;
-    justify-content:center;
-
-    border-radius:16px;
-
-    margin-bottom:20px;
-
-    background:
-        linear-gradient(
-            135deg,
-            #6366f1,
-            #8b5cf6
-        );
-
-    font-weight:900;
-}
-
-.status {
-
-    display:inline-flex;
-
-    padding:
-        7px 10px;
-
-    border-radius:999px;
-
-    color:#86efac;
-
-    background:
-        rgba(34,197,94,.07);
-
-    border:
-        1px solid
-        rgba(34,197,94,.13);
-
-    font-size:10px;
-
-    margin-bottom:15px;
-}
-
-h1 {
-
-    margin:0;
-
-    font-size:29px;
-
-    line-height:1.5;
-
-    font-weight:900;
-}
-
-p {
-
-    color:
-        rgba(255,255,255,.53);
-
-    line-height:2;
-
-    font-size:13px;
-
-    margin-top:10px;
-}
-
-.command {
-
-    margin-top:20px;
-
-    padding:14px;
-
-    border-radius:15px;
-
-    background:
-        rgba(0,0,0,.18);
-
-    border:
-        1px solid
-        rgba(255,255,255,.07);
-
-    color:#c4b5fd;
-
-    direction:ltr;
-
-    text-align:left;
-
-    font-family:
-        Consolas,
-        monospace;
-}
-
-.buttons {
-
-    display:flex;
-
-    gap:9px;
-
-    margin-top:18px;
-}
-
-.button {
-
-    flex:1;
-
-    padding:13px;
-
-    border-radius:14px;
-
-    text-decoration:none;
-
-    text-align:center;
-
-    font-weight:800;
-
-    font-size:11px;
-}
-
-.primary {
-
-    color:white;
-
-    background:
-        linear-gradient(
-            135deg,
-            #6366f1,
-            #8b5cf6
-        );
-}
-
-.secondary {
-
-    color:
-        rgba(255,255,255,.75);
-
-    border:
-        1px solid
-        rgba(255,255,255,.08);
-
-    background:
-        rgba(255,255,255,.035);
-}
-
-.footer {
-
-    display:flex;
-
-    justify-content:
-        space-between;
-
-    margin-top:18px;
-
-    padding-top:16px;
-
-    border-top:
-        1px solid
-        rgba(255,255,255,.07);
-
-    color:
-        rgba(255,255,255,.28);
-
-    font-size:9px;
-}
-
-.support {
-
-    color:#a78bfa;
-
-    text-decoration:none;
-}
-
-@media(max-width:600px) {
-
-    .card {
-        padding:24px;
-    }
-
-    h1 {
-        font-size:24px;
-    }
-
-    .buttons {
-        flex-direction:column;
-    }
-
-}
-
-</style>
-
-</head>
-
-<body>
-
-<div class="card">
-
-<div class="logo">
-P
-</div>
-
-<div class="status">
-● سیستم آنلاین است
-</div>
-
-<h1>
-برای ورود به پنل
-<br>
-ابتدا وارد شوید
-</h1>
-
-<p>
-این صفحه عمومی PixonPanel است.
-برای دسترسی به مدیریت سرویس، وارد بخش ورود شوید.
-</p>
-
-<div class="command">
-/login
-</div>
-
-<div class="buttons">
-
-<a
-    href="/login"
-    class="button primary"
->
-ورود به پنل
-</a>
-
-<a
-    href="https://t.me/Pixonal"
-    target="_blank"
-    class="button secondary"
->
-پشتیبانی
-</a>
-
-</div>
-
-<div class="footer">
-
-<span>
-PixonPanel
-</span>
-
-<a
-    href="https://t.me/Pixonal"
-    target="_blank"
-    class="support"
->
-@Pixonal
-</a>
-
-</div>
-
-</div>
-
-</body>
-
-</html>
-"""
-
 
 @app.get(
-    "/",
-    response_class=HTMLResponse
+    "/health"
 )
-async def root(
-    request: Request
-):
+async def health():
 
-    if await valid_session(
-        request.cookies.get(
-            SESSION_COOKIE
-        )
-    ):
+    return {
 
-        return RedirectResponse(
-            "/dashboard"
-        )
+        "status":
+            "ok",
 
-    return HTMLResponse(
-        LANDING_HTML
-    )
+        "service":
+            APP_NAME,
 
+        "version":
+            APP_VERSION,
 
-# ============================================================
-# Login
-# ============================================================
+        "uptime":
+            uptime(),
 
-LOGIN_HTML = r"""
-<!DOCTYPE html>
+        "port":
+            PORT,
 
-<html lang="fa" dir="rtl">
-
-<head>
-
-<meta charset="UTF-8">
-
-<meta
-    name="viewport"
-    content="width=device-width,initial-scale=1"
-/>
-
-<title>
-ورود | PixonPanel
-</title>
-
-<link
-    rel="preconnect"
-    href="https://fonts.googleapis.com"
-/>
-
-<link
-    rel="preconnect"
-    href="https://fonts.gstatic.com"
-    crossorigin
-/>
-
-<link
-    href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap"
-    rel="stylesheet"
-/>
-
-<style>
-
-* {
-    box-sizing:border-box;
-}
-
-body {
-
-    margin:0;
-
-    min-height:100vh;
-
-    display:flex;
-
-    align-items:center;
-    justify-content:center;
-
-    padding:20px;
-
-    color:white;
-
-    font-family:
-        "Vazirmatn",
-        sans-serif;
-
-    background:
-        radial-gradient(
-            circle at top right,
-            rgba(99,102,241,.18),
-            transparent 32%
-        ),
-        #07070a;
-}
-
-.card {
-
-    width:100%;
-
-    max-width:420px;
-
-    padding:30px;
-
-    border-radius:26px;
-
-    border:
-        1px solid
-        rgba(255,255,255,.08);
-
-    background:
-        rgba(255,255,255,.045);
-
-    backdrop-filter:
-        blur(28px);
-
-    box-shadow:
-        0 40px 90px
-        rgba(0,0,0,.45);
-}
-
-.logo {
-
-    width:49px;
-    height:49px;
-
-    display:flex;
-
-    align-items:center;
-    justify-content:center;
-
-    border-radius:15px;
-
-    margin-bottom:20px;
-
-    background:
-        linear-gradient(
-            135deg,
-            #6366f1,
-            #8b5cf6
-        );
-
-    font-weight:900;
-}
-
-h1 {
-
-    margin:0;
-
-    font-size:24px;
-}
-
-.desc {
-
-    color:
-        rgba(255,255,255,.44);
-
-    font-size:11px;
-
-    line-height:2;
-
-    margin-top:8px;
-}
-
-form {
-
-    margin-top:20px;
-}
-
-label {
-
-    display:block;
-
-    margin-bottom:7px;
-
-    color:
-        rgba(255,255,255,.50);
-
-    font-size:10px;
-}
-
-input {
-
-    width:100%;
-
-    padding:13px;
-
-    border-radius:13px;
-
-    border:
-        1px solid
-        rgba(255,255,255,.08);
-
-    outline:none;
-
-    color:white;
-
-    background:
-        rgba(0,0,0,.18);
-
-    font-family:
-        "Vazirmatn",
-        sans-serif;
-}
-
-input:focus {
-
-    border-color:
-        rgba(129,140,248,.55);
-}
-
-button {
-
-    width:100%;
-
-    margin-top:12px;
-
-    padding:13px;
-
-    border:0;
-
-    border-radius:13px;
-
-    color:white;
-
-    cursor:pointer;
-
-    font-family:
-        "Vazirmatn",
-        sans-serif;
-
-    font-weight:800;
-
-    background:
-        linear-gradient(
-            135deg,
-            #6366f1,
-            #8b5cf6
-        );
-}
-
-.error {
-
-    margin-top:12px;
-
-    padding:10px;
-
-    border-radius:11px;
-
-    color:#fca5a5;
-
-    background:
-        rgba(239,68,68,.07);
-
-    border:
-        1px solid
-        rgba(239,68,68,.13);
-
-    font-size:10px;
-}
-
-.support {
-
-    display:block;
-
-    text-align:center;
-
-    margin-top:17px;
-
-    color:#a78bfa;
-
-    text-decoration:none;
-
-    font-size:10px;
-}
-
-</style>
-
-</head>
-
-<body>
-
-<div class="card">
-
-<div class="logo">
-P
-</div>
-
-<h1>
-ورود به PixonPanel
-</h1>
-
-<div class="desc">
-برای ورود به داشبورد مدیریت، رمز عبور را وارد کنید.
-</div>
-
-<form
-    action="/login"
-    method="post"
->
-
-<label>
-رمز عبور
-</label>
-
-<input
-    type="password"
-    name="password"
-    autocomplete="current-password"
-    autofocus
-    placeholder="رمز عبور"
-/>
-
-<button>
-ورود به پنل
-</button>
-
-</form>
-
-<a
-    class="support"
-    href="https://t.me/Pixonal"
-    target="_blank"
->
-پشتیبانی @Pixonal
-</a>
-
-</div>
-
-</body>
-
-</html>
-"""
-
-
-@app.get(
-    "/login",
-    response_class=HTMLResponse
-)
-async def login_page(
-    request: Request
-):
-
-    if await valid_session(
-        request.cookies.get(
-            SESSION_COOKIE
-        )
-    ):
-
-        return RedirectResponse(
-            "/dashboard"
-        )
-
-    return HTMLResponse(
-        LOGIN_HTML
-    )
-
-
-@app.post(
-    "/login"
-)
-async def login(
-    request: Request
-):
-
-    raw = await request.body()
-
-    parsed = parse_qs(
-        raw.decode(
-            "utf-8",
-            errors="ignore"
-        )
-    )
-
-    password = (
-        parsed
-        .get(
-            "password",
-            [""]
-        )[0]
-        .strip()
-    )
-
-    if (
-        hash_password(
-            password
-        )
-        != AUTH[
-            "password_hash"
-        ]
-    ):
-
-        return HTMLResponse(
-            LOGIN_HTML.replace(
-                "</form>",
-                """
-                <div class="error">
-                    رمز عبور اشتباه است.
-                </div>
-                </form>
-                """
+        "links":
+            len(
+                LINKS
             ),
-            status_code=401
-        )
-
-    token = await create_session()
-
-    response = RedirectResponse(
-        "/dashboard",
-        status_code=303
-    )
-
-    response.set_cookie(
-        key=SESSION_COOKIE,
-        value=token,
-        max_age=SESSION_TTL,
-        httponly=True,
-        secure=True,
-        samesite="lax",
-        path="/"
-    )
-
-    await add_activity(
-        "ورود موفق به پنل",
-        "ok",
-        "auth"
-    )
-
-    return response
-
-
-@app.get(
-    "/logout"
-)
-async def logout(
-    request: Request
-):
-
-    await destroy_session(
-        request.cookies.get(
-            SESSION_COOKIE
-        )
-    )
-
-    response = RedirectResponse(
-        "/login"
-    )
-
-    response.delete_cookie(
-        SESSION_COOKIE,
-        path="/"
-    )
-
-    return response
+    }
 
 
 # ============================================================
-# Dashboard
+# REAL WORKING RELAY
+# ============================================================
+#
+# IMPORTANT:
+# این بخش نسخه‌ی سالم قبلی را نگه می‌دارد.
+# مسیر /ws/{uuid} همان چیزی است که VLESS قبلی استفاده می‌کرد.
+# ============================================================
+
+try:
+
+    from relay_vless import (
+        RELAY_BUF,
+        parse_vless_header,
+        check_and_use,
+        relay_ws_to_tcp,
+        relay_tcp_to_ws,
+        websocket_tunnel,
+    )
+
+    app.add_api_websocket_route(
+        "/ws/{uuid}",
+        websocket_tunnel,
+    )
+
+    logger.info(
+        "Working VLESS relay loaded."
+    )
+
+except Exception as exc:
+
+    logger.warning(
+        "VLESS relay unavailable: %s",
+        exc,
+    )
+
+
+# ============================================================
+# XHTTP
+# ============================================================
+
+try:
+
+    from xhttp_siz10 import (
+        router as xhttp_router
+    )
+
+    app.include_router(
+        xhttp_router
+    )
+
+    logger.info(
+        "XHTTP module loaded."
+    )
+
+except Exception as exc:
+
+    logger.warning(
+        "XHTTP module unavailable: %s",
+        exc,
+    )
+
+
+# ============================================================
+# TELEGRAM
+# ============================================================
+
+try:
+
+    from telegram_bot import (
+        start_bot as _tg_start_bot,
+        stop_bot as _tg_stop_bot,
+    )
+
+except Exception:
+
+    async def _tg_start_bot():
+        return None
+
+    async def _tg_stop_bot():
+        return None
+
+
+@app.on_event(
+    "startup"
+)
+async def telegram_start():
+
+    try:
+
+        await _tg_start_bot()
+
+    except Exception as exc:
+
+        logger.warning(
+            "Telegram disabled: %s",
+            exc,
+        )
+
+
+# ============================================================
+# ERROR
+# ============================================================
+
+@app.exception_handler(
+    Exception
+)
+async def global_exception(
+    request: Request,
+    exc: Exception
+):
+
+    stats[
+        "total_errors"
+    ] += 1
+
+    error_logs.append(
+        {
+            "time":
+                now_iso(),
+
+            "path":
+                str(
+                    request.url.path
+                ),
+
+            "error":
+                str(exc),
+        }
+    )
+
+    logger.exception(
+        "Unhandled exception"
+    )
+
+    return JSONResponse(
+        {
+            "ok":
+                False,
+
+            "error":
+                "internal server error",
+        },
+        status_code=500
+    )
+
+
+# ============================================================
+# DASHBOARD
 # ============================================================
 
 DASHBOARD_HTML = r"""
@@ -3828,7 +4567,7 @@ DASHBOARD_HTML = r"""
 />
 
 <title>
-PixonPanel Dashboard
+PixonPanel · 12.0.1 Beta
 </title>
 
 <link
@@ -3849,21 +4588,22 @@ PixonPanel Dashboard
 
 <style>
 
-* {
+*{
     box-sizing:border-box;
 }
 
 html,
-body {
+body{
+
     margin:0;
     min-height:100%;
 }
 
-body {
+body{
 
     min-height:100vh;
 
-    color:white;
+    color:#fff;
 
     font-family:
         "Vazirmatn",
@@ -3873,11 +4613,11 @@ body {
         radial-gradient(
             circle at 5% 0%,
             rgba(99,102,241,.13),
-            transparent 27%
+            transparent 25%
         ),
         radial-gradient(
             circle at 100% 100%,
-            rgba(168,85,247,.09),
+            rgba(139,92,246,.09),
             transparent 25%
         ),
         #07070a;
@@ -3886,44 +4626,46 @@ body {
 button,
 input,
 select,
-textarea {
+textarea{
+
     font-family:
         "Vazirmatn",
         sans-serif;
 }
 
-button {
+button{
     cursor:pointer;
 }
 
-.app {
+.app{
 
     width:
         min(
             1250px,
-            calc(100% - 24px)
+            calc(100% - 22px)
         );
 
     margin:auto;
 
     padding:
-        20px 0 40px;
+        19px 0 40px;
 }
 
-.topbar {
+.topbar{
 
     display:flex;
 
     align-items:center;
 
-    justify-content:space-between;
+    justify-content:
+        space-between;
 
     gap:10px;
 
-    margin-bottom:14px;
+    margin-bottom:13px;
 }
 
-.brand {
+.brand{
 
     display:flex;
 
@@ -3932,10 +4674,10 @@ button {
     gap:11px;
 }
 
-.logo {
+.logo{
 
-    width:44px;
-    height:44px;
+    width:45px;
+    height:45px;
 
     display:flex;
 
@@ -3954,36 +4696,37 @@ button {
     font-weight:900;
 }
 
-.brand-name {
+.brand-name{
 
-    font-weight:900;
     font-size:15px;
+    font-weight:900;
 }
 
-.brand-sub {
+.brand-version{
 
     margin-top:3px;
 
     color:
-        rgba(255,255,255,.34);
+        rgba(255,255,255,.35);
 
-    font-size:9px;
+    font-size:8px;
 }
 
-.toolbar {
+.toolbar{
 
     display:flex;
 
-    align-items:center;
-
-    gap:6px;
-
     flex-wrap:wrap;
 
+    align-items:center;
+
     justify-content:flex-end;
+
+    gap:5px;
 }
 
-.toolbar-btn {
+.toolbar button,
+.toolbar a{
 
     border:
         1px solid
@@ -3993,23 +4736,33 @@ button {
         rgba(255,255,255,.03);
 
     color:
-        rgba(255,255,255,.72);
+        rgba(255,255,255,.73);
 
     border-radius:10px;
 
     padding:
-        8px 11px;
+        8px 10px;
 
-    font-size:9px;
+    font-size:8px;
+
+    text-decoration:none;
 }
 
-.toolbar-btn:hover {
+.toolbar .auto{
+
+    border:0;
+
+    color:#fff;
 
     background:
-        rgba(255,255,255,.07);
+        linear-gradient(
+            135deg,
+            #6366f1,
+            #8b5cf6
+        );
 }
 
-.grid {
+.stats{
 
     display:grid;
 
@@ -4019,12 +4772,14 @@ button {
             1fr
         );
 
-    gap:9px;
+    gap:8px;
 }
 
-.stat {
+.stat{
 
-    padding:15px;
+    padding:14px;
+
+    border-radius:17px;
 
     border:
         1px solid
@@ -4032,101 +4787,97 @@ button {
 
     background:
         rgba(255,255,255,.035);
-
-    border-radius:17px;
 }
 
-.stat-label {
+.stat-title{
 
     color:
-        rgba(255,255,255,.35);
+        rgba(255,255,255,.34);
 
-    font-size:9px;
+    font-size:8px;
 }
 
-.stat-value {
+.stat-value{
 
-    margin-top:6px;
+    margin-top:5px;
 
     font-size:21px;
 
     font-weight:900;
 }
 
-.stat-sub {
+.stat-sub{
 
-    margin-top:4px;
+    margin-top:3px;
 
     color:
-        rgba(255,255,255,.23);
+        rgba(255,255,255,.22);
 
-    font-size:8px;
+    font-size:7px;
 }
 
-.panel {
+.panel{
 
-    margin-top:10px;
+    margin-top:9px;
 
     overflow:hidden;
+
+    border-radius:19px;
 
     border:
         1px solid
         rgba(255,255,255,.08);
 
-    border-radius:20px;
-
     background:
         rgba(255,255,255,.035);
-
-    backdrop-filter:
-        blur(18px);
 }
 
-.panel-head {
-
-    padding:
-        15px 16px;
+.panel-head{
 
     display:flex;
 
+    justify-content:
+        space-between;
+
     align-items:center;
 
-    justify-content:space-between;
-
     gap:10px;
+
+    padding:
+        14px 15px;
 
     border-bottom:
         1px solid
         rgba(255,255,255,.06);
 }
 
-.panel-title {
+.panel-title{
 
-    font-size:12px;
+    font-size:11px;
 
     font-weight:800;
 }
 
-.panel-sub {
+.panel-sub{
 
     margin-top:3px;
 
     color:
-        rgba(255,255,255,.27);
+        rgba(255,255,255,.25);
 
-    font-size:8px;
+    font-size:7px;
 }
 
-.primary-btn {
+.primary{
+
+    padding:
+        8px 11px;
 
     border:0;
 
-    padding:
-        9px 12px;
+    border-radius:10px;
 
-    border-radius:11px;
-
-    color:white;
+    color:#fff;
 
     background:
         linear-gradient(
@@ -4135,30 +4886,31 @@ button {
             #8b5cf6
         );
 
-    font-size:9px;
+    font-size:8px;
 
     font-weight:800;
 }
 
-.table-scroll {
+.table-scroll{
 
     overflow-x:auto;
 }
 
-table {
+table{
 
     width:100%;
 
     min-width:1100px;
 
-    border-collapse:collapse;
+    border-collapse:
+        collapse;
 }
 
 th,
-td {
+td{
 
     padding:
-        11px 12px;
+        10px 12px;
 
     text-align:right;
 
@@ -4166,31 +4918,29 @@ td {
         1px solid
         rgba(255,255,255,.045);
 
-    font-size:9px;
+    font-size:8px;
 }
 
-th {
+th{
 
     color:
-        rgba(255,255,255,.27);
+        rgba(255,255,255,.25);
 
     font-weight:500;
 }
 
-.name {
+.name{
 
-    font-size:10px;
+    font-size:9px;
 
     font-weight:800;
 }
 
-.uuid {
+.uuid{
 
     margin-top:3px;
 
     direction:ltr;
-
-    text-align:right;
 
     color:
         rgba(255,255,255,.20);
@@ -4199,10 +4949,10 @@ th {
         Consolas,
         monospace;
 
-    font-size:7px;
+    font-size:6px;
 }
 
-.badge {
+.badge{
 
     display:inline-flex;
 
@@ -4211,10 +4961,10 @@ th {
 
     border-radius:999px;
 
-    font-size:8px;
+    font-size:7px;
 }
 
-.badge.active {
+.good{
 
     color:#86efac;
 
@@ -4222,7 +4972,7 @@ th {
         rgba(34,197,94,.07);
 }
 
-.badge.off {
+.bad{
 
     color:#fca5a5;
 
@@ -4230,26 +4980,26 @@ th {
         rgba(239,68,68,.07);
 }
 
-.usage {
+.usage{
 
-    min-width:120px;
+    min-width:110px;
 }
 
-.usage-bar {
+.usage-bar{
 
-    height:6px;
+    height:5px;
 
-    margin-top:6px;
+    margin-top:5px;
 
     overflow:hidden;
 
-    border-radius:999px;
+    border-radius:99px;
 
     background:
         rgba(255,255,255,.06);
 }
 
-.usage-fill {
+.usage-fill{
 
     width:var(--usage);
 
@@ -4265,56 +5015,90 @@ th {
         );
 }
 
-.actions {
+.actions{
 
     display:flex;
 
     flex-wrap:wrap;
 
-    gap:4px;
+    gap:3px;
 }
 
-.action {
+.action{
 
     padding:
-        6px 8px;
+        5px 6px;
 
     border:
         1px solid
         rgba(255,255,255,.07);
 
-    border-radius:8px;
+    border-radius:7px;
+
+    color:
+        rgba(255,255,255,.76);
 
     background:
         rgba(255,255,255,.03);
 
-    color:
-        rgba(255,255,255,.75);
-
-    font-size:7px;
+    font-size:6px;
 }
 
-.action:hover {
-
-    background:
-        rgba(255,255,255,.07);
-}
-
-.action.danger {
+.action.danger{
 
     color:#fca5a5;
 }
 
-.action.success {
+.action.success{
 
     color:#86efac;
 }
 
-/* ---------------------------------------------------------
-   Modal
---------------------------------------------------------- */
+.logs{
 
-.modal {
+    max-height:240px;
+
+    overflow:auto;
+
+    padding:13px;
+}
+
+.log{
+
+    display:flex;
+
+    gap:8px;
+
+    padding:7px 0;
+
+    border-bottom:
+        1px solid
+        rgba(255,255,255,.04);
+}
+
+.log-time{
+
+    color:
+        rgba(255,255,255,.21);
+
+    white-space:nowrap;
+
+    font-size:6px;
+}
+
+.log-text{
+
+    color:
+        rgba(255,255,255,.53);
+
+    font-size:7px;
+}
+
+/* =========================================================
+   MODAL
+========================================================= */
+
+.modal{
 
     position:fixed;
 
@@ -4325,6 +5109,7 @@ th {
     display:none;
 
     align-items:center;
+
     justify-content:center;
 
     padding:14px;
@@ -4333,18 +5118,19 @@ th {
         rgba(0,0,0,.72);
 
     backdrop-filter:
-        blur(14px);
+        blur(15px);
 }
 
-.modal.show {
+.modal.show{
+
     display:flex;
 }
 
-.modal-card {
+.modal-card{
 
     width:100%;
 
-    max-width:720px;
+    max-width:700px;
 
     max-height:
         calc(100vh - 20px);
@@ -4355,13 +5141,13 @@ th {
 
     border:
         1px solid
-        rgba(255,255,255,.09);
+        rgba(255,255,255,.10);
 
     background:
         linear-gradient(
             145deg,
             rgba(24,24,31,.99),
-            rgba(9,9,12,.99)
+            rgba(8,8,11,.99)
         );
 
     box-shadow:
@@ -4369,49 +5155,50 @@ th {
         rgba(0,0,0,.65);
 }
 
-.modal-head {
-
-    padding:
-        17px 18px;
+.modal-head{
 
     display:flex;
 
-    justify-content:space-between;
+    justify-content:
+        space-between;
+
+    align-items:center;
 
     gap:10px;
 
-    align-items:center;
+    padding:
+        15px 17px;
 
     border-bottom:
         1px solid
         rgba(255,255,255,.06);
 }
 
-.modal-title {
+.modal-title{
 
-    font-size:14px;
+    font-size:12px;
 
     font-weight:900;
 }
 
-.modal-desc {
+.modal-desc{
 
     margin-top:3px;
 
     color:
-        rgba(255,255,255,.30);
+        rgba(255,255,255,.27);
 
-    font-size:8px;
+    font-size:7px;
 }
 
-.close {
+.close{
 
-    width:32px;
-    height:32px;
+    width:31px;
+    height:31px;
 
     border:0;
 
-    border-radius:10px;
+    border-radius:9px;
 
     color:
         rgba(255,255,255,.65);
@@ -4419,10 +5206,10 @@ th {
     background:
         rgba(255,255,255,.05);
 
-    font-size:18px;
+    font-size:17px;
 }
 
-.form {
+.form{
 
     display:grid;
 
@@ -4435,36 +5222,36 @@ th {
             )
         );
 
-    gap:12px;
+    gap:11px;
 
-    padding:18px;
+    padding:17px;
 }
 
-.field.full {
+.field.full{
 
     grid-column:
         1 / -1;
 }
 
-.field label {
+.field label{
 
     display:block;
 
-    margin-bottom:6px;
+    margin-bottom:5px;
 
     color:
-        rgba(255,255,255,.50);
+        rgba(255,255,255,.46);
 
-    font-size:9px;
+    font-size:8px;
 }
 
 .input,
 .select,
-.textarea {
+.textarea{
 
     width:100%;
 
-    min-height:41px;
+    min-height:40px;
 
     padding:
         9px 10px;
@@ -4473,90 +5260,90 @@ th {
         1px solid
         rgba(255,255,255,.08);
 
-    border-radius:11px;
+    border-radius:10px;
 
     outline:none;
 
-    color:white;
+    color:#fff;
 
     background:
         rgba(255,255,255,.04);
 
-    font-size:9px;
+    font-size:8px;
 }
 
 .input:focus,
 .select:focus,
-.textarea:focus {
+.textarea:focus{
 
     border-color:
         rgba(129,140,248,.55);
 }
 
-.textarea {
+.textarea{
 
     resize:vertical;
 
-    min-height:80px;
+    min-height:72px;
 }
 
-.inline {
+.inline{
 
     display:flex;
 
     gap:5px;
 }
 
-.inline > *:first-child {
+.inline > *:first-child{
 
     flex:1;
 }
 
-.inline .select {
+.inline .select{
 
-    width:90px;
+    width:85px;
 }
 
-.hint {
+.hint{
 
-    margin-top:4px;
+    margin-top:3px;
 
     color:
-        rgba(255,255,255,.23);
+        rgba(255,255,255,.22);
 
-    font-size:7px;
+    font-size:6px;
 }
 
-.modal-footer {
+.modal-footer{
 
     display:flex;
 
-    gap:7px;
+    gap:6px;
 
     padding:
-        14px 18px;
+        13px 17px;
 
     border-top:
         1px solid
         rgba(255,255,255,.06);
 }
 
-.modal-btn {
+.modal-btn{
 
     flex:1;
 
-    min-height:41px;
+    min-height:40px;
 
     border:0;
 
     border-radius:11px;
 
-    font-size:9px;
+    font-size:8px;
 
     font-weight:800;
 }
 
-.cancel {
+.modal-btn.cancel{
 
     color:
         rgba(255,255,255,.65);
@@ -4565,9 +5352,9 @@ th {
         rgba(255,255,255,.05);
 }
 
-.save {
+.modal-btn.save{
 
-    color:white;
+    color:#fff;
 
     background:
         linear-gradient(
@@ -4577,130 +5364,89 @@ th {
         );
 }
 
-.result {
+.result{
 
-    padding:
-        18px;
+    padding:17px;
 }
 
-.result-group {
+.result-group{
 
-    margin-bottom:13px;
+    margin-bottom:11px;
 }
 
-.result-label {
+.result-label{
 
-    margin-bottom:6px;
+    margin-bottom:5px;
 
     color:
-        rgba(255,255,255,.35);
+        rgba(255,255,255,.30);
 
-    font-size:8px;
+    font-size:7px;
 }
 
-.result-row {
+.result-row{
 
     display:flex;
 
-    gap:5px;
+    gap:4px;
 }
 
-.result-input {
+.result-input{
 
     flex:1;
 
     min-width:0;
 
     padding:
-        10px;
+        9px;
 
     direction:ltr;
 
     text-align:left;
 
-    color:#c4b5fd;
-
     border:
         1px solid
         rgba(255,255,255,.07);
 
-    border-radius:10px;
+    border-radius:9px;
+
+    outline:none;
+
+    color:#c4b5fd;
 
     background:
         rgba(0,0,0,.20);
-
-    outline:none;
 
     font-family:
         Consolas,
         monospace;
 
-    font-size:8px;
+    font-size:7px;
 }
 
-.copy-btn {
+.copy{
 
     border:0;
 
-    border-radius:10px;
-
     padding:
-        0 11px;
+        0 10px;
 
-    color:white;
+    border-radius:9px;
+
+    color:#fff;
 
     background:
         rgba(255,255,255,.07);
 
-    font-size:8px;
-}
-
-.logs {
-
-    max-height:250px;
-
-    overflow:auto;
-
-    padding:15px;
-}
-
-.log {
-
-    display:flex;
-
-    gap:9px;
-
-    padding:8px 0;
-
-    border-bottom:
-        1px solid
-        rgba(255,255,255,.04);
-}
-
-.log-time {
-
-    color:
-        rgba(255,255,255,.22);
-
-    white-space:nowrap;
-
     font-size:7px;
 }
 
-.log-text {
-
-    color:
-        rgba(255,255,255,.55);
-
-    font-size:8px;
-}
-
-.toast-wrap {
+.toast-wrap{
 
     position:fixed;
 
-    left:16px;
-    bottom:16px;
+    left:14px;
+    bottom:14px;
 
     z-index:10000;
 
@@ -4711,48 +5457,34 @@ th {
     gap:5px;
 }
 
-.toast {
+.toast{
+
+    min-width:190px;
 
     padding:
-        10px 12px;
+        9px 11px;
 
-    border-radius:11px;
-
-    background:
-        rgba(17,24,39,.96);
+    border-radius:10px;
 
     border:
         1px solid
         rgba(255,255,255,.08);
 
+    color:#fff;
+
+    background:
+        rgba(17,24,39,.96);
+
     box-shadow:
         0 20px 40px
         rgba(0,0,0,.38);
 
-    font-size:8px;
-
-    animation:
-        toastIn .18s ease;
+    font-size:7px;
 }
 
-@keyframes toastIn {
+@media(max-width:800px){
 
-    from {
-        opacity:0;
-        transform:
-            translateY(7px);
-    }
-
-    to {
-        opacity:1;
-        transform:
-            translateY(0);
-    }
-}
-
-@media(max-width:800px) {
-
-    .grid {
+    .stats{
         grid-template-columns:
             repeat(
                 2,
@@ -4761,26 +5493,26 @@ th {
     }
 }
 
-@media(max-width:600px) {
+@media(max-width:600px){
 
-    .app {
+    .app{
         width:
             calc(100% - 12px);
     }
 
-    .grid {
+    .stats{
         grid-template-columns:1fr;
     }
 
-    .form {
+    .form{
         grid-template-columns:1fr;
     }
 
-    .field.full {
+    .field.full{
         grid-column:auto;
     }
 
-    .topbar {
+    .topbar{
         align-items:flex-start;
     }
 
@@ -4793,6 +5525,10 @@ th {
 <body>
 
 <div class="app">
+
+<!-- ======================================================
+     HEADER
+====================================================== -->
 
 <div class="topbar">
 
@@ -4808,8 +5544,8 @@ P
 PixonPanel
 </div>
 
-<div class="brand-sub">
-پنل مدیریت سرویس
+<div class="brand-version">
+12.0.1 Beta · @Pixonal
 </div>
 
 </div>
@@ -4820,28 +5556,25 @@ PixonPanel
 <div class="toolbar">
 
 <button
-    class="toolbar-btn"
-    onclick="openAutoCreate()"
+    class="auto"
+    onclick="autoCreate()"
 >
 ساخت خودکار
 </button>
 
 <button
-    class="toolbar-btn"
-    onclick="openManualCreate()"
+    onclick="openManualModal()"
 >
 ساخت دستی
 </button>
 
 <button
-    class="toolbar-btn"
     onclick="openPasswordModal()"
 >
 تغییر رمز
 </button>
 
 <a
-    class="toolbar-btn"
     href="/logout"
 >
 خروج
@@ -4853,10 +5586,10 @@ PixonPanel
 
 
 <!-- ======================================================
-     Stats
-======================================================= -->
+     STATS
+====================================================== -->
 
-<div class="grid">
+<div class="stats">
 
 <div class="stat">
 
@@ -4865,14 +5598,14 @@ PixonPanel
 </div>
 
 <div
+    id="totalLinks"
     class="stat-value"
-    id="statLinks"
 >
 0
 </div>
 
 <div class="stat-sub">
-تعداد سرویس‌ها
+Services
 </div>
 
 </div>
@@ -4881,18 +5614,18 @@ PixonPanel
 <div class="stat">
 
 <div class="stat-label">
-کانفیگ فعال
+فعال
 </div>
 
 <div
+    id="activeLinks"
     class="stat-value"
-    id="statActive"
 >
 0
 </div>
 
 <div class="stat-sub">
-در حال سرویس
+Active
 </div>
 
 </div>
@@ -4905,14 +5638,14 @@ PixonPanel
 </div>
 
 <div
+    id="connections"
     class="stat-value"
-    id="statConnections"
 >
 0
 </div>
 
 <div class="stat-sub">
-اتصال همزمان
+Live Connections
 </div>
 
 </div>
@@ -4925,15 +5658,15 @@ PixonPanel
 </div>
 
 <div
+    id="uptime"
     class="stat-value"
-    id="statUptime"
 >
 00:00:00
 </div>
 
 <div
+    id="clock"
     class="stat-sub"
-    id="statClock"
 >
 -
 </div>
@@ -4944,8 +5677,8 @@ PixonPanel
 
 
 <!-- ======================================================
-     Configs
-======================================================= -->
+     CONFIGS
+====================================================== -->
 
 <section class="panel">
 
@@ -4958,14 +5691,14 @@ PixonPanel
 </div>
 
 <div class="panel-sub">
-مدیریت کامل سرویس‌ها
+ساخت · ویرایش · حذف · مدیریت
 </div>
 
 </div>
 
 <button
-    class="primary-btn"
-    onclick="openAutoCreate()"
+    class="primary"
+    onclick="autoCreate()"
 >
 + ساخت خودکار
 </button>
@@ -4986,7 +5719,7 @@ PixonPanel
 </th>
 
 <th>
-پروتکل
+Protocol
 </th>
 
 <th>
@@ -5026,8 +5759,8 @@ PixonPanel
 
 
 <!-- ======================================================
-     Activity
-======================================================= -->
+     ACTIVITY
+====================================================== -->
 
 <section class="panel">
 
@@ -5036,11 +5769,11 @@ PixonPanel
 <div>
 
 <div class="panel-title">
-فعالیت‌ها
+Activity
 </div>
 
 <div class="panel-sub">
-رویدادهای پنل
+رویدادهای اخیر
 </div>
 
 </div>
@@ -5048,10 +5781,9 @@ PixonPanel
 </div>
 
 <div
-    class="logs"
     id="logs"
+    class="logs"
 >
-در حال بارگذاری...
 </div>
 
 </section>
@@ -5060,12 +5792,12 @@ PixonPanel
 
 
 <!-- ======================================================
-     Config Modal
-======================================================= -->
+     CONFIG MODAL
+====================================================== -->
 
 <div
-    class="modal"
     id="configModal"
+    class="modal"
 >
 
 <div class="modal-card">
@@ -5075,14 +5807,14 @@ PixonPanel
 <div>
 
 <div
-    class="modal-title"
     id="configModalTitle"
+    class="modal-title"
 >
 ساخت کانفیگ دستی
 </div>
 
 <div class="modal-desc">
-تنظیمات کامل سرویس
+تمام تنظیمات سرویس
 </div>
 
 </div>
@@ -5110,7 +5842,7 @@ PixonPanel
     id="fieldLabel"
     class="input"
     maxlength="80"
-    placeholder="مثلاً VIP Tehran"
+    placeholder="مثلاً VIP تهران"
 />
 
 </div>
@@ -5144,6 +5876,10 @@ GB
 
 <option value="MB">
 MB
+</option>
+
+<option value="TB">
+TB
 </option>
 
 </select>
@@ -5214,7 +5950,7 @@ MB
 />
 
 <div class="hint">
-0 = بدون محدودیت
+0 = نامحدود
 </div>
 
 </div>
@@ -5415,7 +6151,8 @@ ALPN
 <textarea
     id="fieldNote"
     class="textarea"
-    placeholder="توضیحات اختیاری..."
+    maxlength="300"
+    placeholder="توضیحات..."
 ></textarea>
 
 </div>
@@ -5434,7 +6171,7 @@ ALPN
 </button>
 
 <button
-    id="saveButton"
+    id="saveConfigButton"
     class="modal-btn save"
     onclick="saveConfig()"
 >
@@ -5449,18 +6186,15 @@ ALPN
 
 
 <!-- ======================================================
-     Result Modal
-======================================================= -->
+     RESULT MODAL
+====================================================== -->
 
 <div
-    class="modal"
     id="resultModal"
+    class="modal"
 >
 
-<div
-    class="modal-card"
-    style="max-width:720px"
->
+<div class="modal-card">
 
 <div class="modal-head">
 
@@ -5471,7 +6205,7 @@ ALPN
 </div>
 
 <div class="modal-desc">
-VLESS / SUB / اطلاعات
+VLESS · SUB · INFO
 </div>
 
 </div>
@@ -5484,6 +6218,7 @@ VLESS / SUB / اطلاعات
 </button>
 
 </div>
+
 
 <div class="result">
 
@@ -5503,8 +6238,8 @@ VLESS
 >
 
 <button
-    class="copy-btn"
-    onclick="copyInput('resultVless')"
+    class="copy"
+    onclick="copyValue('resultVless')"
 >
 کپی
 </button>
@@ -5529,8 +6264,8 @@ SUB
 >
 
 <button
-    class="copy-btn"
-    onclick="copyInput('resultSub')"
+    class="copy"
+    onclick="copyValue('resultSub')"
 >
 کپی
 </button>
@@ -5555,8 +6290,8 @@ INFO
 >
 
 <button
-    class="copy-btn"
-    onclick="copyInput('resultInfo')"
+    class="copy"
+    onclick="copyValue('resultInfo')"
 >
 کپی
 </button>
@@ -5564,6 +6299,7 @@ INFO
 </div>
 
 </div>
+
 
 </div>
 
@@ -5573,12 +6309,12 @@ INFO
 
 
 <!-- ======================================================
-     Delete Modal
-======================================================= -->
+     DELETE MODAL
+====================================================== -->
 
 <div
-    class="modal"
     id="deleteModal"
+    class="modal"
 >
 
 <div
@@ -5612,34 +6348,34 @@ INFO
 
 <div
     style="
-        padding:18px;
+        padding:17px;
     "
 >
 
 <div
     style="
         color:
-            rgba(255,255,255,.50);
-        font-size:10px;
+            rgba(255,255,255,.48);
+        font-size:9px;
         line-height:2;
     "
 >
-آیا مطمئن هستید که می‌خواهید این کانفیگ را حذف کنید؟
+آیا مطمئن هستید؟
 </div>
 
 <div
     id="deleteTarget"
     style="
-        margin-top:10px;
-        padding:11px;
+        margin-top:9px;
+        padding:10px;
         border-radius:10px;
         color:#fca5a5;
         background:
             rgba(239,68,68,.07);
         border:
             1px solid
-            rgba(239,68,68,.12);
-        font-size:9px;
+            rgba(239,68,68,.13);
+        font-size:8px;
     "
 >
 -
@@ -5658,8 +6394,8 @@ INFO
 </button>
 
 <button
-    class="modal-btn"
     id="deleteButton"
+    class="modal-btn"
     style="
         color:#fff;
         background:
@@ -5682,17 +6418,17 @@ INFO
 
 
 <!-- ======================================================
-     Password Modal
-======================================================= -->
+     PASSWORD MODAL
+====================================================== -->
 
 <div
-    class="modal"
     id="passwordModal"
+    class="modal"
 >
 
 <div
     class="modal-card"
-    style="max-width:430px"
+    style="max-width:450px"
 >
 
 <div class="modal-head">
@@ -5720,6 +6456,7 @@ INFO
 
 
 <div class="form">
+
 
 <div class="field full">
 
@@ -5795,31 +6532,30 @@ INFO
 
 
 <div
-    class="toast-wrap"
     id="toastWrap"
+    class="toast-wrap"
 ></div>
 
 
 <script>
 
-/* =========================================================
-   State
-========================================================= */
+/* ==========================================================
+   STATE
+========================================================== */
 
 let editingUuid = null;
 let deletingUuid = null;
-
 let uptimeBase = null;
 
 
-/* =========================================================
+/* ==========================================================
    API
-========================================================= */
+========================================================== */
 
 async function api(
     url,
     options = {}
-) {
+){
 
     const response =
         await fetch(
@@ -5827,9 +6563,9 @@ async function api(
             options
         );
 
-    if (
+    if(
         response.status === 401
-    ) {
+    ){
 
         location.href =
             "/login";
@@ -5839,18 +6575,17 @@ async function api(
 
     let data = {};
 
-    try {
+    try{
 
         data =
             await response.json();
 
-    } catch {
+    }catch{
 
         data = {};
     }
 
-
-    if (!response.ok) {
+    if(!response.ok){
 
         throw new Error(
             data.detail
@@ -5865,14 +6600,14 @@ async function api(
 }
 
 
-/* =========================================================
-   Toast
-========================================================= */
+/* ==========================================================
+   TOAST
+========================================================== */
 
 function toast(
-    text,
-    error = false
-) {
+    message,
+    isError = false
+){
 
     const element =
         document.createElement(
@@ -5882,14 +6617,16 @@ function toast(
     element.className =
         "toast";
 
-    if (error) {
+    if(
+        isError
+    ){
 
         element.style.borderColor =
             "rgba(239,68,68,.25)";
     }
 
     element.textContent =
-        text;
+        message;
 
     document
         .getElementById(
@@ -5916,11 +6653,111 @@ function toast(
 }
 
 
-/* =========================================================
-   Config Modal
-========================================================= */
+/* ==========================================================
+   ESCAPE
+========================================================== */
 
-function openManualCreate() {
+function escapeHtml(
+    value
+){
+
+    return String(
+        value ?? ""
+    )
+
+        .replaceAll(
+            "&",
+            "&amp;"
+        )
+
+        .replaceAll(
+            "<",
+            "&lt;"
+        )
+
+        .replaceAll(
+            ">",
+            "&gt;"
+        )
+
+        .replaceAll(
+            '"',
+            "&quot;"
+        )
+
+        .replaceAll(
+            "'",
+            "&#039;"
+        );
+}
+
+
+/* ==========================================================
+   FORMAT
+========================================================== */
+
+function formatBytes(
+    value
+){
+
+    value =
+        Number(
+            value || 0
+        );
+
+    if(
+        value < 1024
+    ){
+
+        return (
+            value
+            + " B"
+        );
+    }
+
+    if(
+        value <
+        1024 ** 2
+    ){
+
+        return (
+            (
+                value /
+                1024
+            ).toFixed(1)
+            + " KB"
+        );
+    }
+
+    if(
+        value <
+        1024 ** 3
+    ){
+
+        return (
+            (
+                value /
+                1024 ** 2
+            ).toFixed(2)
+            + " MB"
+        );
+    }
+
+    return (
+        (
+            value /
+            1024 ** 3
+        ).toFixed(2)
+        + " GB"
+    );
+}
+
+
+/* ==========================================================
+   MODAL
+========================================================== */
+
+function openManualModal(){
 
     editingUuid =
         null;
@@ -5931,7 +6768,7 @@ function openManualCreate() {
         "ساخت کانفیگ دستی";
 
     document.getElementById(
-        "saveButton"
+        "saveConfigButton"
     ).textContent =
         "ساخت کانفیگ";
 
@@ -5945,9 +6782,9 @@ function openManualCreate() {
 }
 
 
-function openEdit(
+function openEditModal(
     link
-) {
+){
 
     editingUuid =
         link.uuid;
@@ -5958,7 +6795,7 @@ function openEdit(
         "ویرایش کانفیگ";
 
     document.getElementById(
-        "saveButton"
+        "saveConfigButton"
     ).textContent =
         "ذخیره تغییرات";
 
@@ -5991,22 +6828,19 @@ function openEdit(
     document.getElementById(
         "fieldDays"
     ).value =
-        link.duration_days
-        || "";
+        link.duration_days || "";
 
 
     document.getElementById(
         "fieldConcurrent"
     ).value =
-        link.concurrent_limit
-        || "";
+        link.concurrent_limit || "";
 
 
     document.getElementById(
         "fieldIp"
     ).value =
-        link.ip_limit
-        || "";
+        link.ip_limit || "";
 
 
     document.getElementById(
@@ -6052,22 +6886,19 @@ function openEdit(
     document.getElementById(
         "fieldPort"
     ).value =
-        link.port
-        || 443;
+        link.port || 443;
 
 
     document.getElementById(
         "fieldAlpn"
     ).value =
-        link.alpn
-        || "";
+        link.alpn || "";
 
 
     document.getElementById(
         "fieldNote"
     ).value =
-        link.note
-        || "";
+        link.note || "";
 
 
     document.getElementById(
@@ -6078,7 +6909,7 @@ function openEdit(
 }
 
 
-function closeConfigModal() {
+function closeConfigModal(){
 
     document.getElementById(
         "configModal"
@@ -6088,7 +6919,7 @@ function closeConfigModal() {
 }
 
 
-function resetForm() {
+function resetForm(){
 
     document.getElementById(
         "fieldLabel"
@@ -6145,21 +6976,23 @@ function resetForm() {
 
     document.getElementById(
         "fieldAlpn"
-    ).value = "";
+    ).value =
+        "";
 
     document.getElementById(
         "fieldNote"
-    ).value = "";
+    ).value =
+        "";
 }
 
 
-/* =========================================================
-   Auto Create
-========================================================= */
+/* ==========================================================
+   AUTO
+========================================================== */
 
-async function openAutoCreate() {
+async function autoCreate(){
 
-    try {
+    try{
 
         const result =
             await api(
@@ -6170,7 +7003,7 @@ async function openAutoCreate() {
                 }
             );
 
-        if (!result)
+        if(!result)
             return;
 
         showResult(
@@ -6181,10 +7014,9 @@ async function openAutoCreate() {
             `${result.label} ساخته شد.`
         );
 
-        await refreshLinks();
-        await refreshStats();
+        await refreshAll();
 
-    } catch (error) {
+    }catch(error){
 
         toast(
             error.message,
@@ -6194,16 +7026,20 @@ async function openAutoCreate() {
 }
 
 
-/* =========================================================
-   Manual / Edit Save
-========================================================= */
+/* ==========================================================
+   SAVE CONFIG
+========================================================== */
 
-async function saveConfig() {
+async function saveConfig(){
 
     const button =
         document.getElementById(
-            "saveButton"
+            "saveConfigButton"
         );
+
+    const oldText =
+        button.textContent;
+
 
     const payload = {
 
@@ -6216,7 +7052,8 @@ async function saveConfig() {
             Number(
                 document.getElementById(
                     "fieldVolume"
-                ).value || 0
+                ).value
+                || 0
             ),
 
         volume_unit:
@@ -6228,21 +7065,24 @@ async function saveConfig() {
             Number(
                 document.getElementById(
                     "fieldDays"
-                ).value || 0
+                ).value
+                || 0
             ),
 
         concurrent_limit:
             Number(
                 document.getElementById(
                     "fieldConcurrent"
-                ).value || 0
+                ).value
+                || 0
             ),
 
         ip_limit:
             Number(
                 document.getElementById(
                     "fieldIp"
-                ).value || 0
+                ).value
+                || 0
             ),
 
         protocol:
@@ -6264,7 +7104,8 @@ async function saveConfig() {
             Number(
                 document.getElementById(
                     "fieldSpeed"
-                ).value || 0
+                ).value
+                || 0
             ),
 
         speed_limit_unit:
@@ -6276,7 +7117,8 @@ async function saveConfig() {
             Number(
                 document.getElementById(
                     "fieldPort"
-                ).value || 443
+                ).value
+                || 443
             ),
 
         alpn:
@@ -6291,7 +7133,9 @@ async function saveConfig() {
     };
 
 
-    if (!payload.label) {
+    if(
+        !payload.label
+    ){
 
         toast(
             "نام کانفیگ را وارد کنید.",
@@ -6302,27 +7146,26 @@ async function saveConfig() {
     }
 
 
-    button.disabled = true;
-
-    const oldText =
-        button.textContent;
+    button.disabled =
+        true;
 
     button.textContent =
         "در حال ذخیره...";
 
 
-    try {
+    try{
 
         let result;
 
 
-        if (
+        if(
             editingUuid
-        ) {
+        ){
 
             result =
                 await api(
-                    "/api/links/" +
+                    "/api/links/"
+                    +
                     encodeURIComponent(
                         editingUuid
                     ),
@@ -6330,7 +7173,7 @@ async function saveConfig() {
                         method:
                             "PATCH",
 
-                        headers: {
+                        headers:{
                             "Content-Type":
                                 "application/json"
                         },
@@ -6348,16 +7191,16 @@ async function saveConfig() {
                 "تغییرات ذخیره شد."
             );
 
-        } else {
+        }else{
 
             result =
                 await api(
-                    "/api/links/manual",
+                    "/api/links",
                     {
                         method:
                             "POST",
 
-                        headers: {
+                        headers:{
                             "Content-Type":
                                 "application/json"
                         },
@@ -6383,15 +7226,14 @@ async function saveConfig() {
 
         await refreshAll();
 
-
-    } catch (error) {
+    }catch(error){
 
         toast(
             error.message,
             true
         );
 
-    } finally {
+    }finally{
 
         button.disabled =
             false;
@@ -6402,30 +7244,30 @@ async function saveConfig() {
 }
 
 
-/* =========================================================
-   Result
-========================================================= */
+/* ==========================================================
+   RESULT
+========================================================== */
 
 function showResult(
-    result
-) {
+    data
+){
 
     document.getElementById(
         "resultVless"
     ).value =
-        result.vless_link
+        data.vless_link
         || "";
 
     document.getElementById(
         "resultSub"
     ).value =
-        result.sub_url
+        data.sub_url
         || "";
 
     document.getElementById(
         "resultInfo"
     ).value =
-        result.info_url
+        data.info_url
         || "";
 
     document.getElementById(
@@ -6436,7 +7278,7 @@ function showResult(
 }
 
 
-function closeResultModal() {
+function closeResultModal(){
 
     document.getElementById(
         "resultModal"
@@ -6446,23 +7288,22 @@ function closeResultModal() {
 }
 
 
-async function copyInput(
+async function copyValue(
     id
-) {
+){
 
     const input =
         document.getElementById(
             id
         );
 
-    try {
+    try{
 
-        await navigator.clipboard
-            .writeText(
-                input.value
-            );
+        await navigator.clipboard.writeText(
+            input.value
+        );
 
-    } catch {
+    }catch{
 
         input.select();
 
@@ -6477,14 +7318,38 @@ async function copyInput(
 }
 
 
-/* =========================================================
-   Delete
-========================================================= */
+async function copyDirect(
+    text
+){
 
-function openDelete(
+    try{
+
+        await navigator.clipboard.writeText(
+            text
+        );
+
+        toast(
+            "کپی شد."
+        );
+
+    }catch{
+
+        window.prompt(
+            "لینک:",
+            text
+        );
+    }
+}
+
+
+/* ==========================================================
+   DELETE
+========================================================== */
+
+function openDeleteModal(
     uuid,
     label
-) {
+){
 
     deletingUuid =
         uuid;
@@ -6502,7 +7367,7 @@ function openDelete(
 }
 
 
-function closeDeleteModal() {
+function closeDeleteModal(){
 
     deletingUuid =
         null;
@@ -6515,26 +7380,31 @@ function closeDeleteModal() {
 }
 
 
-async function confirmDelete() {
+async function confirmDelete(){
 
-    if (!deletingUuid)
+    if(
+        !deletingUuid
+    )
         return;
+
 
     const button =
         document.getElementById(
             "deleteButton"
         );
 
-    button.disabled = true;
+    button.disabled =
+        true;
 
     button.textContent =
         "در حال حذف...";
 
 
-    try {
+    try{
 
         await api(
-            "/api/links/" +
+            "/api/links/"
+            +
             encodeURIComponent(
                 deletingUuid
             ),
@@ -6552,14 +7422,14 @@ async function confirmDelete() {
 
         await refreshAll();
 
-    } catch (error) {
+    }catch(error){
 
         toast(
             error.message,
             true
         );
 
-    } finally {
+    }finally{
 
         button.disabled =
             false;
@@ -6570,19 +7440,20 @@ async function confirmDelete() {
 }
 
 
-/* =========================================================
-   Toggle
-========================================================= */
+/* ==========================================================
+   TOGGLE
+========================================================== */
 
 async function toggleLink(
     uuid,
     active
-) {
+){
 
-    try {
+    try{
 
         await api(
-            "/api/links/" +
+            "/api/links/"
+            +
             encodeURIComponent(
                 uuid
             ),
@@ -6590,7 +7461,7 @@ async function toggleLink(
                 method:
                     "PATCH",
 
-                headers: {
+                headers:{
                     "Content-Type":
                         "application/json"
                 },
@@ -6611,7 +7482,7 @@ async function toggleLink(
 
         await refreshAll();
 
-    } catch (error) {
+    }catch(error){
 
         toast(
             error.message,
@@ -6621,21 +7492,23 @@ async function toggleLink(
 }
 
 
-/* =========================================================
-   Reset usage
-========================================================= */
+/* ==========================================================
+   RESET
+========================================================== */
 
 async function resetUsage(
     uuid
-) {
+){
 
-    try {
+    try{
 
         await api(
-            "/api/links/" +
+            "/api/links/"
+            +
             encodeURIComponent(
                 uuid
-            ) +
+            )
+            +
             "/reset",
             {
                 method:
@@ -6649,7 +7522,7 @@ async function resetUsage(
 
         await refreshAll();
 
-    } catch (error) {
+    }catch(error){
 
         toast(
             error.message,
@@ -6659,229 +7532,186 @@ async function resetUsage(
 }
 
 
-/* =========================================================
-   Stats
-========================================================= */
+/* ==========================================================
+   PASSWORD
+========================================================== */
 
-async function refreshStats() {
-
-    try {
-
-        const data =
-            await api(
-                "/api/stats"
-            );
-
-        if (!data)
-            return;
-
-        document.getElementById(
-            "statLinks"
-        ).textContent =
-            data.links;
-
-
-        document.getElementById(
-            "statActive"
-        ).textContent =
-            data.active_links;
-
-
-        document.getElementById(
-            "statConnections"
-        ).textContent =
-            data.connections;
-
-
-        document.getElementById(
-            "statUptime"
-        ).textContent =
-            data.uptime;
-
-
-        document.getElementById(
-            "statClock"
-        ).textContent =
-            new Date(
-                data.server_time
-            ).toLocaleTimeString(
-                "fa-IR"
-            );
-
-
-        uptimeBase =
-            Date.now()
-            -
-            (
-                Number(
-                    data.uptime_seconds
-                )
-                * 1000
-            );
-
-    } catch (error) {
-
-        console.error(
-            error
-        );
-    }
-}
-
-
-/* =========================================================
-   Local uptime
-========================================================= */
-
-function tickUptime() {
-
-    if (!uptimeBase)
-        return;
-
-    const seconds =
-        Math.floor(
-            (
-                Date.now()
-                -
-                uptimeBase
-            )
-            / 1000
-        );
+function openPasswordModal(){
 
     document.getElementById(
-        "statUptime"
-    ).textContent =
-        formatUptime(
-            seconds
-        );
+        "currentPassword"
+    ).value = "";
+
+    document.getElementById(
+        "newPassword"
+    ).value = "";
+
+    document.getElementById(
+        "confirmPassword"
+    ).value = "";
+
+    document.getElementById(
+        "passwordModal"
+    ).classList.add(
+        "show"
+    );
 }
 
 
-function formatUptime(
-    seconds
-) {
+function closePasswordModal(){
 
-    seconds =
-        Math.max(
-            0,
-            Math.floor(
-                seconds
-            )
-        );
-
-    const days =
-        Math.floor(
-            seconds / 86400
-        );
-
-    const hours =
-        Math.floor(
-            (
-                seconds % 86400
-            ) / 3600
-        );
-
-    const minutes =
-        Math.floor(
-            (
-                seconds % 3600
-            ) / 60
-        );
-
-    const secs =
-        seconds % 60;
-
-    const text =
-        [
-            String(
-                hours
-            ).padStart(
-                2,
-                "0"
-            ),
-
-            String(
-                minutes
-            ).padStart(
-                2,
-                "0"
-            ),
-
-            String(
-                secs
-            ).padStart(
-                2,
-                "0"
-            )
-        ].join(":");
-
-    return days
-        ? `${days}d ${text}`
-        : text;
+    document.getElementById(
+        "passwordModal"
+    ).classList.remove(
+        "show"
+    );
 }
 
 
-/* =========================================================
-   Links
-========================================================= */
+async function changePassword(){
 
-async function refreshLinks() {
+    const current =
+        document.getElementById(
+            "currentPassword"
+        ).value;
 
-    try {
+    const next =
+        document.getElementById(
+            "newPassword"
+        ).value;
 
-        const data =
-            await api(
-                "/api/links"
-            );
+    const confirm =
+        document.getElementById(
+            "confirmPassword"
+        ).value;
 
-        if (!data)
-            return;
 
-        renderLinks(
-            data.links
+    if(
+        !current
+        ||
+        !next
+        ||
+        !confirm
+    ){
+
+        toast(
+            "هر سه فیلد را کامل کنید.",
+            true
         );
 
-    } catch (error) {
+        return;
+    }
 
-        console.error(
-            error
+
+    if(
+        next !== confirm
+    ){
+
+        toast(
+            "تکرار رمز جدید درست نیست.",
+            true
+        );
+
+        return;
+    }
+
+
+    if(
+        next.length < 8
+    ){
+
+        toast(
+            "رمز جدید حداقل ۸ کاراکتر باشد.",
+            true
+        );
+
+        return;
+    }
+
+
+    try{
+
+        await api(
+            "/api/change-password",
+            {
+                method:
+                    "POST",
+
+                headers:{
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body:
+                    JSON.stringify({
+
+                        current_password:
+                            current,
+
+                        new_password:
+                            next,
+
+                        confirm_password:
+                            confirm
+                    })
+            }
+        );
+
+        closePasswordModal();
+
+        toast(
+            "رمز عبور با موفقیت تغییر کرد."
+        );
+
+    }catch(error){
+
+        toast(
+            error.message,
+            true
         );
     }
 }
 
+
+/* ==========================================================
+   RENDER LINKS
+========================================================== */
 
 function renderLinks(
     links
-) {
+){
 
     const table =
         document.getElementById(
             "linksTable"
         );
 
-    if (!links.length) {
+
+    if(
+        !links.length
+    ){
 
         table.innerHTML = `
 
         <tr>
 
-            <td
-                colspan="7"
-                style="
-                    text-align:center;
-                    padding:38px;
-                    color:
-                        rgba(
-                            255,
-                            255,
-                            255,
-                            .24
-                        );
-                "
-            >
-
-                هنوز کانفیگی ساخته نشده است.
-
-            </td>
+        <td
+            colspan="7"
+            style="
+                text-align:center;
+                padding:35px;
+                color:
+                    rgba(
+                        255,
+                        255,
+                        255,
+                        .25
+                    );
+                font-size:8px;
+            "
+        >
+            هنوز کانفیگی ساخته نشده است.
+        </td>
 
         </tr>
 
@@ -6891,21 +7721,41 @@ function renderLinks(
     }
 
 
-    table.innerHTML = "";
+    table.innerHTML =
+        "";
 
 
-    for (
-        const link
-        of links
-    ) {
+    links.forEach(
+        link => {
 
-        const tr =
-            document.createElement(
-                "tr"
-            );
+            const tr =
+                document.createElement(
+                    "tr"
+                );
+
+            const usage =
+                Number(
+                    link.limit_bytes
+                )
+                > 0
+                ? Math.min(
+                    100,
+                    (
+                        Number(
+                            link.used_bytes
+                            || 0
+                        )
+                        /
+                        Number(
+                            link.limit_bytes
+                        )
+                    )
+                    * 100
+                )
+                : 0;
 
 
-        tr.innerHTML = `
+            tr.innerHTML = `
 
 <td>
 
@@ -6943,8 +7793,8 @@ ${escapeHtml(
     badge
     ${
         link.online
-        ? "active"
-        : "off"
+        ? "good"
+        : "bad"
     }
 ">
 
@@ -6978,10 +7828,8 @@ ${escapeHtml(
 <div
     class="usage-bar"
     style="
-        --usage:${Number(
-            link.usage_percent
-            || 0
-        )}%;
+        --usage:
+        ${usage}%;
     "
 >
 
@@ -6998,10 +7846,12 @@ ${escapeHtml(
 
 <td>
 
-${Number(
-    link.connections
-    || 0
-)}
+${
+    Number(
+        link.connections
+        || 0
+    )
+}
 
 /
 
@@ -7075,7 +7925,7 @@ INFO
 
 <button
     class="action"
-    onclick='openEdit(
+    onclick='openEditModal(
         ${JSON.stringify(
             link
         )}
@@ -7123,7 +7973,7 @@ ${
 
 <button
     class="action danger"
-    onclick='openDelete(
+    onclick='openDeleteModal(
         ${JSON.stringify(
             link.uuid
         )},
@@ -7142,128 +7992,244 @@ ${
 
 `;
 
-        table.appendChild(
-            tr
-        );
-    }
-}
-
-
-/* =========================================================
-   Copy
-========================================================= */
-
-async function copyDirect(
-    text
-) {
-
-    try {
-
-        await navigator.clipboard
-            .writeText(
-                text
+            table.appendChild(
+                tr
             );
-
-        toast(
-            "لینک کپی شد."
-        );
-
-    } catch {
-
-        const value =
-            window.prompt(
-                "لینک:",
-                text
-            );
-
-        if (value !== null) {
-
-            try {
-
-                await navigator.clipboard
-                    .writeText(
-                        value
-                    );
-
-            } catch {}
-
         }
-    }
-}
-
-
-/* =========================================================
-   Escape
-========================================================= */
-
-function escapeHtml(
-    value
-) {
-
-    return String(
-        value ?? ""
-    )
-    .replaceAll(
-        "&",
-        "&amp;"
-    )
-    .replaceAll(
-        "<",
-        "&lt;"
-    )
-    .replaceAll(
-        ">",
-        "&gt;"
-    )
-    .replaceAll(
-        '"',
-        "&quot;"
-    )
-    .replaceAll(
-        "'",
-        "&#039;"
     );
 }
 
 
-/* =========================================================
-   Activity
-========================================================= */
+/* ==========================================================
+   REFRESH LINKS
+========================================================== */
 
-async function refreshActivity() {
+async function refreshLinks(){
 
-    try {
+    try{
+
+        const data =
+            await api(
+                "/api/links"
+            );
+
+        if(!data)
+            return;
+
+        renderLinks(
+            data.links
+        );
+
+    }catch(error){
+
+        console.error(
+            error
+        );
+    }
+}
+
+
+/* ==========================================================
+   REFRESH STATS
+========================================================== */
+
+async function refreshStats(){
+
+    try{
+
+        const data =
+            await api(
+                "/stats"
+            );
+
+        if(!data)
+            return;
+
+
+        document.getElementById(
+            "totalLinks"
+        ).textContent =
+            data.links_count;
+
+
+        document.getElementById(
+            "activeLinks"
+        ).textContent =
+            data.active_links;
+
+
+        document.getElementById(
+            "connections"
+        ).textContent =
+            data.active_connections;
+
+
+        document.getElementById(
+            "uptime"
+        ).textContent =
+            data.uptime;
+
+
+        document.getElementById(
+            "clock"
+        ).textContent =
+            new Date(
+                data.server_time
+            ).toLocaleTimeString(
+                "fa-IR"
+            );
+
+
+        uptimeBase =
+            Date.now()
+            -
+            (
+                Number(
+                    data.uptime_seconds
+                )
+                *
+                1000
+            );
+
+    }catch(error){
+
+        console.error(
+            error
+        );
+    }
+}
+
+
+/* ==========================================================
+   LOCAL UPTIME
+========================================================== */
+
+function tickUptime(){
+
+    if(
+        !uptimeBase
+    )
+        return;
+
+
+    const seconds =
+        Math.floor(
+            (
+                Date.now()
+                -
+                uptimeBase
+            )
+            / 1000
+        );
+
+
+    const days =
+        Math.floor(
+            seconds
+            / 86400
+        );
+
+
+    const hours =
+        Math.floor(
+            (
+                seconds
+                % 86400
+            )
+            / 3600
+        );
+
+
+    const minutes =
+        Math.floor(
+            (
+                seconds
+                % 3600
+            )
+            / 60
+        );
+
+
+    const secs =
+        seconds
+        % 60;
+
+
+    const text =
+        [
+            String(
+                hours
+            ).padStart(
+                2,
+                "0"
+            ),
+
+            String(
+                minutes
+            ).padStart(
+                2,
+                "0"
+            ),
+
+            String(
+                secs
+            ).padStart(
+                2,
+                "0"
+            )
+        ].join(
+            ":"
+        );
+
+
+    document.getElementById(
+        "uptime"
+    ).textContent =
+        days
+        ? `${days}d ${text}`
+        : text;
+}
+
+
+/* ==========================================================
+   ACTIVITY
+========================================================== */
+
+async function refreshActivity(){
+
+    try{
 
         const data =
             await api(
                 "/api/activity"
             );
 
-        if (!data)
+        if(!data)
             return;
 
-        const container =
+        const box =
             document.getElementById(
                 "logs"
             );
 
 
-        if (
-            !data.items.length
-        ) {
+        if(
+            !data.logs.length
+        ){
 
-            container.innerHTML =
+            box.innerHTML =
                 `
                 <div
                     style="
+                        padding:8px 0;
                         color:
                             rgba(
                                 255,
                                 255,
                                 255,
-                                .25
+                                .22
                             );
-                        font-size:8px;
+                        font-size:7px;
                     "
                 >
                     فعالیتی ثبت نشده است.
@@ -7274,12 +8240,10 @@ async function refreshActivity() {
         }
 
 
-        container.innerHTML =
-            data.items
-                .slice(
-                    0,
-                    80
-                )
+        box.innerHTML =
+            data.logs
+                .slice()
+                .reverse()
                 .map(
                     item => `
 
@@ -7309,151 +8273,20 @@ ${escapeHtml(
                 )
                 .join("");
 
-    } catch {}
-}
+    }catch(error){
 
-
-/* =========================================================
-   Password
-========================================================= */
-
-function openPasswordModal() {
-
-    document.getElementById(
-        "currentPassword"
-    ).value = "";
-
-    document.getElementById(
-        "newPassword"
-    ).value = "";
-
-    document.getElementById(
-        "confirmPassword"
-    ).value = "";
-
-    document.getElementById(
-        "passwordModal"
-    ).classList.add(
-        "show"
-    );
-}
-
-
-function closePasswordModal() {
-
-    document.getElementById(
-        "passwordModal"
-    ).classList.remove(
-        "show"
-    );
-}
-
-
-async function changePassword() {
-
-    const current =
-        document.getElementById(
-            "currentPassword"
-        ).value;
-
-    const next =
-        document.getElementById(
-            "newPassword"
-        ).value;
-
-    const confirm =
-        document.getElementById(
-            "confirmPassword"
-        ).value;
-
-
-    if (!current || !next || !confirm) {
-
-        toast(
-            "هر سه فیلد را کامل کنید.",
-            true
-        );
-
-        return;
-    }
-
-
-    if (
-        next !== confirm
-    ) {
-
-        toast(
-            "تکرار رمز جدید مطابقت ندارد.",
-            true
-        );
-
-        return;
-    }
-
-
-    if (
-        next.length < 8
-    ) {
-
-        toast(
-            "رمز جدید حداقل ۸ کاراکتر باشد.",
-            true
-        );
-
-        return;
-    }
-
-
-    try {
-
-        await api(
-            "/api/change-password",
-            {
-                method:
-                    "POST",
-
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body:
-                    JSON.stringify({
-
-                        current_password:
-                            current,
-
-                        new_password:
-                            next,
-
-                        confirm_password:
-                            confirm
-                    })
-            }
-        );
-
-
-        closePasswordModal();
-
-        toast(
-            "رمز عبور تغییر کرد."
-        );
-
-    } catch (error) {
-
-        toast(
-            error.message,
-            true
+        console.error(
+            error
         );
     }
 }
 
 
-/* =========================================================
-   Refresh
-========================================================= */
+/* ==========================================================
+   REFRESH ALL
+========================================================== */
 
-async function refreshAll() {
+async function refreshAll(){
 
     await Promise.all([
         refreshStats(),
@@ -7463,53 +8296,56 @@ async function refreshAll() {
 }
 
 
-/* =========================================================
-   Modal Outside
-========================================================= */
+/* ==========================================================
+   MODAL OUTSIDE
+========================================================== */
 
-for (
-    const id
-    of [
-        "configModal",
-        "resultModal",
-        "deleteModal",
-        "passwordModal"
-    ]
-) {
+[
+    "configModal",
+    "resultModal",
+    "deleteModal",
+    "passwordModal"
+].forEach(
+    id => {
 
-    document
-        .getElementById(
-            id
-        )
-        .addEventListener(
-            "click",
-            function(event) {
+        document
+            .getElementById(
+                id
+            )
+            .addEventListener(
+                "click",
+                function(event){
 
-                if (
-                    event.target
-                    === this
-                ) {
+                    if(
+                        event.target
+                        === this
+                    ){
 
-                    this.classList.remove(
-                        "show"
-                    );
+                        this.classList.remove(
+                            "show"
+                        );
+                    }
+
                 }
+            );
 
-            }
-        );
-}
+    }
+);
 
+
+/* ==========================================================
+   ESCAPE
+========================================================== */
 
 document.addEventListener(
     "keydown",
-    function(event) {
+    event => {
 
-        if (
+        if(
             event.key !==
             "Escape"
-        ) {
+        )
             return;
-        }
 
         [
             "configModal",
@@ -7533,39 +8369,47 @@ document.addEventListener(
 );
 
 
-/* =========================================================
-   Initial
-========================================================= */
+/* ==========================================================
+   START
+========================================================== */
 
 refreshAll();
 
 /*
-    تمام آمار: هر ۱ ثانیه
+    Stats:
+    every 1 second
 */
+
 setInterval(
     refreshStats,
     1000
 );
 
 /*
-    لیست کانفیگ‌ها: هر ۱ ثانیه
+    Config table:
+    every 1 second
 */
+
 setInterval(
     refreshLinks,
     1000
 );
 
 /*
-    لاگ‌ها: هر ۱ ثانیه
+    Activity:
+    every 1 second
 */
+
 setInterval(
     refreshActivity,
     1000
 );
 
 /*
-    آپتایم محلی بین درخواست‌ها
+    Local uptime:
+    every 1 second
 */
+
 setInterval(
     tickUptime,
     1000
@@ -7579,6 +8423,10 @@ setInterval(
 """
 
 
+# ============================================================
+# DASHBOARD ROUTE
+# ============================================================
+
 @app.get(
     "/dashboard",
     response_class=HTMLResponse
@@ -7587,7 +8435,7 @@ async def dashboard(
     request: Request
 ):
 
-    if not await valid_session(
+    if not await is_valid_session(
         request.cookies.get(
             SESSION_COOKIE
         )
@@ -7603,196 +8451,7 @@ async def dashboard(
 
 
 # ============================================================
-# Health
-# ============================================================
-
-@app.get(
-    "/health"
-)
-async def health():
-
-    return {
-
-        "status":
-            "ok",
-
-        "service":
-            APP_NAME,
-
-        "version":
-            APP_VERSION,
-
-        "uptime":
-            format_uptime(
-                time.time()
-                - START_TIME
-            ),
-
-        "port":
-            PORT,
-    }
-
-
-# ============================================================
-# Startup
-# ============================================================
-
-@app.on_event(
-    "startup"
-)
-async def startup():
-
-    await load_state()
-
-    # کانفیگ پیش‌فرض
-    if not LINKS:
-
-        uid = (
-            "00000000-"
-            "0000-"
-            "4000-"
-            "8000-"
-            "000000000001"
-        )
-
-        LINKS[
-            uid
-        ] = {
-
-            "label":
-                "لینک پیش‌فرض",
-
-            "limit_bytes":
-                0,
-
-            "used_bytes":
-                0,
-
-            "duration_days":
-                0,
-
-            "expires_at":
-                None,
-
-            "active":
-                True,
-
-            "protocol":
-                "vless-ws",
-
-            "fingerprint":
-                "chrome",
-
-            "fragment":
-                None,
-
-            "fragment_profile":
-                "off",
-
-            "alpn":
-                "http/1.1",
-
-            "port":
-                443,
-
-            "concurrent_limit":
-                0,
-
-            "ip_limit":
-                0,
-
-            "speed_limit_bytes":
-                0,
-
-            "note":
-                "کانفیگ پیش‌فرض",
-
-            "created_at":
-                now_iso(),
-
-            "updated_at":
-                now_iso(),
-
-            "is_default":
-                True,
-        }
-
-        await save_state()
-
-    await add_activity(
-        f"{APP_NAME} v{APP_VERSION} راه‌اندازی شد",
-        "ok",
-        "system"
-    )
-
-    logger.info(
-        "%s started on 0.0.0.0:%s",
-        APP_NAME,
-        PORT
-    )
-
-    logger.info(
-        "Data directory: %s",
-        DATA_DIR
-    )
-
-
-@app.on_event(
-    "shutdown"
-)
-async def shutdown():
-
-    await save_state()
-
-
-# ============================================================
-# Error handler
-# ============================================================
-
-@app.exception_handler(
-    Exception
-)
-async def global_exception(
-    request: Request,
-    exc: Exception
-):
-
-    global TOTAL_ERRORS
-
-    TOTAL_ERRORS += 1
-
-    ERROR_LOG.append({
-
-        "time":
-            now_iso(),
-
-        "path":
-            str(
-                request.url.path
-            ),
-
-        "error":
-            str(exc),
-    })
-
-    logger.exception(
-        "Unhandled exception"
-    )
-
-    return JSONResponse(
-        {
-            "ok":
-                False,
-
-            "error":
-                "internal server error",
-        },
-        status_code=500
-    )
-
-
-# ============================================================
-# Run
+# MAIN
 # ============================================================
 
 if __name__ == "__main__":
