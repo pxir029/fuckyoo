@@ -7143,6 +7143,7 @@ async function api(
                 url,
                 {
                     cache:"no-store",
+                    credentials:"same-origin",
                     ...options
                 }
             );
@@ -7435,34 +7436,32 @@ ${escapeHtml(link.vless)}
 
 <button
 class="action primary"
-onclick="copyText(${JSON.stringify(link.vless)})"
+type="button"
+data-action="copy-vless"
 >
 VLESS
 </button>
 
 <button
 class="action"
-onclick="copyText(${JSON.stringify(link.sub)})"
+type="button"
+data-action="copy-sub"
 >
 SUB
 </button>
 
 <button
 class="action"
-onclick="window.open(
-    ${JSON.stringify(link.info)},
-    "_blank"
-)"
+type="button"
+data-action="open-info"
 >
 INFO
 </button>
 
 <button
 class="action"
-onclick="toggleLink(
-    ${JSON.stringify(link.uuid)},
-    ${!link.active}
-)"
+type="button"
+data-action="toggle"
 >
 ${
     link.active
@@ -7473,18 +7472,16 @@ ${
 
 <button
 class="action"
-onclick="resetUsage(
-    ${JSON.stringify(link.uuid)}
-)"
+type="button"
+data-action="reset"
 >
 ریست
 </button>
 
 <button
 class="action danger"
-onclick="deleteLink(
-    ${JSON.stringify(link.uuid)}
-)"
+type="button"
+data-action="delete"
 >
 حذف
 </button>
@@ -7494,6 +7491,62 @@ onclick="deleteLink(
 </td>
 
 `;
+
+                const actionButtons =
+                    row.querySelectorAll(
+                        "button[data-action]"
+                    );
+
+                actionButtons.forEach(
+                    (button) => {
+                        button.addEventListener(
+                            "click",
+                            async () => {
+                                const action =
+                                    button.dataset.action;
+
+                                if (action === "copy-vless") {
+                                    await copyText(link.vless);
+                                    return;
+                                }
+
+                                if (action === "copy-sub") {
+                                    await copyText(link.sub);
+                                    return;
+                                }
+
+                                if (action === "open-info") {
+                                    if (!link.info) {
+                                        showToast("لینک INFO موجود نیست");
+                                        return;
+                                    }
+                                    window.open(
+                                        String(link.info),
+                                        "_blank",
+                                        "noopener,noreferrer"
+                                    );
+                                    return;
+                                }
+
+                                button.disabled = true;
+                                try {
+                                    if (action === "toggle") {
+                                        await toggleLink(
+                                            link.uuid,
+                                            !Boolean(link.active)
+                                        );
+                                    } else if (action === "reset") {
+                                        await resetUsage(link.uuid);
+                                    } else if (action === "delete") {
+                                        await deleteLink(link.uuid);
+                                    }
+                                } finally {
+                                    button.disabled = false;
+                                }
+                            }
+                        );
+                    }
+                );
 
                 table.appendChild(
                     row
@@ -7534,27 +7587,56 @@ onclick="deleteLink(
 
 async function copyText(text){
 
-    try{
+    const value =
+        String(text ?? "").trim();
 
-        await navigator
-            .clipboard
-            .writeText(text);
-
-        showToast(
-            "کپی شد"
-        );
-
-    }catch{
-
-        window.prompt(
-            "لینک:",
-            text
-        );
-
+    if (!value) {
+        showToast("متنی برای کپی وجود ندارد");
+        return false;
     }
 
-}
+    try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            await navigator.clipboard.writeText(value);
+            showToast("کپی شد");
+            return true;
+        }
+    } catch (error) {
+        console.warn("Clipboard API failed:", error);
+    }
 
+    try {
+        const textarea = document.createElement("textarea");
+        textarea.value = value;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        textarea.style.top = "0";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        const copied = document.execCommand("copy");
+        textarea.remove();
+
+        if (copied) {
+            showToast("کپی شد");
+            return true;
+        }
+    } catch (error) {
+        console.warn("Legacy clipboard fallback failed:", error);
+    }
+
+    try {
+        window.prompt("لینک را کپی کنید:", value);
+    } catch (error) {
+        console.warn("Prompt fallback failed:", error);
+    }
+
+    return false;
+
+}
 
 function openManualModal(){
 
@@ -7846,37 +7928,30 @@ async function toggleLink(
     const result =
         await api(
             "/api/links/" +
-            encodeURIComponent(
-                uuid
-            ),
+            encodeURIComponent(uuid),
             {
                 method:"PATCH",
-
                 headers:{
-                    "Content-Type":
-                        "application/json"
+                    "Content-Type":"application/json"
                 },
-
-                body:
-                    JSON.stringify({
-                        active:
-                            active
-                    })
+                body:JSON.stringify({
+                    active:Boolean(active)
+                })
             }
         );
 
-
-    if(result){
-
-        showToast(
-            active
-            ? "کانفیگ فعال شد"
-            : "کانفیگ غیرفعال شد"
-        );
-
-        await refresh();
-
+    if (!result || result.ok !== true) {
+        return false;
     }
+
+    showToast(
+        active
+        ? "کانفیگ فعال شد"
+        : "کانفیگ غیرفعال شد"
+    );
+
+    await refresh();
+    return true;
 
 }
 
@@ -7895,16 +7970,13 @@ async function resetUsage(
             }
         );
 
-
-    if(result){
-
-        showToast(
-            "مصرف ریست شد"
-        );
-
-        await refresh();
-
+    if (!result || result.ok !== true) {
+        return false;
     }
+
+    showToast("مصرف ریست شد");
+    await refresh();
+    return true;
 
 }
 
@@ -7913,36 +7985,26 @@ async function deleteLink(
     uuid
 ){
 
-    if(
-        !confirm(
-            "این کانفیگ حذف شود؟"
-        )
-    ){
-        return;
+    if (!confirm("این کانفیگ حذف شود؟")) {
+        return false;
     }
-
 
     const result =
         await api(
             "/api/links/" +
-            encodeURIComponent(
-                uuid
-            ),
+            encodeURIComponent(uuid),
             {
                 method:"DELETE"
             }
         );
 
-
-    if(result){
-
-        showToast(
-            "کانفیگ حذف شد"
-        );
-
-        await refresh();
-
+    if (!result || result.ok !== true) {
+        return false;
     }
+
+    showToast("کانفیگ حذف شد");
+    await refresh();
+    return true;
 
 }
 
