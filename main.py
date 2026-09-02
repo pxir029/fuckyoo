@@ -40,8 +40,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # APP
 # ============================================================
 
-APP_NAME = "PixonPanel"
-APP_VERSION = "12.0.1 Beta"
+APP_NAME = "LogicPanel"
+APP_VERSION = "12.2.0 Beta"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -183,6 +183,15 @@ CONFIG = {
         "localhost",
     ),
 }
+
+# Runtime-customizable public paths. The internal route handlers remain stable
+# while middleware maps these aliases to /sub/ and /info/.
+SETTINGS = {
+    "sub_path": "sub",
+    "info_path": "info",
+}
+
+GITHUB_URL = "https://github.com/pxir029/"
 
 
 # ============================================================
@@ -607,6 +616,44 @@ def is_ip_allowed(
     return len(ips) < limit
 
 
+def normalize_path_segment(value: str, fallback: str) -> str:
+    value = str(value or "").strip().strip("/")
+    if not value:
+        return fallback
+    allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+    value = "".join(ch for ch in value if ch in allowed)
+    return value or fallback
+
+
+def public_sub_path() -> str:
+    return "/" + normalize_path_segment(SETTINGS.get("sub_path", "sub"), "sub")
+
+
+def public_info_path() -> str:
+    return "/" + normalize_path_segment(SETTINGS.get("info_path", "info"), "info")
+
+
+def public_sub_url(host: str, uid: str) -> str:
+    return f"https://{host}{public_sub_path()}/{uid}"
+
+
+def public_info_url(host: str, uid: str) -> str:
+    return f"https://{host}{public_info_path()}/{uid}"
+
+
+@app.middleware("http")
+async def custom_public_path_middleware(request: Request, call_next):
+    # Map user-defined aliases to the stable internal route handlers.
+    path = request.scope.get("path", "")
+    sub_alias = public_sub_path()
+    info_alias = public_info_path()
+    if path.startswith(sub_alias + "/") and sub_alias != "/sub":
+        request.scope["path"] = "/sub/" + path[len(sub_alias) + 1:]
+    elif path.startswith(info_alias + "/") and info_alias != "/info":
+        request.scope["path"] = "/info/" + path[len(info_alias) + 1:]
+    return await call_next(request)
+
+
 def get_host(
     request: Request | None = None,
 ) -> str:
@@ -895,41 +942,6 @@ def generate_vless_link(
     )
 
 
-def vless_info_link_for_link(
-    link: dict,
-    uid: str,
-):
-    """
-    Creates a second, intentionally non-routable VLESS entry for clients
-    that display subscription items as a list. Its host is 0.0.0.0 and
-    the remark carries subscription usage/expiry information.
-    """
-    used = int(link.get("used_bytes", 0) or 0)
-    limit = int(link.get("limit_bytes", 0) or 0)
-    volume = (
-        f"{fmt_bytes(used)}/{fmt_bytes(limit)}"
-        if limit > 0 else
-        f"{fmt_bytes(used)}/∞"
-    )
-    expiry = str(link.get("expires_at") or "∞")
-    label = str(link.get("label") or "PixonPanel")
-    remark = (
-        f"PixonPanel INFO | 0.0.0.0 | "
-        f"حجم {volume} | انقضا {expiry} | "
-        f"{label} | کانال تلگرام: logic_sec"
-    )
-
-    return generate_vless_link(
-        uid,
-        "0.0.0.0",
-        remark=remark,
-        protocol=link.get("protocol", DEFAULT_PROTOCOL),
-        fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
-        alpn=link.get("alpn"),
-        port=link.get("port", DEFAULT_PORT),
-    )
-
-
 def vless_link_for_link(
     link: dict,
     uid: str,
@@ -939,8 +951,7 @@ def vless_link_for_link(
         uid,
         host,
         remark=(
-            f"PixonPanel-"
-            f"{link.get('label', '')}"
+            str(link.get("label", ""))
         ),
         protocol=link.get(
             "protocol",
@@ -1043,19 +1054,16 @@ def get_link_info(
             uid,
             host,
         ),
-        "vless_info": vless_info_link_for_link(
-            link,
-            uid,
-        ),
         "sub": (
             f"https://{host}"
-            f"/sub/{uid}"
+            f"/{SETTINGS.get('sub_path', 'sub').strip('/')}/{uid}"
         ),
         "info": (
             f"https://{host}"
-            f"/info/{uid}"
+            f"/{SETTINGS.get('info_path', 'info').strip('/')}/{uid}"
         ),
         "support": SUPPORT_USERNAME,
+        "sub_id": link.get("sub_id"),
     }
 
 
@@ -1099,6 +1107,15 @@ async def load_state():
                 {},
             )
         )
+
+        SETTINGS.update(
+            data.get(
+                "settings",
+                {},
+            )
+        )
+        SETTINGS["sub_path"] = normalize_path_segment(SETTINGS.get("sub_path", "sub"), "sub")
+        SETTINGS["info_path"] = normalize_path_segment(SETTINGS.get("info_path", "info"), "info")
 
         stored_password = data.get(
             "password_hash"
@@ -1193,6 +1210,9 @@ async def save_state():
                     AUTH[
                         "password_hash"
                     ],
+
+                "settings":
+                    dict(SETTINGS),
 
                 "saved_at":
                     datetime.now().isoformat(),
@@ -1843,7 +1863,7 @@ LANDING_HTML = r"""
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
-<title>PixonPanel</title>
+<title>LogicPanel</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2060,7 +2080,7 @@ h1{
 
 <div>
 <div class="brand-name">
-PixonPanel
+LogicPanel
 </div>
 
 <div class="version">
@@ -2364,105 +2384,6 @@ button{
 
     font-size:11px;
 }
-
-<style>
-/* ============================================================
-   PIxonPanel PRO UI LAYER
-   ============================================================ */
-.topbar{
-    position:relative;
-    overflow:hidden;
-    padding:18px 19px;
-    border:1px solid rgba(255,255,255,.08);
-    border-radius:22px;
-    background:
-        radial-gradient(circle at 8% 20%,rgba(99,102,241,.15),transparent 30%),
-        radial-gradient(circle at 95% 10%,rgba(34,211,238,.09),transparent 28%),
-        linear-gradient(135deg,rgba(255,255,255,.045),rgba(255,255,255,.018));
-    box-shadow:0 20px 80px rgba(0,0,0,.28);
-}
-.topbar:after{
-    content:"";
-    position:absolute;
-    inset:auto 8% -40px 8%;
-    height:90px;
-    background:linear-gradient(90deg,transparent,rgba(99,102,241,.10),transparent);
-    filter:blur(22px);
-    pointer-events:none;
-}
-.brand{position:relative;z-index:1}
-.logo{
-    width:46px!important;
-    height:46px!important;
-    border-radius:15px!important;
-    background:linear-gradient(135deg,#6366f1,#8b5cf6 55%,#22d3ee)!important;
-    box-shadow:0 12px 30px rgba(99,102,241,.26);
-    border:1px solid rgba(255,255,255,.14)!important;
-}
-.brand-name{font-size:15px!important;font-weight:900!important;letter-spacing:-.2px}
-.brand-desc{font-size:9px!important;color:rgba(255,255,255,.42)!important}
-.brand-version{
-    display:inline-flex!important;
-    margin-top:5px!important;
-    padding:3px 7px!important;
-    border-radius:999px!important;
-    background:rgba(99,102,241,.08)!important;
-    border:1px solid rgba(99,102,241,.14)!important;
-    color:#a5b4fc!important;
-}
-.top-actions{position:relative;z-index:2;gap:6px!important}
-.top-btn{
-    border:1px solid rgba(255,255,255,.08)!important;
-    background:rgba(255,255,255,.035)!important;
-    backdrop-filter:blur(12px);
-    transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease;
-}
-.top-btn:hover{
-    transform:translateY(-1px);
-    border-color:rgba(129,140,248,.26)!important;
-    background:rgba(129,140,248,.08)!important;
-}
-.top-btn.primary{
-    background:linear-gradient(135deg,rgba(99,102,241,.30),rgba(139,92,246,.22))!important;
-    border-color:rgba(129,140,248,.30)!important;
-    box-shadow:0 8px 28px rgba(99,102,241,.12);
-}
-.stats-grid{margin-top:12px!important;gap:10px!important}
-.stat{
-    border-radius:18px!important;
-    background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.018))!important;
-    transition:transform .18s ease,border-color .18s ease,background .18s ease;
-}
-.stat:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.13)!important;background:rgba(255,255,255,.05)!important}
-.stat-value{font-size:20px!important}
-.panel{
-    border-radius:22px!important;
-    background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.018))!important;
-    box-shadow:0 18px 70px rgba(0,0,0,.16);
-}
-.panel-head{padding:15px 16px!important}
-.panel-title{font-size:12.5px!important}
-.table-wrap{background:linear-gradient(180deg,rgba(255,255,255,.012),transparent)}
-thead tr{background:rgba(255,255,255,.018)}
-tbody tr{transition:background .16s ease}
-tbody tr:hover{background:rgba(99,102,241,.035)}
-.action{
-    border:1px solid rgba(255,255,255,.055)!important;
-    transition:transform .16s ease,border-color .16s ease,background .16s ease;
-}
-.action:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.14)!important;background:rgba(255,255,255,.08)!important}
-.action.primary:hover{background:rgba(99,102,241,.24)!important}
-.action.danger:hover{background:rgba(239,68,68,.12)!important;border-color:rgba(248,113,113,.18)!important}
-.download{
-    position:relative;
-    overflow:hidden;
-    background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.015))!important;
-    transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
-}
-.download:after{content:"";position:absolute;inset:auto -25% -35px;height:70px;background:rgba(99,102,241,.08);filter:blur(22px);pointer-events:none}
-.download:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(0,0,0,.16)}
-@media(max-width:700px){.panel[style*="Control Center"] + .stats-grid{grid-template-columns:repeat(2,1fr)!important}.topbar{padding:14px}.top-actions{width:100%;display:grid!important;grid-template-columns:1fr 1fr;}.top-actions .top-btn,.top-actions a{width:100%;text-align:center}.top-actions .primary{grid-column:1/-1}}
-</style>
 
 </style>
 
@@ -2900,6 +2821,48 @@ async def api_change_password(
 
 
 # ============================================================
+# SETTINGS API
+# ============================================================
+
+@app.get("/api/settings")
+async def get_panel_settings(_=Depends(require_auth)):
+    return {
+        "ok": True,
+        "settings": dict(SETTINGS),
+        "sub_path": public_sub_path().strip("/"),
+        "info_path": public_info_path().strip("/"),
+    }
+
+
+@app.patch("/api/settings")
+async def update_panel_settings(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="اطلاعات نامعتبر است")
+
+    sub_path = normalize_path_segment(body.get("sub_path", SETTINGS.get("sub_path", "sub")), "sub")
+    info_path = normalize_path_segment(body.get("info_path", SETTINGS.get("info_path", "info")), "info")
+
+    if sub_path == info_path:
+        raise HTTPException(status_code=400, detail="مسیر SUB و INFO باید متفاوت باشند")
+
+    if sub_path in {"api", "login", "logout", "stats", "docs", "redoc"} or info_path in {"api", "login", "logout", "stats", "docs", "redoc"}:
+        raise HTTPException(status_code=400, detail="این مسیر قابل استفاده نیست")
+
+    SETTINGS["sub_path"] = sub_path
+    SETTINGS["info_path"] = info_path
+    await save_state()
+
+    log_activity("system", f"مسیرها تغییر کردند: /{sub_path}/ و /{info_path}/", "ok")
+    return {
+        "ok": True,
+        "sub_path": sub_path,
+        "info_path": info_path,
+    }
+
+
+# ============================================================
 # CREATE LINK
 # ============================================================
 
@@ -3238,10 +3201,10 @@ async def list_links(
                     ),
 
                 "sub_url":
-                    f"https://{host}/sub/{uid}",
+                    public_sub_url(host, uid),
 
                 "info_url":
-                    f"https://{host}/info/{uid}",
+                    public_info_url(host, uid),
 
                 "connected_ips":
                     len(
@@ -3828,20 +3791,29 @@ async def subscription_single(
         host,
     )
 
-    info_vless = vless_info_link_for_link(
-        link,
-        uuid,
+    used = int(link.get("used_bytes", 0) or 0)
+    limit = int(link.get("limit_bytes", 0) or 0)
+    volume_text = (
+        f"{fmt_bytes(used)}/{fmt_bytes(limit)}"
+        if limit > 0
+        else f"{fmt_bytes(used)}/∞"
     )
-
-    # Two subscription entries:
-    # 1) Real working configuration
-    # 2) Visual information entry with 0.0.0.0 host
-    subscription_lines = f"{vless}\n{info_vless}"
+    expiry_text = str(link.get("expires_at") or "∞")
+    info_remark = f"ℹ️ {volume_text} | ⏳ {expiry_text} | 📢 logic_sec"
+    info_vless = generate_vless_link(
+        uuid,
+        "0.0.0.0",
+        remark=info_remark,
+        protocol=link.get("protocol", DEFAULT_PROTOCOL),
+        fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
+        alpn=link.get("alpn"),
+        port=link.get("port", DEFAULT_PORT),
+    )
 
     content = (
         base64
         .b64encode(
-            subscription_lines.encode()
+            (info_vless + "\n" + vless).encode()
         )
         .decode()
     )
@@ -3850,13 +3822,13 @@ async def subscription_single(
     limit = int(link.get("limit_bytes", 0) or 0)
     volume_text = f"{fmt_bytes(used)}/{fmt_bytes(limit)}" if limit > 0 else f"{fmt_bytes(used)}/∞"
     expiry_text = str(link.get("expires_at") or "∞")
-    profile_title = f"0.0.0.0 | {volume_text} | {expiry_text} | {link.get('label','PixonPanel')} | کانال تلگرام: logic_sec"
+    profile_title = f"0.0.0.0 | {volume_text} | {expiry_text} | {link.get('label',APP_NAME)} | کانال تلگرام: logic_sec"
     headers = subscription_metadata_headers(
         used,
         limit,
         link.get("expires_at"),
         host,
-        f"https://{host}/info/{uuid}",
+        public_info_url(host, uuid),
         profile_title,
     )
 
@@ -3929,7 +3901,7 @@ async def info_page(
 
     host = get_host(request)
     vless_url = vless_link_for_link(snapshot, uid, host)
-    sub_url = f"https://{host}/sub/{uid}"
+    sub_url = public_sub_url(host, uid)
     used = int(snapshot.get("used_bytes", 0) or 0)
     limit = int(snapshot.get("limit_bytes", 0) or 0)
     if limit > 0:
@@ -3972,7 +3944,7 @@ async def info_page(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>{escape_html(snapshot.get("label","PixonPanel"))} | INFO</title>
+<title>{escape_html(snapshot.get("label",APP_NAME))} | INFO</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -4047,11 +4019,12 @@ body{{font-family:"Vazirmatn",sans-serif;color:var(--text);padding:24px;backgrou
 .channel b{{color:#6ee7b7}}
 @media(max-width:760px){{body{{padding:12px}}.dashboard{{grid-template-columns:1fr}}.stats{{grid-template-columns:repeat(2,1fr)}}.downloads{{grid-template-columns:1fr}}.hero-row{{align-items:flex-start;flex-direction:column}}}}
 </style>
+<style>.copy-btn{border:0;padding:8px 10px;border-radius:9px;color:#fff;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.16);font-family:inherit;font-size:8px;cursor:pointer;flex:0 0 auto}.copy-btn:hover{background:rgba(96,165,250,.18)}</style>
 </head>
 <body>
 <div class="page"><div class="shell">
 <section class="hero">
-<div class="hero-row"><div class="brand"><div class="brand-icon">PX</div><div><h1>{escape_html(snapshot.get("label","PixonPanel"))}</h1><div class="hero-meta">0.0.0.0 · UUID: {escape_html(uid)} · PixonPanel {APP_VERSION}</div></div></div><div class="status {status_class}"><i></i>{status_text}</div></div>
+<div class="hero-row"><div class="brand"><div class="brand-icon">PX</div><div><h1>{escape_html(snapshot.get("label",APP_NAME))}</h1><div class="hero-meta">0.0.0.0 · UUID: {escape_html(uid)} · {APP_NAME} {APP_VERSION}</div></div></div><div class="status {status_class}"><i></i>{status_text}</div></div>
 <div class="notice"><div class="notice-icon">!</div><div><strong>اطلاعیه اتصال</strong><br>لینک SUB را در برنامه‌ای که استفاده می‌کنید به‌عنوان Subscription وارد کنید. برای اتصال مستقیم نیز می‌توانید VLESS را Import کنید. <strong>کانال تلگرام: logic_sec</strong></div></div>
 </section>
 
@@ -4070,13 +4043,42 @@ body{{font-family:"Vazirmatn",sans-serif;color:var(--text);padding:24px;backgrou
 <div class="content">
 <section class="section"><div class="section-head"><div class="section-title">جزئیات فنی</div><div class="section-sub">Configuration Details</div></div><div class="info-grid"><div class="info-item"><div class="info-label">Protocol</div><div class="info-value code">{escape_html(snapshot.get("protocol","vless-ws"))}</div></div><div class="info-item"><div class="info-label">Fingerprint</div><div class="info-value code">{escape_html(snapshot.get("fingerprint","chrome"))}</div></div><div class="info-item"><div class="info-label">IP Limit</div><div class="info-value">{escape_html(ip_limit)}</div></div><div class="info-item"><div class="info-label">Connection Limit</div><div class="info-value">{escape_html(connection_limit)}</div></div><div class="info-item"><div class="info-label">Speed Limit</div><div class="info-value">{escape_html(speed_limit)}</div></div><div class="info-item"><div class="info-label">تاریخ انقضا</div><div class="info-value">{escape_html(expiry_display)}</div></div></div></section>
 
-<section class="section"><div class="section-head"><div class="section-title">لینک‌های سرویس</div><div class="section-sub">Copy / Import</div></div><div class="link-card"><div class="link-main"><div class="link-name">VLESS</div><div class="link-url">{escape_html(vless_url)}</div></div><div class="copy-hint">VLESS</div></div><div class="link-card"><div class="link-main"><div class="link-name">SUBSCRIPTION</div><div class="link-url">{escape_html(sub_url)}</div></div><div class="copy-hint">SUB</div></div></section>
+<section class="section"><div class="section-head"><div class="section-title">لینک‌های سرویس</div><div class="section-sub">Copy / Import</div></div><div class="link-card"><div class="link-main"><div class="link-name">VLESS</div><div class="link-url">{escape_html(vless_url)}</div></div><button class="copy-btn" type="button" onclick="copyInfoLink(this, {json.dumps(vless_url, ensure_ascii=False)})">کپی</button></div><div class="link-card"><div class="link-main"><div class="link-name">SUBSCRIPTION</div><div class="link-url">{escape_html(sub_url)}</div></div><button class="copy-btn" type="button" onclick="copyInfoLink(this, {json.dumps(sub_url, ensure_ascii=False)})">کپی</button></div></section>
 
 <section class="section"><div class="section-head"><div class="section-title">دانلود برنامه‌ها</div><div class="section-sub">Official Releases</div></div><div class="downloads"><a class="download" href="https://github.com/2dust/v2rayNG/releases/latest" target="_blank" rel="noopener noreferrer"><div class="app-icon">NG</div><div><strong>v2rayNG</strong><span>Android</span></div></a><a class="download" href="https://github.com/2dust/v2rayN/releases/latest" target="_blank" rel="noopener noreferrer"><div class="app-icon">N</div><div><strong>v2rayN</strong><span>Windows / macOS / Linux</span></div></a><a class="download" href="https://github.com/hiddify/hiddify-app/releases/latest" target="_blank" rel="noopener noreferrer"><div class="app-icon">H</div><div><strong>Hiddify</strong><span>Android / Windows / macOS / Linux</span></div></a></div></section>
 
 <div class="channel">پشتیبانی و اطلاعیه‌ها · <b>کانال تلگرام: logic_sec</b></div>
 </div></div></div>
 </body></html>"""
+    info_html += """
+<script>
+async function copyInfoLink(button,text){
+    const value=String(text||"");
+    if(!value)return;
+    try{
+        if(navigator.clipboard&&typeof navigator.clipboard.writeText==="function"){
+            await navigator.clipboard.writeText(value);
+        }else{
+            const area=document.createElement("textarea");
+            area.value=value;
+            area.style.position="fixed";
+            area.style.left="-9999px";
+            document.body.appendChild(area);
+            area.focus();
+            area.select();
+            document.execCommand("copy");
+            area.remove();
+        }
+        const old=button.textContent;
+        button.textContent="✓";
+        setTimeout(()=>button.textContent=old,1100);
+    }catch(error){
+        console.error("copy failed",error);
+    }
+}
+</script>
+</body></html>
+"""
     return HTMLResponse(info_html)
 
 
@@ -4184,12 +4186,23 @@ async def list_subs_api(
             if lid in snapshot_links
         )
 
+        group_links = []
+        for lid in link_ids:
+            item = snapshot_links.get(lid)
+            if item:
+                group_links.append({
+                    "uuid": lid,
+                    "label": item.get("label", lid),
+                    "active": is_link_allowed(item),
+                })
+
         result.append(
             {
                 "sub_id":
                     sid,
 
                 **sub,
+                "links": group_links,
 
                 "password_hash":
                     None,
@@ -4453,17 +4466,31 @@ async def sub_group_subscription(
                 )
             ):
 
+                used = int(link.get("used_bytes", 0) or 0)
+                limit = int(link.get("limit_bytes", 0) or 0)
+                volume_text = (
+                    f"{fmt_bytes(used)}/{fmt_bytes(limit)}"
+                    if limit > 0
+                    else f"{fmt_bytes(used)}/∞"
+                )
+                expiry_text = str(link.get("expires_at") or "∞")
+                info_remark = f"ℹ️ {volume_text} | ⏳ {expiry_text} | 📢 logic_sec"
+                lines.append(
+                    generate_vless_link(
+                        link_id,
+                        "0.0.0.0",
+                        remark=info_remark,
+                        protocol=link.get("protocol", DEFAULT_PROTOCOL),
+                        fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
+                        alpn=link.get("alpn"),
+                        port=link.get("port", DEFAULT_PORT),
+                    )
+                )
                 lines.append(
                     vless_link_for_link(
                         link,
                         link_id,
                         host,
-                    )
-                )
-                lines.append(
-                    vless_info_link_for_link(
-                        link,
-                        link_id,
                     )
                 )
 
@@ -4642,7 +4669,7 @@ h1{
 <div class="card">
 
 <h1>
-PixonPanel
+LogicPanel
 </h1>
 
 <div class="version">
@@ -6196,7 +6223,7 @@ P
 <div>
 
 <div class="brand-name">
-PixonPanel
+LogicPanel
 </div>
 
 <div class="brand-desc">
@@ -6229,10 +6256,33 @@ onclick="openManualModal()"
 
 <button
 class="top-btn"
+onclick="openGroupModal()"
+>
++ ساخت گروه
+</button>
+
+<button
+class="top-btn"
+onclick="openSettingsModal()"
+>
+تنظیمات
+</button>
+
+<button
+class="top-btn"
 onclick="openPasswordModal()"
 >
 تغییر رمز
 </button>
+
+<a
+href="https://github.com/pxir029/"
+target="_blank"
+rel="noopener noreferrer"
+class="top-btn"
+>
+★ GitHub
+</a>
 
 <a
 href="/logout"
@@ -6245,24 +6295,6 @@ class="top-btn danger"
 
 </div>
 
-<div class="panel" style="margin-top:12px;overflow:hidden;position:relative;background:radial-gradient(circle at 5% 30%,rgba(99,102,241,.10),transparent 28%),radial-gradient(circle at 90% 10%,rgba(34,211,238,.07),transparent 26%),rgba(255,255,255,.025)!important">
-    <div style="padding:18px 18px 14px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
-        <div>
-            <div style="font-size:8px;color:rgba(255,255,255,.28);letter-spacing:.8px;text-transform:uppercase;font-weight:800">Control Center</div>
-            <div style="margin-top:5px;font-size:16px;font-weight:900;letter-spacing:-.3px">مرکز مدیریت سرویس</div>
-            <div style="margin-top:4px;color:rgba(255,255,255,.38);font-size:9px;line-height:1.9">مدیریت کانفیگ، مصرف، اتصال و لینک‌های اشتراک در یک نمای سریع و یکپارچه.</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:7px;padding:9px 11px;border-radius:13px;border:1px solid rgba(52,211,153,.13);background:rgba(52,211,153,.045);color:#86efac;font-size:8px;font-weight:800">
-            <span style="width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 12px currentColor"></span>
-            سیستم آنلاین و آماده مدیریت
-        </div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px;padding:0 14px 14px">
-        <div style="padding:11px 12px;border-radius:15px;border:1px solid rgba(255,255,255,.055);background:rgba(255,255,255,.018)"><div style="font-size:8px;color:rgba(255,255,255,.30)">Subscription</div><div style="margin-top:4px;font-size:9px;font-weight:800;color:#a5b4fc">/sub/</div></div>
-        <div style="padding:11px 12px;border-radius:15px;border:1px solid rgba(255,255,255,.055);background:rgba(255,255,255,.018)"><div style="font-size:8px;color:rgba(255,255,255,.30)">Information</div><div style="margin-top:4px;font-size:9px;font-weight:800;color:#67e8f9">/info/</div></div>
-        <div style="padding:11px 12px;border-radius:15px;border:1px solid rgba(255,255,255,.055);background:rgba(255,255,255,.018)"><div style="font-size:8px;color:rgba(255,255,255,.30)">Support</div><div style="margin-top:4px;font-size:9px;font-weight:800;color:#86efac">logic_sec</div></div>
-    </div>
-</div>
 
 <div class="stats-grid">
 
@@ -6417,6 +6449,33 @@ VLESS
 </table>
 
 </div>
+
+</div>
+
+
+<div class="panel">
+
+<div class="panel-head">
+
+<div>
+<div class="panel-title">
+گروه‌ها
+</div>
+<div class="panel-sub">
+مدیریت گروه‌ها و کانفیگ‌های زیرمجموعه
+</div>
+</div>
+
+<button
+class="top-btn primary"
+onclick="openGroupModal()"
+>
++ ساخت گروه
+</button>
+
+</div>
+
+<div id="groupsList" style="padding:14px"></div>
 
 </div>
 
@@ -6885,6 +6944,19 @@ value="http/1.1"
 <div class="field full">
 
 <label>
+گروه
+</label>
+
+<select id="manualGroup">
+<option value="">بدون گروه</option>
+</select>
+
+</div>
+
+
+<div class="field full">
+
+<label>
 یادداشت
 </label>
 
@@ -7014,6 +7086,35 @@ onclick="createAuto()"
 
 
 <!-- ===================================================== -->
+<!-- GROUP MODAL -->
+<!-- ===================================================== -->
+<div id="groupModal" class="modal-backdrop">
+<div class="modal">
+<div class="modal-head"><div class="modal-title">ساخت گروه</div><button class="close" onclick="closeGroupModal()">×</button></div>
+<div class="form-grid">
+<div class="field full"><label>نام گروه</label><input id="groupName" placeholder="مثلاً VIP 01"></div>
+<div class="field full"><label>توضیحات</label><textarea id="groupDesc" placeholder="توضیحات اختیاری"></textarea></div>
+<div class="field full"><label>رمز اشتراک گروه</label><input id="groupPassword" type="password" placeholder="اختیاری"></div>
+</div>
+<div class="modal-actions"><button class="modal-btn secondary" onclick="closeGroupModal()">انصراف</button><button class="modal-btn primary" onclick="createGroup()">ساخت گروه</button></div>
+</div></div>
+
+<!-- ===================================================== -->
+<!-- SETTINGS MODAL -->
+<!-- ===================================================== -->
+<div id="settingsModal" class="modal-backdrop">
+<div class="modal">
+<div class="modal-head"><div class="modal-title">تنظیمات مسیر</div><button class="close" onclick="closeSettingsModal()">×</button></div>
+<div class="form-grid">
+<div class="field"><label>مسیر SUB</label><input id="settingsSubPath" value="sub" dir="ltr"></div>
+<div class="field"><label>مسیر INFO</label><input id="settingsInfoPath" value="info" dir="ltr"></div>
+<div class="field full"><div style="color:rgba(255,255,255,.36);font-size:9px;line-height:1.9">فقط حروف انگلیسی، عدد، - و _ استفاده کنید. بعد از ذخیره، مسیرهای جدید بلافاصله فعال می‌شوند.</div></div>
+</div>
+<div class="modal-actions"><button class="modal-btn secondary" onclick="closeSettingsModal()">انصراف</button><button class="modal-btn primary" onclick="saveSettings()">ذخیره تنظیمات</button></div>
+</div></div>
+
+
+<!-- ===================================================== -->
 <!-- PASSWORD MODAL -->
 <!-- ===================================================== -->
 
@@ -7124,6 +7225,8 @@ class="toast"
 <script>
 
 let editingLink = null;
+
+window.addEventListener("load", () => { loadGroups(); });
 
 
 /* LOGIN NOTICE START — DELETE THIS WHOLE BLOCK TO DISABLE THE LOGIN NOTICE */
@@ -7809,6 +7912,92 @@ function closeAutoModal(){
 }
 
 
+async function loadGroups(){
+    const result = await api("/api/subs");
+    const select = document.getElementById("manualGroup");
+    const list = document.getElementById("groupsList");
+    if (select) {
+        const current = select.value;
+        select.innerHTML = '<option value="">بدون گروه</option>';
+        if (result && Array.isArray(result.subs)) {
+            result.subs.forEach(group => {
+                const option = document.createElement("option");
+                option.value = group.sub_id;
+                option.textContent = `${group.name} (${group.links_count || 0})`;
+                select.appendChild(option);
+            });
+            if (current) select.value = current;
+        }
+    }
+    if (list) {
+        if (!result || !Array.isArray(result.subs) || !result.subs.length) {
+            list.innerHTML = '<div class="empty">هنوز گروهی ساخته نشده است.</div>';
+            return;
+        }
+        list.innerHTML = result.subs.map(group => {
+            const url = group.sub_url || "";
+            return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025);border-radius:14px;margin-bottom:8px">
+                <div style="min-width:0"><div style="font-weight:800;font-size:10px">${escapeHtml(group.name || "-")}</div><div style="margin-top:4px;color:rgba(255,255,255,.3);font-size:8px">${escapeHtml(group.desc || "بدون توضیح")} · ${group.links_count || 0} کانفیگ</div><div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:5px">${(group.links||[]).map(item => `<span style="padding:4px 6px;border-radius:7px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.05);font-size:7px;color:${item.active ? '#86efac' : '#fca5a5'}">${escapeHtml(item.label || item.uuid)}</span>`).join("") || '<span style="color:rgba(255,255,255,.25);font-size:7px">بدون کانفیگ</span>'}</div><div style="margin-top:5px;direction:ltr;text-align:left;color:#c4b5fd;font-family:Consolas,monospace;font-size:8px;word-break:break-all">${escapeHtml(url)}</div></div>
+                <div style="display:flex;gap:5px;flex-shrink:0"><button class="action primary" type="button" onclick="copyText('${String(url).replace(/'/g,"\\'")}')">SUB</button><button class="action danger" type="button" onclick="deleteGroup('${String(group.sub_id).replace(/'/g,"\\'")}')">حذف</button></div>
+            </div>`;
+        }).join("");
+    }
+}
+
+function openGroupModal(){
+    document.getElementById("groupModal").classList.add("open");
+}
+
+function closeGroupModal(){
+    document.getElementById("groupModal").classList.remove("open");
+}
+
+async function createGroup(){
+    const result = await api("/api/subs", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
+        name: document.getElementById("groupName").value.trim(),
+        desc: document.getElementById("groupDesc").value.trim(),
+        password: document.getElementById("groupPassword").value
+    })});
+    if (!result || !result.ok && !result.sub_id) return;
+    closeGroupModal();
+    document.getElementById("groupName").value = "";
+    document.getElementById("groupDesc").value = "";
+    document.getElementById("groupPassword").value = "";
+    showToast("گروه ساخته شد");
+    await loadGroups();
+}
+
+async function deleteGroup(subId){
+    if (!confirm("این گروه حذف شود؟ کانفیگ‌ها حذف نمی‌شوند و از گروه خارج می‌شوند.")) return;
+    const result = await api("/api/subs/" + encodeURIComponent(subId), {method:"DELETE"});
+    if (!result || result.ok !== true) return;
+    showToast("گروه حذف شد");
+    await Promise.all([loadGroups(), refresh()]);
+}
+
+async function openSettingsModal(){
+    const result = await api("/api/settings");
+    if (!result) return;
+    document.getElementById("settingsSubPath").value = result.sub_path || "sub";
+    document.getElementById("settingsInfoPath").value = result.info_path || "info";
+    document.getElementById("settingsModal").classList.add("open");
+}
+
+function closeSettingsModal(){
+    document.getElementById("settingsModal").classList.remove("open");
+}
+
+async function saveSettings(){
+    const result = await api("/api/settings", {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({
+        sub_path: document.getElementById("settingsSubPath").value.trim(),
+        info_path: document.getElementById("settingsInfoPath").value.trim()
+    })});
+    if (!result || result.ok !== true) return;
+    closeSettingsModal();
+    showToast("تنظیمات ذخیره شد");
+    await refresh();
+}
+
 function openPasswordModal(){
 
     document
@@ -7983,6 +8172,13 @@ async function createManual(){
                     "manualAlpn"
                 )
                 .value,
+
+        sub_id:
+            document
+                .getElementById(
+                    "manualGroup"
+                )
+                .value || null,
 
         note:
             document
