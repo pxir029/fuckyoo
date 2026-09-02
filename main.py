@@ -201,38 +201,6 @@ CONFIG = {
 }
 
 
-# ============================================================
-# STATE
-# ============================================================
-
-LINKS: dict = {}
-SUBS: dict = {}
-SESSIONS: dict = {}
-connections: dict = {}
-
-stats = {
-    "total_bytes": 0,
-    "total_requests": 0,
-    "total_errors": 0,
-    "start_time": time.time(),
-}
-
-error_logs = deque(maxlen=100)
-activity_logs = deque(maxlen=250)
-
-hourly_traffic = defaultdict(int)
-
-http_client: httpx.AsyncClient | None = None
-
-
-# ============================================================
-# NEWS CACHE
-# ============================================================
-
-NEWS_CACHE = {
-    "data": None,
-    "expires_at": 0,
-}
 
 
 # ============================================================
