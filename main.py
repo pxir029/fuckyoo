@@ -43,8 +43,8 @@ from fastapi.middleware.cors import CORSMiddleware
 APP_NAME = "PixonPanel"
 APP_VERSION = "12.0.1 Beta"
 
-SUPPORT_USERNAME = "@Pixonal"
-SUPPORT_URL = "https://t.me/Pixonal"
+SUPPORT_USERNAME = "@logic_sec"
+SUPPORT_URL = "https://t.me/logic_sec"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -3670,26 +3670,22 @@ async def subscription_single(
         .decode()
     )
 
+    used = int(link.get("used_bytes", 0) or 0)
+    limit = int(link.get("limit_bytes", 0) or 0)
+    volume_text = f"{fmt_bytes(used)}/{fmt_bytes(limit)}" if limit > 0 else f"{fmt_bytes(used)}/∞"
+    expiry_text = str(link.get("expires_at") or "∞")
+    profile_title = f"0.0.0.0 | {volume_text} | {expiry_text} | {link.get('label','PixonPanel')} | کانال تلگرام: logic_sec"
+
     return Response(
         content=content,
         media_type="text/plain",
         headers={
-            "profile-title":
-                quote(
-                    link.get(
-                        "label",
-                        "PixonPanel",
-                    )
-                ),
-
-            "support-url":
-                SUPPORT_URL,
-
-            "profile-update-interval":
-                "12",
+            "profile-title": quote(profile_title),
+            "profile-web-page-url": f"https://{host}/info/{uuid}",
+            "support-url": SUPPORT_URL,
+            "profile-update-interval": "12",
         },
     )
-
 
 # ============================================================
 # SUB ALL
@@ -3746,305 +3742,75 @@ async def info_page(
     uid: str,
     request: Request,
 ):
-
     async with LINKS_LOCK:
-
         link = LINKS.get(uid)
-
         if not link:
-            return HTMLResponse(
-                """
-                <html lang="fa" dir="rtl">
-                <body style="
-                    margin:0;
-                    background:#07070a;
-                    color:#fff;
-                    font-family:sans-serif;
-                    padding:40px;
-                ">
-                    <h2>کانفیگ پیدا نشد</h2>
-                </body>
-                </html>
-                """,
-                status_code=404,
-            )
-
+            return HTMLResponse("<html lang=\"fa\" dir=\"rtl\"><body style=\"margin:0;background:#07070a;color:#fff;font-family:sans-serif;padding:40px\"><h2>کانفیگ پیدا نشد</h2></body></html>", status_code=404)
         snapshot = dict(link)
 
     host = get_host(request)
+    vless_url = vless_link_for_link(snapshot, uid, host)
+    sub_url = f"https://{host}/sub/{uid}"
+    used = int(snapshot.get("used_bytes", 0) or 0)
+    limit = int(snapshot.get("limit_bytes", 0) or 0)
+    if limit > 0:
+        usage_percent = max(0, min(100, round((used / limit) * 100, 1)))
+        usage_value = f"{fmt_bytes(used)} / {fmt_bytes(limit)}"
+        remaining_value = fmt_bytes(max(0, limit - used))
+    else:
+        usage_percent = 0
+        usage_value = f"{fmt_bytes(used)} / نامحدود"
+        remaining_value = "نامحدود"
 
-    vless_url = vless_link_for_link(
-        snapshot,
-        uid,
-        host,
-    )
+    expires_at = snapshot.get("expires_at")
+    if expires_at:
+        try:
+            expiry_dt = datetime.fromisoformat(str(expires_at))
+            now_dt = datetime.now(expiry_dt.tzinfo) if expiry_dt.tzinfo else datetime.now()
+            seconds = int((expiry_dt - now_dt).total_seconds())
+            if seconds <= 0:
+                expiry_remaining = "منقضی شده"
+            else:
+                days, rem = divmod(seconds, 86400)
+                hours, rem = divmod(rem, 3600)
+                minutes, _ = divmod(rem, 60)
+                expiry_remaining = f"{days} روز و {hours} ساعت" if days else (f"{hours} ساعت و {minutes} دقیقه" if hours else f"{minutes} دقیقه")
+        except Exception:
+            expiry_remaining = "نامشخص"
+        expiry_display = str(expires_at)
+    else:
+        expiry_remaining = "نامحدود"
+        expiry_display = "نامحدود"
 
-    sub_url = (
-        f"https://{host}"
-        f"/sub/{uid}"
-    )
+    status_text = "فعال" if is_link_allowed(snapshot) else "غیرفعال"
+    status_class = "good" if status_text == "فعال" else "bad"
+    ip_limit = "نامحدود" if not snapshot.get("ip_limit",0) else str(snapshot.get("ip_limit"))
+    connection_limit = "نامحدود" if not snapshot.get("connection_limit",0) else str(snapshot.get("connection_limit"))
+    speed_limit = "نامحدود" if not snapshot.get("speed_limit_bytes",0) else fmt_bytes(snapshot.get("speed_limit_bytes",0)) + "/s"
 
-    info_html = f"""
-<!DOCTYPE html>
-<html lang="fa" dir="rtl">
-
-<head>
-<meta charset="UTF-8">
-
-<meta
-name="viewport"
-content="width=device-width,initial-scale=1"
->
-
-<title>
-PixonPanel | INFO
-</title>
-
-<link
-href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap"
-rel="stylesheet"
->
-
+    info_html = f"""<!DOCTYPE html>
+<html lang="fa" dir="rtl"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{escape_html(snapshot.get("label","PixonPanel"))} | INFO</title>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-
-*{{box-sizing:border-box}}
-
-body{{
-    margin:0;
-    min-height:100vh;
-    padding:20px;
-
-    display:flex;
-    align-items:center;
-    justify-content:center;
-
-    color:#fff;
-    font-family:"Vazirmatn",sans-serif;
-
-    background:
-        radial-gradient(
-            circle at top right,
-            rgba(99,102,241,.18),
-            transparent 30%
-        ),
-        #07070a;
-}}
-
-.card{{
-    width:100%;
-    max-width:700px;
-
-    padding:26px;
-    border-radius:26px;
-
-    background:rgba(255,255,255,.045);
-
-    border:
-        1px solid
-        rgba(255,255,255,.08);
-
-    backdrop-filter:blur(24px);
-}}
-
-h1{{
-    margin:0;
-    font-size:23px;
-}}
-
-.version{{
-    margin-top:4px;
-    color:#a78bfa;
-    font-size:11px;
-}}
-
-.row{{
-    margin-top:12px;
-    padding:14px;
-
-    border-radius:14px;
-
-    background:
-        rgba(255,255,255,.03);
-
-    border:
-        1px solid
-        rgba(255,255,255,.06);
-}}
-
-.label{{
-    margin-bottom:7px;
-    color:rgba(255,255,255,.4);
-    font-size:10px;
-}}
-
-.value{{
-    direction:ltr;
-    text-align:left;
-    word-break:break-all;
-
-    color:#c4b5fd;
-
-    font-family:Consolas,monospace;
-    font-size:11px;
-}}
-
-.support{{
-    margin-top:18px;
-    color:#a78bfa;
-}}
-
-</style>
-</head>
-
-<body>
-
-<div class="card">
-
-<h1>
-{escape_html(snapshot.get("label","PixonPanel"))}
-</h1>
-
-<div class="version">
-PixonPanel · {APP_VERSION}
-</div>
-
-<div class="row">
-<div class="label">UUID</div>
-<div class="value">
-{escape_html(uid)}
-</div>
-</div>
-
-<div class="row">
-<div class="label">وضعیت</div>
-<div class="value">
-{
-    "ACTIVE"
-    if is_link_allowed(snapshot)
-    else "DISABLED"
-}
-</div>
-</div>
-
-<div class="row">
-<div class="label">Protocol</div>
-<div class="value">
-{escape_html(snapshot.get("protocol","vless-ws"))}
-</div>
-</div>
-
-<div class="row">
-<div class="label">VLESS</div>
-<div class="value">
-{escape_html(vless_url)}
-</div>
-</div>
-
-<div class="row">
-<div class="label">SUB</div>
-<div class="value">
-{escape_html(sub_url)}
-</div>
-</div>
-
-<div class="row">
-<div class="label">Volume</div>
-<div class="value">
-{
-    "Unlimited"
-    if not snapshot.get("limit_bytes",0)
-    else escape_html(
-        fmt_bytes(
-            snapshot.get(
-                "limit_bytes",
-                0,
-            )
-        )
-    )
-}
-</div>
-</div>
-
-<div class="row">
-<div class="label">Time</div>
-<div class="value">
-{
-    "Unlimited"
-    if not snapshot.get("expires_at")
-    else escape_html(
-        snapshot.get("expires_at")
-    )
-}
-</div>
-</div>
-
-<div class="row">
-<div class="label">IP Limit</div>
-<div class="value">
-{
-    "Unlimited"
-    if not snapshot.get("ip_limit",0)
-    else str(snapshot.get("ip_limit"))
-}
-</div>
-</div>
-
-<div class="row">
-<div class="label">Connection Limit</div>
-<div class="value">
-{
-    "Unlimited"
-    if not snapshot.get("connection_limit",0)
-    else str(snapshot.get("connection_limit"))
-}
-</div>
-</div>
-
-<div class="row">
-<div class="label">Speed</div>
-<div class="value">
-{
-    "Unlimited"
-    if not snapshot.get("speed_limit_bytes",0)
-    else escape_html(
-        fmt_bytes(
-            snapshot.get(
-                "speed_limit_bytes",
-                0,
-            )
-        ) + "/s"
-    )
-}
-</div>
-</div>
-
-<div class="row">
-<div class="label">Fingerprint</div>
-<div class="value">
-{escape_html(snapshot.get("fingerprint","chrome"))}
-</div>
-</div>
-
-<div class="row">
-<div class="label">Fragment</div>
-<div class="value">
-{escape_html(snapshot.get("fragment","off"))}
-</div>
-</div>
-
-<div class="support">
-پشتیبانی:
-<strong>
-{escape_html(SUPPORT_USERNAME)}
-</strong>
-</div>
-
-</div>
-
-</body>
-</html>
-"""
-
+*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%}}body{{padding:18px;color:#fff;font-family:"Vazirmatn",sans-serif;background:radial-gradient(circle at 10% 0%,rgba(99,102,241,.18),transparent 28%),radial-gradient(circle at 100% 100%,rgba(16,185,129,.08),transparent 28%),#07070a}}
+.page{{width:min(860px,100%);margin:auto}}.card{{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);backdrop-filter:blur(24px);border-radius:26px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.35)}}
+.hero{{padding:22px;border-bottom:1px solid rgba(255,255,255,.06)}}.hero-top{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.hero h1{{margin:0;font-size:21px;font-weight:900}}.hero-sub{{margin-top:5px;color:rgba(255,255,255,.38);font-size:9px}}.status{{padding:7px 10px;border-radius:10px;font-size:9px;font-weight:800}}.status.good{{color:#86efac;background:rgba(34,197,94,.09);border:1px solid rgba(34,197,94,.16)}}.status.bad{{color:#fca5a5;background:rgba(239,68,68,.09);border:1px solid rgba(239,68,68,.16)}}
+.notice{{margin-top:16px;padding:13px 14px;border:1px solid rgba(99,102,241,.20);border-radius:16px;background:linear-gradient(135deg,rgba(99,102,241,.10),rgba(139,92,246,.04));color:rgba(255,255,255,.64);font-size:9px;line-height:2}}.notice strong{{color:#c4b5fd}}
+.stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;padding:16px}}.metric{{position:relative;overflow:hidden;padding:13px;border-radius:16px;background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.07)}}.metric::after{{content:"";position:absolute;right:0;bottom:0;left:0;height:2px;background:var(--c);opacity:.8}}.metric:nth-child(1){{--c:#4ade80}}.metric:nth-child(2){{--c:#f59e0b}}.metric:nth-child(3){{--c:#60a5fa}}.metric:nth-child(4){{--c:#a78bfa}}.metric-label{{color:rgba(255,255,255,.38);font-size:8px}}.metric-value{{margin-top:5px;color:var(--c);font-size:14px;font-weight:900}}
+.content{{padding:0 16px 16px}}.section{{padding:15px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);border-radius:18px;margin-top:10px}}.section-title{{font-size:11px;font-weight:800}}.section-sub{{margin-top:3px;color:rgba(255,255,255,.30);font-size:8px}}.progress-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px;color:rgba(255,255,255,.52);font-size:9px}}.progress{{height:9px;margin-top:8px;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.06)}}.progress>span{{display:block;height:100%;width:{usage_percent}%;border-radius:inherit;background:linear-gradient(90deg,#22c55e,#f59e0b)}}
+.info-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:11px}}.info-item{{padding:12px;border-radius:13px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06)}}.info-label{{color:rgba(255,255,255,.34);font-size:8px}}.info-value{{margin-top:5px;word-break:break-word;color:rgba(255,255,255,.88);font-size:9px}}.code{{direction:ltr;text-align:left;font-family:Consolas,monospace;color:#c4b5fd;word-break:break-all}}
+.downloads{{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:11px}}.download{{display:block;padding:12px;border-radius:14px;text-decoration:none;color:#fff;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);transition:.2s ease}}.download:hover{{transform:translateY(-2px);border-color:rgba(129,140,248,.30);background:rgba(129,140,248,.07)}}.download strong{{display:block;font-size:9px}}.download span{{display:block;margin-top:3px;color:rgba(255,255,255,.34);font-size:8px}}.channel{{margin-top:12px;text-align:center;color:rgba(255,255,255,.34);font-size:9px}}.channel b{{color:#a5b4fc}}
+@media(max-width:700px){{.stats{{grid-template-columns:repeat(2,1fr)}}.info-grid,.downloads{{grid-template-columns:1fr}}.hero-top{{flex-direction:column}}}}
+</style></head><body><div class="page"><div class="card">
+<div class="hero"><div class="hero-top"><div><h1>{escape_html(snapshot.get("label","PixonPanel"))}</h1><div class="hero-sub">PixonPanel · {APP_VERSION} · UUID: {escape_html(uid)}</div></div><div class="status {status_class}">{status_text}</div></div><div class="notice"><strong>اطلاعیه:</strong> لینک SUB را داخل برنامه انتخابی خود Import کنید. برای اتصال مستقیم نیز VLESS در دسترس است. کانال تلگرام: <strong>logic_sec</strong></div></div>
+<div class="stats"><div class="metric"><div class="metric-label">مصرف فعلی</div><div class="metric-value">{escape_html(fmt_bytes(used))}</div></div><div class="metric"><div class="metric-label">باقی‌مانده حجم</div><div class="metric-value">{escape_html(remaining_value)}</div></div><div class="metric"><div class="metric-label">اتصالات</div><div class="metric-value">{len(unique_ips_for_uuid(uid))}</div></div><div class="metric"><div class="metric-label">زمان باقی‌مانده</div><div class="metric-value">{escape_html(expiry_remaining)}</div></div></div>
+<div class="content"><div class="section"><div class="section-title">نوار مصرف</div><div class="section-sub">درصد استفاده از سقف حجم سرویس</div><div class="progress-head"><span>{escape_html(usage_value)}</span><b>{usage_percent}%</b></div><div class="progress"><span></span></div></div>
+<div class="section"><div class="section-title">جزئیات سرویس</div><div class="info-grid"><div class="info-item"><div class="info-label">تاریخ انقضا</div><div class="info-value">{escape_html(expiry_display)}</div></div><div class="info-item"><div class="info-label">IP Limit</div><div class="info-value">{escape_html(ip_limit)}</div></div><div class="info-item"><div class="info-label">Connection Limit</div><div class="info-value">{escape_html(connection_limit)}</div></div><div class="info-item"><div class="info-label">Speed Limit</div><div class="info-value">{escape_html(speed_limit)}</div></div><div class="info-item"><div class="info-label">Protocol</div><div class="info-value code">{escape_html(snapshot.get("protocol","vless-ws"))}</div></div><div class="info-item"><div class="info-label">Fingerprint</div><div class="info-value code">{escape_html(snapshot.get("fingerprint","chrome"))}</div></div></div></div>
+<div class="section"><div class="section-title">لینک‌های اتصال</div><div class="info-grid"><div class="info-item"><div class="info-label">VLESS</div><div class="info-value code">{escape_html(vless_url)}</div></div><div class="info-item"><div class="info-label">SUB</div><div class="info-value code">{escape_html(sub_url)}</div></div></div></div>
+<div class="section"><div class="section-title">دانلود برنامه‌ها</div><div class="section-sub">نسخه‌های رسمی</div><div class="downloads"><a class="download" href="https://github.com/2dust/v2rayNG/releases/latest" target="_blank" rel="noopener noreferrer"><strong>v2rayNG</strong><span>Android</span></a><a class="download" href="https://github.com/2dust/v2rayN/releases/latest" target="_blank" rel="noopener noreferrer"><strong>v2rayN</strong><span>Windows / macOS / Linux</span></a><a class="download" href="https://github.com/hiddify/hiddify-app/releases/latest" target="_blank" rel="noopener noreferrer"><strong>Hiddify</strong><span>Android / Windows / macOS / Linux</span></a></div></div>
+<div class="channel">کانال تلگرام: <b>logic_sec</b></div></div></div></div></body></html>"""
     return HTMLResponse(info_html)
 
 
@@ -5571,6 +5337,8 @@ body{
 }
 
 .stat{
+    position:relative;
+    overflow:hidden;
     padding:14px;
     border-radius:16px;
 
@@ -5593,6 +5361,9 @@ body{
     font-size:19px;
     font-weight:900;
 }
+.stat::after{content:"";position:absolute;right:0;bottom:0;left:0;height:2px;background:var(--stat-color,#818cf8);opacity:.8}
+.stat:nth-child(1){--stat-color:#60a5fa}.stat:nth-child(2){--stat-color:#4ade80}.stat:nth-child(3){--stat-color:#f59e0b}.stat:nth-child(4){--stat-color:#a78bfa}.stat:nth-child(5){--stat-color:#fb7185}.stat:nth-child(6){--stat-color:#22d3ee}.stat-value{color:var(--stat-color,#fff)}
+
 
 .panel{
     margin-top:11px;
@@ -6008,8 +5779,9 @@ th{
 .toast{
     position:fixed;
 
-    left:16px;
-    bottom:16px;
+    left:50%;
+    top:18px;
+    bottom:auto;
 
     z-index:200;
 
@@ -6017,7 +5789,7 @@ th{
 
     border-radius:12px;
 
-    background:#14141b;
+    background:rgba(20,20,27,.97);
 
     border:
         1px solid
@@ -6025,12 +5797,13 @@ th{
 
     color:#fff;
 
-    font-size:10px;
+    font-size:11px;
+    font-weight:700;
 
     opacity:0;
 
     transform:
-        translateY(10px);
+        translate(-50%,-140%);
 
     pointer-events:none;
 
@@ -6042,8 +5815,14 @@ th{
     opacity:1;
 
     transform:
-        translateY(0);
+        translate(-50%,0);
 }
+
+/* LOGIN NOTICE START — DELETE THIS WHOLE BLOCK TO DISABLE THE LOGIN NOTICE */
+.login-notice-backdrop{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.72);backdrop-filter:blur(14px)}
+.login-notice{width:min(620px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:22px;border:1px solid rgba(255,255,255,.10);border-radius:24px;background:linear-gradient(180deg,rgba(24,24,34,.98),rgba(12,12,17,.98));box-shadow:0 30px 100px rgba(0,0,0,.60);animation:noticeIn .28s ease both}
+.login-notice-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}.login-notice-icon{width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:rgba(99,102,241,.14);border:1px solid rgba(129,140,248,.22);color:#a5b4fc;font-size:18px}.login-notice h3{margin:0;font-size:15px}.login-notice p{margin:5px 0 0;color:rgba(255,255,255,.42);font-size:9px;line-height:1.9}.notice-downloads{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}.notice-download{display:block;padding:12px;border-radius:14px;text-decoration:none;color:#fff;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);transition:.2s ease}.notice-download:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.30);background:rgba(129,140,248,.07)}.notice-download strong{display:block;font-size:10px}.notice-download span{display:block;margin-top:3px;color:rgba(255,255,255,.36);font-size:8px}.login-notice-body{margin-top:14px;padding:14px;border-radius:14px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);color:rgba(255,255,255,.62);font-size:10px;line-height:2}.login-notice-body b{color:#fff}.login-notice-actions{margin-top:14px;display:flex;gap:8px}.login-notice-actions button{flex:1;padding:11px;border:0;border-radius:12px;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-family:inherit;cursor:pointer}@keyframes noticeIn{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+/* LOGIN NOTICE END */
 
 @media(max-width:1100px){
 
@@ -7001,6 +6780,16 @@ onclick="changePassword()"
 </div>
 
 
+    <!-- LOGIN NOTICE START — DELETE THIS WHOLE BLOCK TO DISABLE THE LOGIN NOTICE -->
+<div id="loginNoticeModal" class="login-notice-backdrop" role="dialog" aria-modal="true">
+<div class="login-notice">
+<div class="login-notice-head"><div class="login-notice-icon">ⓘ</div><div><h3>راهنمای اتصال سرویس</h3><p>برای اضافه‌کردن اشتراک، از یکی از برنامه‌های زیر استفاده کنید.</p></div></div>
+<div class="login-notice-body"><b>پیشنهاد:</b> لینک SUB را داخل برنامه Import/Subscription اضافه کنید. برای اتصال مستقیم هم می‌توانید VLESS را وارد کنید.<br>کانال تلگرام: <b>logic_sec</b></div>
+<div class="notice-downloads"><a class="notice-download" href="https://github.com/2dust/v2rayNG/releases/latest" target="_blank" rel="noopener noreferrer"><strong>v2rayNG</strong><span>Android</span></a><a class="notice-download" href="https://github.com/2dust/v2rayN/releases/latest" target="_blank" rel="noopener noreferrer"><strong>v2rayN</strong><span>Windows / macOS / Linux</span></a><a class="notice-download" href="https://github.com/hiddify/hiddify-app/releases/latest" target="_blank" rel="noopener noreferrer"><strong>Hiddify</strong><span>Android / Windows / macOS / Linux</span></a></div>
+<div class="login-notice-actions"><button type="button" onclick="closeLoginNotice()">متوجه شدم</button></div>
+</div></div>
+    <!-- LOGIN NOTICE END -->
+
 <div
 id="toast"
 class="toast"
@@ -7011,6 +6800,11 @@ class="toast"
 
 let editingLink = null;
 
+
+/* LOGIN NOTICE START — DELETE THIS WHOLE BLOCK TO DISABLE THE LOGIN NOTICE */
+function closeLoginNotice(){const modal=document.getElementById("loginNoticeModal");if(modal)modal.remove()}
+window.addEventListener("keydown",event=>{if(event.key==="Escape")closeLoginNotice()});
+/* LOGIN NOTICE END */
 
 function escapeHtml(value){
 
