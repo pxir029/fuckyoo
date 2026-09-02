@@ -1,5 +1,5 @@
 # ============================================================
-# PXPanel 12.1.0 Beta
+# PXPanel 13.0.1 Beta
 # Railway Ready
 # ============================================================
 
@@ -41,7 +41,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "12.2.0 Beta"
+APP_VERSION = "13.0.1 Beta"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -215,10 +215,38 @@ http_client: httpx.AsyncClient | None = None
 
 PROTOCOLS = (
     "vless-ws",
-    "xhttp",
-    "xhttp",
-    "xhttp",
+    "xhttp-packet-up",
+    "xhttp-stream-up",
+    "xhttp-stream-one",
+    "vmess-ws",
+    "trojan-ws",
+    "shadowsocks",
+    "socks5",
+    "http",
+    "hysteria2",
+    "tuic",
+    "wireguard",
 )
+
+PROTOCOL_LABELS = {
+    "vless-ws": "VLESS WebSocket",
+    "xhttp-packet-up": "XHTTP Packet Up",
+    "xhttp-stream-up": "XHTTP Stream Up",
+    "xhttp-stream-one": "XHTTP Stream One",
+    "vmess-ws": "VMess WebSocket",
+    "trojan-ws": "Trojan WebSocket",
+    "shadowsocks": "Shadowsocks",
+    "socks5": "SOCKS5",
+    "http": "HTTP Proxy",
+    "hysteria2": "Hysteria 2",
+    "tuic": "TUIC",
+    "wireguard": "WireGuard",
+}
+
+PROTOCOL_ALIASES = {
+    "vmess": "vmess-ws", "trojan": "trojan-ws", "ss": "shadowsocks",
+    "socks": "socks5", "hy2": "hysteria2", "hysteria": "hysteria2",
+}
 
 DEFAULT_PROTOCOL = "vless-ws"
 
@@ -239,9 +267,9 @@ DEFAULT_FINGERPRINT = "chrome"
 
 DEFAULT_ALPN_BY_PROTOCOL = {
     "vless-ws": "http/1.1",
-    "xhttp": "h2,http/1.1",
-    "xhttp": "h2,http/1.1",
-    "xhttp": "h2,http/1.1",
+    "xhttp-packet-up": "h2,http/1.1",
+    "xhttp-stream-up": "h2,http/1.1",
+    "xhttp-stream-one": "h2,http/1.1",
 }
 
 DEFAULT_PORT = 443
@@ -249,6 +277,12 @@ MIN_PORT = 1
 MAX_PORT = 65535
 
 DEFAULT_SPEED_LIMIT = 0
+
+
+def normalize_protocol(protocol: str | None) -> str:
+    value = str(protocol or DEFAULT_PROTOCOL).strip().lower()
+    value = PROTOCOL_ALIASES.get(value, value)
+    return value if value in PROTOCOLS else DEFAULT_PROTOCOL
 
 
 # ============================================================
@@ -860,108 +894,38 @@ def set_auth_cookie(
 # ============================================================
 
 def generate_vless_link(
-    uuid: str,
-    host: str,
-    remark: str = "PXPanel",
-    protocol: str = DEFAULT_PROTOCOL,
-    fingerprint: str | None = None,
-    alpn: str | None = None,
-    port: int | None = None,
+    uuid: str, host: str, remark: str = "PXPanel",
+    protocol: str = DEFAULT_PROTOCOL, fingerprint: str | None = None,
+    alpn: str | None = None, port: int | None = None,
 ):
-
-    fp = (
-        fingerprint
-        or DEFAULT_FINGERPRINT
-    ).strip().lower()
-
-    if fp not in FINGERPRINTS:
-        fp = DEFAULT_FINGERPRINT
-
-    alpn_value = (
-        (
-            alpn
-            or ""
-        ).strip()
-        or DEFAULT_ALPN_BY_PROTOCOL.get(
-            protocol,
-            "http/1.1",
-        )
-    )
-
-    port_value = (
-        port
-        or DEFAULT_PORT
-    )
-
-    if not (
-        MIN_PORT
-        <= port_value
-        <= MAX_PORT
-    ):
-        port_value = DEFAULT_PORT
-
-    # ========================================================
-    # IMPORTANT:
-    # The working VLESS WebSocket core stays unchanged.
-    # ========================================================
-
+    protocol = normalize_protocol(protocol)
+    fp = (fingerprint or DEFAULT_FINGERPRINT).strip().lower()
+    if fp not in FINGERPRINTS: fp = DEFAULT_FINGERPRINT
+    port_value = safe_int(port, DEFAULT_PORT, MIN_PORT, MAX_PORT)
+    alpn_value = (alpn or DEFAULT_ALPN_BY_PROTOCOL.get(protocol, "http/1.1")).strip()
+    label = quote(str(remark or "PXPanel"), safe="")
     if protocol == "vless-ws":
-
-        path = (
-            f"/ws/{uuid}"
-        )
-
-        params = {
-            "encryption": "none",
-            "security": "tls",
-            "type": "ws",
-            "host": host,
-            "path": path,
-            "sni": host,
-            "fp": fp,
-            "alpn": alpn_value,
-        }
-
-    else:
-
-        mode = protocol.replace(
-            "xhttp-",
-            "",
-        )
-
-        path = (
-            f"/xhttp-siz10/"
-            f"{mode}/"
-            f"{uuid}"
-        )
-
-        params = {
-            "encryption": "none",
-            "security": "tls",
-            "type": "xhttp",
-            "mode": mode,
-            "host": host,
-            "path": path,
-            "sni": host,
-            "fp": fp,
-            "alpn": alpn_value,
-        }
-
-    query = "&".join(
-        f"{key}="
-        f"{quote(str(value))}"
-        for key, value in params.items()
-    )
-
-    return (
-        f"vless://"
-        f"{uuid}@"
-        f"{host}:"
-        f"{port_value}?"
-        f"{query}#"
-        f"{quote(remark)}"
-    )
-
+        q = {"encryption":"none","security":"tls","type":"ws","host":host,"path":f"/ws/{uuid}","sni":host,"fp":fp,"alpn":alpn_value}
+        return "vless://" + uuid + "@" + host + ":" + str(port_value) + "?" + "&".join(f"{k}={quote(str(v), safe=',/') }" for k,v in q.items()) + "#" + label
+    if protocol.startswith("xhttp-"):
+        mode = protocol.replace("xhttp-", "")
+        q = {"encryption":"none","security":"tls","type":"xhttp","mode":mode,"host":host,"path":f"/xhttp-siz10/{mode}/{uuid}","sni":host,"fp":fp,"alpn":alpn_value}
+        return "vless://" + uuid + "@" + host + ":" + str(port_value) + "?" + "&".join(f"{k}={quote(str(v), safe=',/') }" for k,v in q.items()) + "#" + label
+    if protocol == "vmess-ws":
+        raw = {"v":"2","ps":remark,"add":host,"port":port_value,"id":uuid,"aid":0,"scy":"auto","net":"ws","type":"none","host":host,"path":f"/ws/{uuid}","tls":"tls","sni":host,"fp":fp}
+        return "vmess://" + base64.b64encode(json.dumps(raw,separators=(",",":"),ensure_ascii=False).encode()).decode()
+    if protocol == "trojan-ws":
+        return f"trojan://{uuid}@{host}:{port_value}?security=tls&type=ws&host={quote(host)}&path={quote('/ws/'+uuid)}&sni={quote(host)}#{label}"
+    if protocol == "shadowsocks":
+        method = os.getenv("SS_METHOD", "aes-256-gcm")
+        userinfo = base64.urlsafe_b64encode(f"{method}:{uuid}".encode()).decode().rstrip("=")
+        return f"ss://{userinfo}@{host}:{port_value}#{label}"
+    if protocol == "socks5": return f"socks5://{uuid}:{uuid}@{host}:{port_value}#{label}"
+    if protocol == "http": return f"http://{uuid}:{uuid}@{host}:{port_value}#{label}"
+    if protocol == "hysteria2": return f"hysteria2://{uuid}@{host}:{port_value}/?sni={quote(host)}&insecure=0#{label}"
+    if protocol == "tuic": return f"tuic://{uuid}:{uuid}@{host}:{port_value}?sni={quote(host)}&alpn=h3#{label}"
+    if protocol == "wireguard": return f"wireguard://{uuid}@{host}:{port_value}?publicKey={uuid}#{label}"
+    return f"vless://{uuid}@{host}:{port_value}"
 
 def vless_link_for_link(
     link: dict,
@@ -972,7 +936,7 @@ def vless_link_for_link(
         uid,
         host,
         remark=(
-            f"PXPanel-"
+            f"PixonPanel-"
             f"{link.get('label', '')}"
         ),
         protocol=link.get(
@@ -1375,8 +1339,7 @@ async def make_link(
     fragment: str = "off",
 ):
 
-    if protocol not in PROTOCOLS:
-        protocol = DEFAULT_PROTOCOL
+    protocol = normalize_protocol(protocol)
 
     fingerprint = (
         fingerprint
@@ -1470,6 +1433,10 @@ async def make_link(
                 fragment
                 or "off"
             ).strip().lower(),
+
+        "security_profile": "balanced",
+        "multi_login": False,
+        "protocol_label": PROTOCOL_LABELS.get(protocol, protocol),
     }
 
     async with LINKS_LOCK:
@@ -1872,7 +1839,7 @@ LANDING_HTML = r"""
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
-<title>PXPanel</title>
+<title>PixonPanel</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2076,6 +2043,12 @@ h1{
         flex-direction:column;
     }
 }
+
+/* PXPanel 13.0.1 responsive system */
+html{scroll-behavior:smooth} body{overflow-x:hidden} button,input,select,textarea{touch-action:manipulation} .modal{overscroll-behavior:contain}
+@media(max-width:900px){.container,.shell,.dashboard,.main,.content{max-width:100%!important;width:100%!important}.grid,.stats-grid,.cards-grid,.form-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.sidebar{z-index:1000}}
+@media(max-width:640px){body{padding:10px!important;font-size:14px}.grid,.stats-grid,.cards-grid,.form-grid{grid-template-columns:1fr!important}.card,.panel,.section,.modal{border-radius:18px!important}.modal{max-height:92vh;overflow:auto;padding:14px!important}.header,.topbar,.toolbar,.actions{flex-wrap:wrap!important}.header>* ,.topbar>*{max-width:100%}.btn,button{min-height:44px}.field input,.field select,.field textarea,input,select,textarea{min-height:44px;font-size:16px;max-width:100%}table{display:block;overflow-x:auto;white-space:nowrap}.link-row,.config-row{flex-direction:column!important;align-items:stretch!important}.brand-name{font-size:15px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 </style>
 </head>
 
@@ -2089,7 +2062,7 @@ h1{
 
 <div>
 <div class="brand-name">
-PXPanel
+PixonPanel
 </div>
 
 <div class="version">
@@ -2110,7 +2083,7 @@ PXPanel
 </h1>
 
 <div class="desc">
-این صفحه، درگاه عمومی PXPanel است.
+این صفحه، درگاه عمومی PixonPanel است.
 برای دسترسی به داشبورد مدیریت از مسیر ورود استفاده کنید.
 </div>
 
@@ -2141,7 +2114,7 @@ class="btn secondary"
 <div class="footer">
 
 <span>
-PXPanel · 12.1.0 Beta
+PixonPanel · 12.1.0 Beta
 </span>
 
 <a
@@ -2216,7 +2189,7 @@ name="viewport"
 content="width=device-width,initial-scale=1"
 >
 
-<title>ورود | PXPanel</title>
+<title>ورود | PixonPanel</title>
 
 <link
 rel="preconnect"
@@ -2407,7 +2380,7 @@ P
 </div>
 
 <h1>
-ورود به PXPanel
+ورود به PixonPanel
 </h1>
 
 <div class="version">
@@ -3094,92 +3067,43 @@ async def create_auto_link(
     request: Request,
     _=Depends(require_auth),
 ):
-
     try:
-
-        host = get_host(request)
-
-        uid, link = await make_link(
-            label=auto_config_name(),
-
-            # Unlimited
-            limit_bytes=0,
-            expires_at=None,
-            ip_limit=0,
-            speed_limit_bytes=0,
-            connection_limit=0,
-
-            note=(
-                "Auto generated by "
-                "PXPanel"
-            ),
-
-            # IMPORTANT:
-            # Keep working protocol.
-            protocol="vless-ws",
-
-            fingerprint="chrome",
-
-            alpn="http/1.1",
-
-            port=443,
-
-            fragment="off",
-        )
-
-        result = {
-            **get_link_info(
-                link,
-                uid,
-                host,
-            ),
-            "ok": True,
-        }
-
-        log_activity(
-            "link",
-            (
-                f"کانفیگ خودکار "
-                f"«{link['label']}» ساخته شد"
-            ),
-            "ok",
-        )
-
-        return result
-
-    except Exception as exc:
-
-        logger.exception(
-            "Auto config creation failed"
-        )
-
-        stats["total_errors"] += 1
-
-        error_logs.append(
-            {
-                "error":
-                    str(exc),
-
-                "path":
-                    "/api/links/auto",
-
-                "time":
-                    datetime.now().isoformat(),
-            }
-        )
-
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "خطا در ساخت کانفیگ: "
-                f"{exc}"
-            ),
-        )
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict): body = {}
+    host = get_host(request)
+    protocol = normalize_protocol(body.get("protocol", DEFAULT_PROTOCOL))
+    profile = str(body.get("profile", "balanced")).strip().lower()
+    profiles = {
+        "normal": {"ip":0,"conn":0,"speed":0,"fp":"chrome","fragment":"off"},
+        "balanced": {"ip":2,"conn":4,"speed":0,"fp":"chrome","fragment":"safe"},
+        "gaming": {"ip":1,"conn":2,"speed":0,"fp":"chrome","fragment":"safe"},
+        "maximum": {"ip":0,"conn":0,"speed":0,"fp":"randomized","fragment":"safe"},
+    }
+    cfg = profiles.get(profile, profiles["balanced"])
+    uid, link = await make_link(
+        label=auto_config_name(), limit_bytes=0, expires_at=None,
+        ip_limit=cfg["ip"], speed_limit_bytes=cfg["speed"], connection_limit=cfg["conn"],
+        note=f"Auto generated by PXPanel | profile={profile}",
+        protocol=protocol, fingerprint=cfg["fp"],
+        alpn=DEFAULT_ALPN_BY_PROTOCOL.get(protocol, ""), port=443, fragment=cfg["fragment"],
+    )
+    link["security_profile"] = profile
+    result = {**get_link_info(link, uid, host), "ok": True, "profile": profile}
+    log_activity("link", f"کانفیگ خودکار «{link['label']}» با {PROTOCOL_LABELS.get(protocol, protocol)} ساخته شد", "ok")
+    return result
 
 
 # ============================================================
 # LIST LINKS
 # ============================================================
+
+@app.get("/api/protocols")
+async def api_protocols(request: Request):
+    require_auth(request)
+    return {"protocols": [{"id": p, "label": PROTOCOL_LABELS.get(p, p)} for p in PROTOCOLS], "default": DEFAULT_PROTOCOL}
+
 
 @app.get("/api/links")
 async def list_links(
@@ -3819,7 +3743,7 @@ async def subscription_single(
     limit = int(link.get("limit_bytes", 0) or 0)
     volume_text = f"{fmt_bytes(used)}/{fmt_bytes(limit)}" if limit > 0 else f"{fmt_bytes(used)}/∞"
     expiry_text = str(link.get("expires_at") or "∞")
-    profile_title = f"0.0.0.0 | {volume_text} | {expiry_text} | {link.get('label','PXPanel')} | کانال تلگرام: logic_sec"
+    profile_title = f"0.0.0.0 | {volume_text} | {expiry_text} | {link.get('label','PixonPanel')} | کانال تلگرام: logic_sec"
     headers = subscription_metadata_headers(
         used,
         limit,
@@ -3941,7 +3865,7 @@ async def info_page(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>{escape_html(snapshot.get("label","PXPanel"))} | INFO</title>
+<title>{escape_html(snapshot.get("label","PixonPanel"))} | INFO</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -4020,7 +3944,7 @@ body{{font-family:"Vazirmatn",sans-serif;color:var(--text);padding:24px;backgrou
 <body>
 <div class="page"><div class="shell">
 <section class="hero">
-<div class="hero-row"><div class="brand"><div class="brand-icon">PX</div><div><h1>{escape_html(snapshot.get("label","PXPanel"))}</h1><div class="hero-meta">0.0.0.0 · UUID: {escape_html(uid)} · PXPanel {APP_VERSION}</div></div></div><div class="status {status_class}"><i></i>{status_text}</div></div>
+<div class="hero-row"><div class="brand"><div class="brand-icon">PX</div><div><h1>{escape_html(snapshot.get("label","PixonPanel"))}</h1><div class="hero-meta">0.0.0.0 · UUID: {escape_html(uid)} · PixonPanel {APP_VERSION}</div></div></div><div class="status {status_class}"><i></i>{status_text}</div></div>
 <div class="notice"><div class="notice-icon">!</div><div><strong>اطلاعیه اتصال</strong><br>لینک SUB را در برنامه‌ای که استفاده می‌کنید به‌عنوان Subscription وارد کنید. برای اتصال مستقیم نیز می‌توانید VLESS را Import کنید. <strong>کانال تلگرام: logic_sec</strong></div></div>
 </section>
 
@@ -4510,7 +4434,7 @@ content="width=device-width,initial-scale=1"
 >
 
 <title>
-PXPanel
+PixonPanel
 </title>
 
 <style>
@@ -4605,7 +4529,7 @@ h1{
 <div class="card">
 
 <h1>
-PXPanel
+PixonPanel
 </h1>
 
 <div class="version">
@@ -5448,7 +5372,7 @@ content="width=device-width,initial-scale=1"
 />
 
 <title>
-PXPanel 12.1.0 Beta
+PixonPanel 12.1.0 Beta
 </title>
 
 <link
@@ -6247,7 +6171,7 @@ P
 <div>
 
 <div class="brand-name">
-PXPanel
+PixonPanel
 </div>
 
 <div class="brand-desc">
@@ -6676,21 +6600,18 @@ placeholder="نام کانفیگ"
 
 <select id="manualProtocol">
 
-<option value="vless-ws">
-VLESS WebSocket
-</option>
-
-<option value="xhttp">
-XHTTP Packet Up
-</option>
-
-<option value="xhttp">
-XHTTP Stream Up
-</option>
-
-<option value="xhttp">
-XHTTP Stream One
-</option>
+<option value="vless-ws">VLESS WebSocket</option>
+<option value="xhttp-packet-up">XHTTP Packet Up</option>
+<option value="xhttp-stream-up">XHTTP Stream Up</option>
+<option value="xhttp-stream-one">XHTTP Stream One</option>
+<option value="vmess-ws">VMess WebSocket</option>
+<option value="trojan-ws">Trojan WebSocket</option>
+<option value="shadowsocks">Shadowsocks</option>
+<option value="socks5">SOCKS5</option>
+<option value="http">HTTP Proxy</option>
+<option value="hysteria2">Hysteria 2</option>
+<option value="tuic">TUIC</option>
+<option value="wireguard">WireGuard</option>
 
 </select>
 
@@ -6979,13 +6900,41 @@ onclick="closeAutoModal()"
 
 </div>
 
+<div class="form-grid" style="margin-top:14px">
+<div class="field">
+<label>پروتکل</label>
+<select id="autoProtocol">
+<option value="vless-ws">VLESS WebSocket</option>
+<option value="xhttp-packet-up">XHTTP Packet Up</option>
+<option value="xhttp-stream-up">XHTTP Stream Up</option>
+<option value="xhttp-stream-one">XHTTP Stream One</option>
+<option value="vmess-ws">VMess WebSocket</option>
+<option value="trojan-ws">Trojan WebSocket</option>
+<option value="shadowsocks">Shadowsocks</option>
+<option value="socks5">SOCKS5</option>
+<option value="http">HTTP Proxy</option>
+<option value="hysteria2">Hysteria 2</option>
+<option value="tuic">TUIC</option>
+<option value="wireguard">WireGuard</option>
+</select>
+</div>
+<div class="field">
+<label>پروفایل امنیتی</label>
+<select id="autoProfile">
+<option value="balanced">Balanced</option>
+<option value="gaming">Gaming</option>
+<option value="maximum">Maximum</option>
+<option value="normal">Normal</option>
+</select>
+</div>
+</div>
+
 <div
 style="
 color:rgba(255,255,255,.55);
 font-size:11px;
 line-height:2;
-"
->
+">
 
 کانفیگ خودکار با نام تصادفی
 <code>pxpanel_********</code>
@@ -7891,39 +7840,20 @@ function closePasswordModal(){
 
 
 async function createAuto(){
-
+    const protocol = document.getElementById("autoProtocol")?.value || "vless-ws";
+    const profile = document.getElementById("autoProfile")?.value || "balanced";
     closeAutoModal();
-
-    showToast(
-        "در حال ساخت کانفیگ..."
-    );
-
-    const result =
-        await api(
-            "/api/links/auto",
-            {
-                method:"POST"
-            }
-        );
-
-    if(
-        !result
-        ||
-        !result.ok
-    ){
-        return;
-    }
-
-    await copyText(
-        result.vless
-    );
-
-    showToast(
-        "کانفیگ ساخته شد و VLESS کپی شد"
-    );
-
+    showToast("در حال ساخت کانفیگ حرفه‌ای...");
+    const result = await api("/api/links/auto", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({protocol,profile})
+    });
+    if(!result || !result.ok) return;
+    const config = result.config || result.vless || result.link || "";
+    await copyText(config);
+    showToast("کانفیگ ساخته شد و در کلیپ‌بورد قرار گرفت");
     await refresh();
-
 }
 
 
@@ -8555,7 +8485,7 @@ async def global_exception_handler(
             padding:40px;
         ">
             <h2>
-            خطای داخلی PXPanel
+            خطای داخلی PixonPanel
             </h2>
 
             <p>
