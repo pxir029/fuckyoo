@@ -191,6 +191,8 @@ CONFIG = {
 
 LINKS: dict = {}
 SUBS: dict = {}
+PROXIES: dict = {}
+GLOBAL_SETTINGS = {"info_text": ""}
 SESSIONS: dict = {}
 connections: dict = {}
 
@@ -799,6 +801,7 @@ def generate_vless_link(
     fingerprint: str | None = None,
     alpn: str | None = None,
     port: int | None = None,
+    sni: str | None = None,
 ):
 
     fp = (
@@ -825,6 +828,8 @@ def generate_vless_link(
         or DEFAULT_PORT
     )
 
+    sni_value = str(sni or host).strip() or host
+
     if not (
         MIN_PORT
         <= port_value
@@ -849,7 +854,7 @@ def generate_vless_link(
             "type": "ws",
             "host": host,
             "path": path,
-            "sni": host,
+            "sni": sni_value,
             "fp": fp,
             "alpn": alpn_value,
         }
@@ -874,7 +879,7 @@ def generate_vless_link(
             "mode": mode,
             "host": host,
             "path": path,
-            "sni": host,
+            "sni": sni_value,
             "fp": fp,
             "alpn": alpn_value,
         }
@@ -892,6 +897,41 @@ def generate_vless_link(
         f"{port_value}?"
         f"{query}#"
         f"{quote(remark)}"
+    )
+
+
+def vless_info_link_for_link(
+    link: dict,
+    uid: str,
+):
+    """
+    Creates a second, intentionally non-routable VLESS entry for clients
+    that display subscription items as a list. Its host is 0.0.0.0 and
+    the remark carries subscription usage/expiry information.
+    """
+    used = int(link.get("used_bytes", 0) or 0)
+    limit = int(link.get("limit_bytes", 0) or 0)
+    volume = (
+        f"{fmt_bytes(used)}/{fmt_bytes(limit)}"
+        if limit > 0 else
+        f"{fmt_bytes(used)}/∞"
+    )
+    expiry = str(link.get("expires_at") or "∞")
+    label = str(link.get("label") or "PixonPanel")
+    remark = (
+        f"PixonPanel INFO | 0.0.0.0 | "
+        f"حجم {volume} | انقضا {expiry} | "
+        f"{label} | کانال تلگرام: logic_sec"
+    )
+
+    return generate_vless_link(
+        uid,
+        "0.0.0.0",
+        remark=remark,
+        protocol=link.get("protocol", DEFAULT_PROTOCOL),
+        fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
+        alpn=link.get("alpn"),
+        port=link.get("port", DEFAULT_PORT),
     )
 
 
@@ -922,7 +962,27 @@ def vless_link_for_link(
             "port",
             DEFAULT_PORT,
         ),
+        sni=link.get(
+            "sni"
+        ) or host,
     )
+
+
+
+def socks5_uri(proxy: dict | None):
+    if not proxy:
+        return None
+    host = str(proxy.get("host", "")).strip()
+    port = safe_int(proxy.get("port", 1080), default=1080, minimum=1, maximum=65535)
+    username = str(proxy.get("username", "") or "")
+    password = str(proxy.get("password", "") or "")
+    auth = ""
+    if username:
+        auth = quote(username, safe="")
+        if password:
+            auth += ":" + quote(password, safe="")
+        auth += "@"
+    return f"socks5://{auth}{host}:{port}"
 
 
 def get_link_info(
@@ -999,6 +1059,21 @@ def get_link_info(
             "port",
             DEFAULT_PORT,
         ),
+        "sni": link.get("sni", ""),
+        "proxy_id": link.get("proxy_id"),
+        "proxy": (
+            {
+                "id": link.get("proxy_id"),
+                **dict(PROXIES.get(link.get("proxy_id"), {})),
+            }
+            if link.get("proxy_id") in PROXIES
+            else None
+        ),
+        "proxy_url": (
+            socks5_uri(PROXIES.get(link.get("proxy_id")))
+            if link.get("proxy_id") in PROXIES
+            else None
+        ),
         "note": link.get(
             "note",
             "",
@@ -1007,6 +1082,10 @@ def get_link_info(
             link,
             uid,
             host,
+        ),
+        "vless_info": vless_info_link_for_link(
+            link,
+            uid,
         ),
         "sub": (
             f"https://{host}"
@@ -1059,6 +1138,20 @@ async def load_state():
                 "subs",
                 {},
             )
+        )
+
+        PROXIES.update(
+            data.get(
+                "proxies",
+                {},
+            )
+        )
+
+        GLOBAL_SETTINGS.update(
+            data.get(
+                "settings",
+                {},
+            ) or {}
         )
 
         stored_password = data.get(
@@ -1114,6 +1207,16 @@ async def load_state():
             )
 
             link.setdefault(
+                "sni",
+                "",
+            )
+
+            link.setdefault(
+                "proxy_id",
+                None,
+            )
+
+            link.setdefault(
                 "used_bytes",
                 0,
             )
@@ -1149,6 +1252,12 @@ async def save_state():
 
                 "subs":
                     dict(SUBS),
+
+                "proxies":
+                    dict(PROXIES),
+
+                "settings":
+                    dict(GLOBAL_SETTINGS),
 
                 "password_hash":
                     AUTH[
@@ -1278,6 +1387,12 @@ async def ensure_default_link():
 
                 "fragment":
                     "off",
+
+                "sni":
+                    "",
+
+                "proxy_id":
+                    None,
             }
 
             asyncio.create_task(
@@ -1305,6 +1420,8 @@ async def make_link(
     speed_limit_bytes: int = 0,
     connection_limit: int = 0,
     fragment: str = "off",
+    sni: str = "",
+    proxy_id: str | None = None,
 ):
 
     if protocol not in PROTOCOLS:
@@ -1402,6 +1519,12 @@ async def make_link(
                 fragment
                 or "off"
             ).strip().lower(),
+
+        "sni":
+            (sni or "").strip()[:255],
+
+        "proxy_id":
+            proxy_id if proxy_id in PROXIES else None,
     }
 
     async with LINKS_LOCK:
@@ -2326,6 +2449,105 @@ button{
     font-size:11px;
 }
 
+<style>
+/* ============================================================
+   PIxonPanel PRO UI LAYER
+   ============================================================ */
+.topbar{
+    position:relative;
+    overflow:hidden;
+    padding:18px 19px;
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:22px;
+    background:
+        radial-gradient(circle at 8% 20%,rgba(99,102,241,.15),transparent 30%),
+        radial-gradient(circle at 95% 10%,rgba(34,211,238,.09),transparent 28%),
+        linear-gradient(135deg,rgba(255,255,255,.045),rgba(255,255,255,.018));
+    box-shadow:0 20px 80px rgba(0,0,0,.28);
+}
+.topbar:after{
+    content:"";
+    position:absolute;
+    inset:auto 8% -40px 8%;
+    height:90px;
+    background:linear-gradient(90deg,transparent,rgba(99,102,241,.10),transparent);
+    filter:blur(22px);
+    pointer-events:none;
+}
+.brand{position:relative;z-index:1}
+.logo{
+    width:46px!important;
+    height:46px!important;
+    border-radius:15px!important;
+    background:linear-gradient(135deg,#6366f1,#8b5cf6 55%,#22d3ee)!important;
+    box-shadow:0 12px 30px rgba(99,102,241,.26);
+    border:1px solid rgba(255,255,255,.14)!important;
+}
+.brand-name{font-size:15px!important;font-weight:900!important;letter-spacing:-.2px}
+.brand-desc{font-size:9px!important;color:rgba(255,255,255,.42)!important}
+.brand-version{
+    display:inline-flex!important;
+    margin-top:5px!important;
+    padding:3px 7px!important;
+    border-radius:999px!important;
+    background:rgba(99,102,241,.08)!important;
+    border:1px solid rgba(99,102,241,.14)!important;
+    color:#a5b4fc!important;
+}
+.top-actions{position:relative;z-index:2;gap:6px!important}
+.top-btn{
+    border:1px solid rgba(255,255,255,.08)!important;
+    background:rgba(255,255,255,.035)!important;
+    backdrop-filter:blur(12px);
+    transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+.top-btn:hover{
+    transform:translateY(-1px);
+    border-color:rgba(129,140,248,.26)!important;
+    background:rgba(129,140,248,.08)!important;
+}
+.top-btn.primary{
+    background:linear-gradient(135deg,rgba(99,102,241,.30),rgba(139,92,246,.22))!important;
+    border-color:rgba(129,140,248,.30)!important;
+    box-shadow:0 8px 28px rgba(99,102,241,.12);
+}
+.stats-grid{margin-top:12px!important;gap:10px!important}
+.stat{
+    border-radius:18px!important;
+    background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.018))!important;
+    transition:transform .18s ease,border-color .18s ease,background .18s ease;
+}
+.stat:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.13)!important;background:rgba(255,255,255,.05)!important}
+.stat-value{font-size:20px!important}
+.panel{
+    border-radius:22px!important;
+    background:linear-gradient(145deg,rgba(255,255,255,.035),rgba(255,255,255,.018))!important;
+    box-shadow:0 18px 70px rgba(0,0,0,.16);
+}
+.panel-head{padding:15px 16px!important}
+.panel-title{font-size:12.5px!important}
+.table-wrap{background:linear-gradient(180deg,rgba(255,255,255,.012),transparent)}
+thead tr{background:rgba(255,255,255,.018)}
+tbody tr{transition:background .16s ease}
+tbody tr:hover{background:rgba(99,102,241,.035)}
+.action{
+    border:1px solid rgba(255,255,255,.055)!important;
+    transition:transform .16s ease,border-color .16s ease,background .16s ease;
+}
+.action:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.14)!important;background:rgba(255,255,255,.08)!important}
+.action.primary:hover{background:rgba(99,102,241,.24)!important}
+.action.danger:hover{background:rgba(239,68,68,.12)!important;border-color:rgba(248,113,113,.18)!important}
+.download{
+    position:relative;
+    overflow:hidden;
+    background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.015))!important;
+    transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease;
+}
+.download:after{content:"";position:absolute;inset:auto -25% -35px;height:70px;background:rgba(99,102,241,.08);filter:blur(22px);pointer-events:none}
+.download:hover{transform:translateY(-2px);box-shadow:0 14px 40px rgba(0,0,0,.16)}
+@media(max-width:700px){.panel[style*="Control Center"] + .stats-grid{grid-template-columns:repeat(2,1fr)!important}.topbar{padding:14px}.top-actions{width:100%;display:grid!important;grid-template-columns:1fr 1fr;}.top-actions .top-btn,.top-actions a{width:100%;text-align:center}.top-actions .primary{grid-column:1/-1}}
+</style>
+
 </style>
 
 </head>
@@ -2952,6 +3174,8 @@ async def create_link_api(
         speed_limit_bytes=speed_bytes,
         connection_limit=connection_limit,
         fragment=fragment,
+        sni=str(body.get("sni", "") or "").strip()[:255],
+        proxy_id=(str(body.get("proxy_id", "")).strip() or None),
     )
 
     host = get_host(request)
@@ -3395,6 +3619,13 @@ async def update_link(
                 else DEFAULT_PROTOCOL
             )
 
+        if "sni" in body:
+            link["sni"] = str(body.get("sni", "") or "").strip()[:255]
+
+        if "proxy_id" in body:
+            proxy_id = str(body.get("proxy_id", "") or "").strip() or None
+            link["proxy_id"] = proxy_id if proxy_id in PROXIES else None
+
         if "fragment" in body:
 
             fragment = str(
@@ -3690,10 +3921,20 @@ async def subscription_single(
         host,
     )
 
+    info_vless = vless_info_link_for_link(
+        link,
+        uuid,
+    )
+
+    # Two subscription entries:
+    # 1) Real working configuration
+    # 2) Visual information entry with 0.0.0.0 host
+    subscription_lines = f"{vless}\n{info_vless}"
+
     content = (
         base64
         .b64encode(
-            vless.encode()
+            subscription_lines.encode()
         )
         .decode()
     )
@@ -3904,7 +4145,7 @@ body{{font-family:"Vazirmatn",sans-serif;color:var(--text);padding:24px;backgrou
 <div class="page"><div class="shell">
 <section class="hero">
 <div class="hero-row"><div class="brand"><div class="brand-icon">PX</div><div><h1>{escape_html(snapshot.get("label","PixonPanel"))}</h1><div class="hero-meta">0.0.0.0 · UUID: {escape_html(uid)} · PixonPanel {APP_VERSION}</div></div></div><div class="status {status_class}"><i></i>{status_text}</div></div>
-<div class="notice"><div class="notice-icon">!</div><div><strong>اطلاعیه اتصال</strong><br>لینک SUB را در برنامه‌ای که استفاده می‌کنید به‌عنوان Subscription وارد کنید. برای اتصال مستقیم نیز می‌توانید VLESS را Import کنید. <strong>کانال تلگرام: logic_sec</strong></div></div>
+<div class="notice"><div class="notice-icon">!</div><div><strong>اطلاعیه</strong><br>{escape_html(GLOBAL_SETTINGS.get("info_text", "")).replace(chr(10), "<br>") if GLOBAL_SETTINGS.get("info_text", "") else "لینک SUB را در برنامه‌ای که استفاده می‌کنید به‌عنوان Subscription وارد کنید. برای اتصال مستقیم نیز می‌توانید VLESS را Import کنید."}</div></div>
 </section>
 
 <section class="dashboard">
@@ -3920,7 +4161,7 @@ body{{font-family:"Vazirmatn",sans-serif;color:var(--text);padding:24px;backgrou
 </section>
 
 <div class="content">
-<section class="section"><div class="section-head"><div class="section-title">جزئیات فنی</div><div class="section-sub">Configuration Details</div></div><div class="info-grid"><div class="info-item"><div class="info-label">Protocol</div><div class="info-value code">{escape_html(snapshot.get("protocol","vless-ws"))}</div></div><div class="info-item"><div class="info-label">Fingerprint</div><div class="info-value code">{escape_html(snapshot.get("fingerprint","chrome"))}</div></div><div class="info-item"><div class="info-label">IP Limit</div><div class="info-value">{escape_html(ip_limit)}</div></div><div class="info-item"><div class="info-label">Connection Limit</div><div class="info-value">{escape_html(connection_limit)}</div></div><div class="info-item"><div class="info-label">Speed Limit</div><div class="info-value">{escape_html(speed_limit)}</div></div><div class="info-item"><div class="info-label">تاریخ انقضا</div><div class="info-value">{escape_html(expiry_display)}</div></div></div></section>
+<section class="section"><div class="section-head"><div class="section-title">جزئیات فنی</div><div class="section-sub">Configuration Details</div></div><div class="info-grid"><div class="info-item"><div class="info-label">Protocol</div><div class="info-value code">{escape_html(snapshot.get("protocol","vless-ws"))}</div></div><div class="info-item"><div class="info-label">Fingerprint</div><div class="info-value code">{escape_html(snapshot.get("fingerprint","chrome"))}</div></div><div class="info-item"><div class="info-label">SNI</div><div class="info-value code">{escape_html(snapshot.get("sni") or host)}</div></div><div class="info-item"><div class="info-label">IP Limit</div><div class="info-value">{escape_html(ip_limit)}</div></div><div class="info-item"><div class="info-label">Connection Limit</div><div class="info-value">{escape_html(connection_limit)}</div></div><div class="info-item"><div class="info-label">Speed Limit</div><div class="info-value">{escape_html(speed_limit)}</div></div><div class="info-item"><div class="info-label">تاریخ انقضا</div><div class="info-value">{escape_html(expiry_display)}</div></div></div></section>
 
 <section class="section"><div class="section-head"><div class="section-title">لینک‌های سرویس</div><div class="section-sub">Copy / Import</div></div><div class="link-card"><div class="link-main"><div class="link-name">VLESS</div><div class="link-url">{escape_html(vless_url)}</div></div><div class="copy-hint">VLESS</div></div><div class="link-card"><div class="link-main"><div class="link-name">SUBSCRIPTION</div><div class="link-url">{escape_html(sub_url)}</div></div><div class="copy-hint">SUB</div></div></section>
 
@@ -4310,6 +4551,12 @@ async def sub_group_subscription(
                         link,
                         link_id,
                         host,
+                    )
+                )
+                lines.append(
+                    vless_info_link_for_link(
+                        link,
+                        link_id,
                     )
                 )
 
@@ -5313,2748 +5560,227 @@ async def http_proxy(
 
 
 # ============================================================
+# PROXY + GLOBAL INFO API
+# ============================================================
+
+@app.get("/api/proxies")
+async def list_proxies(_=Depends(require_auth)):
+    result = []
+    for proxy_id, proxy in PROXIES.items():
+        item = dict(proxy)
+        item["id"] = proxy_id
+        item["url"] = socks5_uri(proxy)
+        item["password"] = "" if item.get("password") else ""
+        result.append(item)
+    return {"proxies": result}
+
+
+@app.post("/api/proxies")
+async def create_proxy_api(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON نامعتبر است")
+    name = str(body.get("name", "SOCKS5") or "SOCKS5").strip()[:60]
+    host = str(body.get("host", "") or "").strip()[:255]
+    port = safe_int(body.get("port", 1080), default=1080, minimum=1, maximum=65535)
+    username = str(body.get("username", "") or "")[:160]
+    password = str(body.get("password", "") or "")[:160]
+    if not host:
+        raise HTTPException(status_code=400, detail="آدرس SOCKS5 الزامی است")
+    proxy_id = generate_uuid()
+    PROXIES[proxy_id] = {
+        "name": name,
+        "type": "socks5",
+        "host": host,
+        "port": port,
+        "username": username,
+        "password": password,
+        "created_at": datetime.now().isoformat(),
+    }
+    await save_state()
+    log_activity("proxy", f"پروکسی SOCKS5 «{name}» اضافه شد", "ok")
+    return {"ok": True, "id": proxy_id, "name": name, "type": "socks5", "host": host, "port": port, "username": username, "url": socks5_uri(PROXIES[proxy_id])}
+
+
+@app.patch("/api/proxies/{proxy_id}")
+async def update_proxy_api(proxy_id: str, request: Request, _=Depends(require_auth)):
+    if proxy_id not in PROXIES:
+        raise HTTPException(status_code=404, detail="proxy not found")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON نامعتبر است")
+    proxy = PROXIES[proxy_id]
+    if "name" in body:
+        proxy["name"] = str(body.get("name") or "SOCKS5").strip()[:60]
+    if "host" in body:
+        proxy["host"] = str(body.get("host") or "").strip()[:255]
+    if "port" in body:
+        proxy["port"] = safe_int(body.get("port"), default=1080, minimum=1, maximum=65535)
+    if "username" in body:
+        proxy["username"] = str(body.get("username") or "")[:160]
+    if "password" in body:
+        proxy["password"] = str(body.get("password") or "")[:160]
+    if not proxy.get("host"):
+        raise HTTPException(status_code=400, detail="آدرس SOCKS5 الزامی است")
+    await save_state()
+    return {"ok": True}
+
+
+@app.delete("/api/proxies/{proxy_id}")
+async def delete_proxy_api(proxy_id: str, _=Depends(require_auth)):
+    if proxy_id not in PROXIES:
+        raise HTTPException(status_code=404, detail="proxy not found")
+    name = PROXIES[proxy_id].get("name", proxy_id)
+    del PROXIES[proxy_id]
+    for link in LINKS.values():
+        if link.get("proxy_id") == proxy_id:
+            link["proxy_id"] = None
+    await save_state()
+    log_activity("proxy", f"پروکسی «{name}» حذف شد", "warn")
+    return {"ok": True}
+
+
+@app.get("/api/settings/info")
+async def get_info_settings(_=Depends(require_auth)):
+    return {"ok": True, "info_text": GLOBAL_SETTINGS.get("info_text", "")}
+
+
+@app.patch("/api/settings/info")
+async def update_info_settings(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON نامعتبر است")
+    text = str(body.get("info_text", "") or "")[:4000]
+    GLOBAL_SETTINGS["info_text"] = text
+    await save_state()
+    log_activity("settings", "متن INFO عمومی بروزرسانی شد", "ok")
+    return {"ok": True, "info_text": text}
+
+
+# ============================================================
 # DASHBOARD
 # ============================================================
 
 DASHBOARD_HTML = r"""
-<!DOCTYPE html>
-
+<!doctype html>
 <html lang="fa" dir="rtl">
-
 <head>
-
-<meta charset="UTF-8">
-
-<meta
-name="viewport"
-content="width=device-width,initial-scale=1"
-/>
-
-<title>
-PixonPanel 12.0.1 Beta
-</title>
-
-<link
-rel="preconnect"
-href="https://fonts.googleapis.com"
->
-
-<link
-rel="preconnect"
-href="https://fonts.gstatic.com"
-crossorigin
->
-
-<link
-href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap"
-rel="stylesheet"
->
-
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PixonPanel Control Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
-
-*{
-    box-sizing:border-box;
-}
-
-html,
-body{
-    margin:0;
-    min-height:100%;
-}
-
-body{
-    min-height:100vh;
-
-    color:#fff;
-
-    font-family:"Vazirmatn",sans-serif;
-
-    background:
-        radial-gradient(
-            circle at 10% 0%,
-            rgba(99,102,241,.13),
-            transparent 25%
-        ),
-        radial-gradient(
-            circle at 100% 100%,
-            rgba(139,92,246,.10),
-            transparent 25%
-        ),
-        #07070a;
-}
-
-.wrapper{
-    width:min(
-        1280px,
-        calc(100% - 24px)
-    );
-
-    margin:auto;
-    padding:18px 0 50px;
-}
-
-.topbar{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-
-    margin-bottom:15px;
-}
-
-.brand{
-    display:flex;
-    align-items:center;
-    gap:11px;
-}
-
-.logo{
-    width:44px;
-    height:44px;
-
-    display:flex;
-    align-items:center;
-    justify-content:center;
-
-    border-radius:14px;
-
-    font-weight:900;
-
-    background:
-        linear-gradient(
-            135deg,
-            #6366f1,
-            #8b5cf6
-        );
-}
-
-.brand-name{
-    font-size:16px;
-    font-weight:900;
-}
-
-.brand-desc{
-    margin-top:2px;
-    color:rgba(255,255,255,.37);
-    font-size:10px;
-}
-
-.brand-version{
-    color:#a78bfa;
-    font-size:9px;
-    margin-top:2px;
-}
-
-.top-actions{
-    display:flex;
-    gap:7px;
-    flex-wrap:wrap;
-}
-
-.top-btn{
-    border:1px solid rgba(255,255,255,.08);
-
-    padding:9px 12px;
-
-    border-radius:11px;
-
-    color:#fff;
-    background:rgba(255,255,255,.035);
-
-    font-family:"Vazirmatn",sans-serif;
-
-    font-size:10px;
-    cursor:pointer;
-    text-decoration:none;
-}
-
-.top-btn.primary{
-    background:
-        linear-gradient(
-            135deg,
-            #6366f1,
-            #8b5cf6
-        );
-}
-
-.top-btn.danger{
-    color:#fca5a5;
-}
-
-.stats-grid{
-    display:grid;
-    grid-template-columns:
-        repeat(6,1fr);
-
-    gap:9px;
-}
-
-.stat{
-    position:relative;
-    overflow:hidden;
-    padding:14px;
-    border-radius:16px;
-
-    border:
-        1px solid
-        rgba(255,255,255,.07);
-
-    background:
-        rgba(255,255,255,.03);
-}
-
-.stat-label{
-    color:rgba(255,255,255,.35);
-    font-size:9px;
-}
-
-.stat-value{
-    margin-top:6px;
-
-    font-size:19px;
-    font-weight:900;
-}
-.stat::after{content:"";position:absolute;right:0;bottom:0;left:0;height:2px;background:var(--stat-color,#818cf8);opacity:.8}
-.stat:nth-child(1){--stat-color:#60a5fa}.stat:nth-child(2){--stat-color:#4ade80}.stat:nth-child(3){--stat-color:#f59e0b}.stat:nth-child(4){--stat-color:#a78bfa}.stat:nth-child(5){--stat-color:#fb7185}.stat:nth-child(6){--stat-color:#22d3ee}.stat-value{color:var(--stat-color,#fff)}
-
-
-.panel{
-    margin-top:11px;
-
-    overflow:hidden;
-
-    border-radius:19px;
-
-    border:
-        1px solid
-        rgba(255,255,255,.07);
-
-    background:
-        rgba(255,255,255,.03);
-}
-
-.panel-head{
-    padding:14px 16px;
-
-    display:flex;
-
-    justify-content:space-between;
-    align-items:center;
-
-    gap:10px;
-
-    border-bottom:
-        1px solid
-        rgba(255,255,255,.06);
-}
-
-.panel-title{
-    font-size:12px;
-    font-weight:800;
-}
-
-.panel-sub{
-    color:rgba(255,255,255,.32);
-    font-size:9px;
-    margin-top:3px;
-}
-
-.table-wrap{
-    overflow:auto;
-}
-
-table{
-    width:100%;
-
-    min-width:1120px;
-
-    border-collapse:collapse;
-}
-
-th,
-td{
-    text-align:right;
-
-    padding:12px 13px;
-
-    border-bottom:
-        1px solid
-        rgba(255,255,255,.045);
-
-    font-size:10px;
-}
-
-th{
-    color:rgba(255,255,255,.32);
-    font-weight:500;
-}
-
-.badge{
-    display:inline-flex;
-
-    padding:4px 8px;
-
-    border-radius:999px;
-
-    font-size:8px;
-}
-
-.badge.active{
-    color:#86efac;
-    background:rgba(34,197,94,.08);
-}
-
-.badge.off{
-    color:#fca5a5;
-    background:rgba(239,68,68,.08);
-}
-
-.actions{
-    display:flex;
-    flex-wrap:wrap;
-    gap:4px;
-}
-
-.action{
-    border:0;
-
-    padding:6px 8px;
-
-    border-radius:8px;
-
-    color:rgba(255,255,255,.82);
-
-    background:rgba(255,255,255,.05);
-
-    font-family:"Vazirmatn",sans-serif;
-
-    font-size:8px;
-
-    cursor:pointer;
-}
-
-.action.primary{
-    background:
-        rgba(99,102,241,.18);
-}
-
-.action.danger{
-    color:#fca5a5;
-}
-
-.url-box{
-    max-width:280px;
-
-    direction:ltr;
-    text-align:left;
-
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-
-    color:#c4b5fd;
-
-    font-family:Consolas,monospace;
-
-    font-size:8px;
-}
-
-.pre{
-    margin:0;
-
-    padding:15px;
-
-    max-height:280px;
-
-    overflow:auto;
-
-    color:rgba(255,255,255,.45);
-
-    font-family:Consolas,monospace;
-
-    font-size:9px;
-
-    white-space:pre-wrap;
-}
-
-.download-grid{
-    display:grid;
-
-    grid-template-columns:
-        repeat(3,1fr);
-
-    gap:8px;
-
-    padding:14px;
-}
-
-.download{
-    display:block;
-
-    padding:11px;
-
-    border-radius:12px;
-
-    color:#fff;
-    text-decoration:none;
-
-    border:
-        1px solid
-        rgba(255,255,255,.06);
-
-    background:
-        rgba(255,255,255,.025);
-
-    font-size:10px;
-}
-
-.download span{
-    display:block;
-
-    margin-top:3px;
-
-    color:rgba(255,255,255,.34);
-
-    font-size:8px;
-}
-
-.notice{
-    margin:0 14px 14px;
-
-    padding:14px;
-
-    border-radius:13px;
-
-    background:
-        rgba(99,102,241,.06);
-
-    border:
-        1px solid
-        rgba(99,102,241,.13);
-
-    color:rgba(255,255,255,.62);
-
-    line-height:1.9;
-
-    font-size:10px;
-}
-
-.notice strong{
-    color:#c4b5fd;
-}
-
-.empty{
-    padding:25px;
-
-    text-align:center;
-
-    color:rgba(255,255,255,.30);
-
-    font-size:11px;
-}
-
-.modal-backdrop{
-    position:fixed;
-
-    inset:0;
-
-    z-index:100;
-
-    display:none;
-
-    align-items:center;
-    justify-content:center;
-
-    padding:15px;
-
-    background:
-        rgba(0,0,0,.62);
-
-    backdrop-filter:blur(12px);
-}
-
-.modal-backdrop.open{
-    display:flex;
-}
-
-.modal{
-    width:100%;
-    max-width:720px;
-
-    max-height:
-        calc(100vh - 30px);
-
-    overflow:auto;
-
-    padding:20px;
-
-    border-radius:22px;
-
-    background:#0d0d12;
-
-    border:
-        1px solid
-        rgba(255,255,255,.08);
-
-    box-shadow:
-        0 30px 100px
-        rgba(0,0,0,.55);
-}
-
-.modal-head{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-
-    margin-bottom:15px;
-}
-
-.modal-title{
-    font-size:14px;
-    font-weight:800;
-}
-
-.close{
-    width:34px;
-    height:34px;
-
-    border:0;
-    border-radius:10px;
-
-    color:#fff;
-    background:rgba(255,255,255,.05);
-
-    cursor:pointer;
-}
-
-.form-grid{
-    display:grid;
-
-    grid-template-columns:
-        repeat(2,1fr);
-
-    gap:9px;
-}
-
-.field{
-    display:flex;
-    flex-direction:column;
-    gap:6px;
-}
-
-.field.full{
-    grid-column:
-        1 / -1;
-}
-
-.field label{
-    color:rgba(255,255,255,.4);
-    font-size:9px;
-}
-
-.field input,
-.field select,
-.field textarea{
-    width:100%;
-
-    padding:11px;
-
-    border-radius:11px;
-
-    border:
-        1px solid
-        rgba(255,255,255,.07);
-
-    background:
-        rgba(255,255,255,.035);
-
-    color:#fff;
-
-    outline:none;
-
-    font-family:
-        "Vazirmatn",
-        sans-serif;
-
-    font-size:10px;
-}
-
-.field textarea{
-    min-height:90px;
-    resize:vertical;
-}
-
-.field input:focus,
-.field select:focus,
-.field textarea:focus{
-    border-color:
-        rgba(99,102,241,.55);
-}
-
-.modal-actions{
-    margin-top:15px;
-
-    display:flex;
-
-    gap:8px;
-}
-
-.modal-btn{
-    flex:1;
-
-    padding:11px;
-
-    border:0;
-    border-radius:11px;
-
-    cursor:pointer;
-
-    font-family:
-        "Vazirmatn",sans-serif;
-
-    color:#fff;
-}
-
-.modal-btn.primary{
-    background:
-        linear-gradient(
-            135deg,
-            #6366f1,
-            #8b5cf6
-        );
-}
-
-.modal-btn.secondary{
-    background:
-        rgba(255,255,255,.05);
-}
-
-.toast{
-    position:fixed;
-
-    left:50%;
-    top:18px;
-    bottom:auto;
-
-    z-index:200;
-
-    padding:11px 14px;
-
-    border-radius:12px;
-
-    background:rgba(20,20,27,.97);
-
-    border:
-        1px solid
-        rgba(255,255,255,.08);
-
-    color:#fff;
-
-    font-size:11px;
-    font-weight:700;
-
-    opacity:0;
-
-    transform:
-        translate(-50%,-140%);
-
-    pointer-events:none;
-
-    transition:
-        .2s ease;
-}
-
-.toast.show{
-    opacity:1;
-
-    transform:
-        translate(-50%,0);
-}
-
-/* LOGIN NOTICE START — DELETE THIS WHOLE BLOCK TO DISABLE THE LOGIN NOTICE */
-.login-notice-backdrop{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.72);backdrop-filter:blur(14px)}
-.login-notice{width:min(620px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:22px;border:1px solid rgba(255,255,255,.10);border-radius:24px;background:linear-gradient(180deg,rgba(24,24,34,.98),rgba(12,12,17,.98));box-shadow:0 30px 100px rgba(0,0,0,.60);animation:noticeIn .28s ease both}
-.login-notice-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}.login-notice-icon{width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:rgba(99,102,241,.14);border:1px solid rgba(129,140,248,.22);color:#a5b4fc;font-size:18px}.login-notice h3{margin:0;font-size:15px}.login-notice p{margin:5px 0 0;color:rgba(255,255,255,.42);font-size:9px;line-height:1.9}.notice-downloads{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}.notice-download{display:block;padding:12px;border-radius:14px;text-decoration:none;color:#fff;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);transition:.2s ease}.notice-download:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.30);background:rgba(129,140,248,.07)}.notice-download strong{display:block;font-size:10px}.notice-download span{display:block;margin-top:3px;color:rgba(255,255,255,.36);font-size:8px}.login-notice-body{margin-top:14px;padding:14px;border-radius:14px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);color:rgba(255,255,255,.62);font-size:10px;line-height:2}.login-notice-body b{color:#fff}.login-notice-actions{margin-top:14px;display:flex;gap:8px}.login-notice-actions button{flex:1;padding:11px;border:0;border-radius:12px;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-family:inherit;cursor:pointer}@keyframes noticeIn{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
-/* LOGIN NOTICE END */
-
-@media(max-width:1100px){
-
-    .stats-grid{
-        grid-template-columns:
-            repeat(3,1fr);
-    }
-
-    .download-grid{
-        grid-template-columns:
-            repeat(2,1fr);
-    }
-}
-
-@media(max-width:700px){
-
-    .wrapper{
-        width:
-            calc(100% - 14px);
-    }
-
-    .topbar{
-        align-items:
-            flex-start;
-
-        flex-direction:
-            column;
-    }
-
-    .stats-grid{
-        grid-template-columns:
-            repeat(2,1fr);
-    }
-
-    .form-grid{
-        grid-template-columns:1fr;
-    }
-
-    .field.full{
-        grid-column:auto;
-    }
-
-    .download-grid{
-        grid-template-columns:1fr;
-    }
-}
-
+:root{--bg:#07080d;--panel:#0d1018;--panel2:#111522;--line:rgba(255,255,255,.075);--muted:rgba(255,255,255,.42);--text:#f7f8fc;--primary:#7c83ff;--green:#34d399;--red:#fb7185;--orange:#f59e0b;--cyan:#22d3ee}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg)}body{font-family:Vazirmatn,sans-serif;color:var(--text);overflow-x:hidden}button,input,select,textarea{font:inherit}.app{min-height:100vh;display:flex;direction:ltr}.sidebar{width:260px;position:fixed;left:0;top:0;bottom:0;z-index:30;display:flex;flex-direction:column;padding:18px 14px;border-right:1px solid var(--line);background:rgba(9,11,17,.92);backdrop-filter:blur(24px);direction:rtl}.brand{display:flex;align-items:center;gap:11px;padding:7px 8px 18px}.logo{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;font-weight:900;background:linear-gradient(135deg,#6366f1,#8b5cf6);box-shadow:0 0 28px rgba(99,102,241,.22)}.brand b{font-size:14px}.brand small{display:block;color:var(--muted);font-size:8px;margin-top:2px}.nav-title{padding:12px 9px 7px;color:rgba(255,255,255,.22);font-size:8px;font-weight:800}.nav{display:grid;gap:4px}.nav button{width:100%;border:1px solid transparent;background:transparent;color:rgba(255,255,255,.55);padding:11px 10px;border-radius:12px;text-align:right;cursor:pointer;transition:.18s}.nav button:hover{background:rgba(255,255,255,.035);color:#fff}.nav button.active{background:linear-gradient(100deg,rgba(99,102,241,.18),rgba(139,92,246,.08));border-color:rgba(129,140,248,.16);color:#fff}.nav span{display:flex;align-items:center;gap:9px;font-size:10px}.ico{width:24px;height:24px;display:grid;place-items:center;border-radius:8px;background:rgba(255,255,255,.045);font-size:10px}.side-bottom{margin-top:auto;display:grid;gap:7px}.github{display:block;text-decoration:none;color:#fff;border:1px solid var(--line);padding:11px;border-radius:12px;background:rgba(255,255,255,.025);font-size:9px}.github small{display:block;color:var(--muted);margin-top:3px}.logout{display:block;text-align:center;text-decoration:none;color:#fda4af;border:1px solid rgba(251,113,133,.12);padding:9px;border-radius:11px;background:rgba(251,113,133,.045);font-size:9px}.main{margin-left:260px;width:calc(100% - 260px);direction:rtl;padding:18px;min-width:0}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.top h1{font-size:18px;margin:0}.top p{margin:3px 0 0;color:var(--muted);font-size:9px}.top-actions{display:flex;gap:7px}.btn{border:1px solid var(--line);background:rgba(255,255,255,.035);color:#fff;padding:9px 12px;border-radius:10px;cursor:pointer;font-size:9px}.btn.primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);border:0}.view{display:none}.view.active{display:block}.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:9px}.card{border:1px solid var(--line);background:linear-gradient(145deg,rgba(255,255,255,.04),rgba(255,255,255,.018));border-radius:17px;padding:14px}.stat-label{color:var(--muted);font-size:8px}.stat-value{margin-top:5px;font-size:18px;font-weight:900}.accent{color:#a5b4fc}.green{color:#6ee7b7}.orange{color:#fbbf24}.cyan{color:#67e8f9}.red{color:#fda4af}.section{margin-top:11px;border:1px solid var(--line);background:rgba(255,255,255,.022);border-radius:18px;overflow:hidden}.section-head{display:flex;justify-content:space-between;align-items:center;padding:13px 15px;border-bottom:1px solid var(--line)}.section-head b{font-size:11px}.section-head span{font-size:8px;color:var(--muted)}.table-wrap{overflow:auto}table{width:100%;min-width:980px;border-collapse:collapse}th,td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.045);text-align:right;font-size:8.5px;vertical-align:middle}th{color:rgba(255,255,255,.3);font-weight:500}.badge{display:inline-flex;padding:4px 7px;border-radius:8px;font-size:7px}.badge.on{color:#6ee7b7;background:rgba(52,211,153,.08)}.badge.off{color:#fda4af;background:rgba(251,113,133,.07)}.mono{font-family:Consolas,monospace;direction:ltr;text-align:left;color:#c4b5fd;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.actions{display:flex;gap:4px;flex-wrap:wrap}.mini{border:0;border-radius:8px;padding:6px 7px;background:rgba(255,255,255,.05);color:#fff;cursor:pointer;font-size:7px}.mini.red{color:#fda4af}.logs{padding:14px;max-height:300px;overflow:auto;font:8px/2 Consolas,monospace;color:rgba(255,255,255,.55);direction:ltr;text-align:left;white-space:pre-wrap}.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;padding:15px}.field{display:flex;flex-direction:column;gap:5px}.field.full{grid-column:1/-1}.field label{font-size:8px;color:var(--muted)}.field input,.field select,.field textarea{width:100%;padding:10px 11px;border:1px solid var(--line);background:rgba(0,0,0,.18);color:#fff;border-radius:11px;outline:0;font-size:9px}.field textarea{min-height:100px;resize:vertical}.field input:focus,.field select:focus,.field textarea:focus{border-color:rgba(129,140,248,.5)}.form-actions{display:flex;gap:7px;padding:0 15px 15px}.form-actions .btn{flex:1}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px}.empty{padding:30px;text-align:center;color:var(--muted);font-size:9px}.proxy-url{margin-top:5px;font:8px Consolas;color:#a5b4fc;direction:ltr;word-break:break-all}.notice-box{margin:14px;padding:13px;border-radius:14px;border:1px solid rgba(129,140,248,.16);background:rgba(99,102,241,.06);color:rgba(255,255,255,.65);font-size:9px;line-height:2}.hint{color:var(--muted);font-size:8px;line-height:1.8}.toast{position:fixed;z-index:100;left:50%;top:15px;transform:translate(-50%,-150%);opacity:0;transition:.2s;padding:10px 14px;border-radius:11px;background:#171a25;border:1px solid var(--line);font-size:9px}.toast.show{opacity:1;transform:translate(-50%,0)}
+@media(max-width:1050px){.grid{grid-template-columns:repeat(3,1fr)}.cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:760px){.sidebar{width:72px;padding:12px 8px}.brand{justify-content:center}.brand>div:last-child,.nav-title,.nav button span:not(.ico),.github small,.github strong,.logout{display:none}.nav button{text-align:center;padding:9px}.nav span{justify-content:center}.main{margin-left:72px;width:calc(100% - 72px);padding:11px}.top{align-items:flex-start;flex-direction:column}.top-actions{width:100%}.top-actions .btn{flex:1}.grid{grid-template-columns:repeat(2,1fr)}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.cards{grid-template-columns:1fr}}
 </style>
-
 </head>
-
 <body>
-
-<div class="wrapper">
-
-<div class="topbar">
-
-<div class="brand">
-
-<div class="logo">
-P
-</div>
-
-<div>
-
-<div class="brand-name">
-PixonPanel
-</div>
-
-<div class="brand-desc">
-داشبورد مدیریت سرویس
-</div>
-
-<div class="brand-version">
-12.0.1 Beta
-</div>
-
-</div>
-
-</div>
-
-<div class="top-actions">
-
-<button
-class="top-btn primary"
-onclick="openAutoModal()"
->
-+ ساخت خودکار
-</button>
-
-<button
-class="top-btn"
-onclick="openManualModal()"
->
-+ ساخت دستی
-</button>
-
-<button
-class="top-btn"
-onclick="openPasswordModal()"
->
-تغییر رمز
-</button>
-
-<a
-href="/logout"
-class="top-btn danger"
->
-خروج
-</a>
-
-</div>
-
-</div>
-
-
-<div class="stats-grid">
-
-<div class="stat">
-<div class="stat-label">
-کل کانفیگ‌ها
-</div>
-<div
-id="totalLinks"
-class="stat-value"
->
--
-</div>
-</div>
-
-<div class="stat">
-<div class="stat-label">
-فعال
-</div>
-<div
-id="activeLinks"
-class="stat-value"
->
--
-</div>
-</div>
-
-<div class="stat">
-<div class="stat-label">
-اتصالات
-</div>
-<div
-id="connections"
-class="stat-value"
->
--
-</div>
-</div>
-
-<div class="stat">
-<div class="stat-label">
-Traffic
-</div>
-<div
-id="traffic"
-class="stat-value"
->
--
-</div>
-</div>
-
-<div class="stat">
-<div class="stat-label">
-Requests
-</div>
-<div
-id="requests"
-class="stat-value"
->
--
-</div>
-</div>
-
-<div class="stat">
-<div class="stat-label">
-Uptime
-</div>
-<div
-id="uptime"
-class="stat-value"
->
--
-</div>
-</div>
-
-</div>
-
-
-<div class="panel">
-
-<div class="panel-head">
-
-<div>
-
-<div class="panel-title">
-مدیریت کانفیگ‌ها
-</div>
-
-<div class="panel-sub">
-VLESS / SUB / INFO
-</div>
-
-</div>
-
-<button
-class="top-btn primary"
-onclick="refresh()"
->
-↻ بروزرسانی
-</button>
-
-</div>
-
-<div class="table-wrap">
-
-<table>
-
-<thead>
-
-<tr>
-
-<th>
-نام
-</th>
-
-<th>
-پروتکل
-</th>
-
-<th>
-وضعیت
-</th>
-
-<th>
-مصرف
-</th>
-
-<th>
-زمان
-</th>
-
-<th>
-اتصال
-</th>
-
-<th>
-VLESS
-</th>
-
-<th>
-عملیات
-</th>
-
-</tr>
-
-</thead>
-
-<tbody id="linksTable">
-
-</tbody>
-
-</table>
-
-</div>
-
-</div>
-
-
-<div class="panel">
-
-<div class="panel-head">
-
-<div>
-<div class="panel-title">
-آخرین فعالیت‌ها
-</div>
-</div>
-
-</div>
-
-<pre
-id="logs"
-class="pre"
->
-در حال بارگذاری...
-</pre>
-
-</div>
-
-
-<div class="panel">
-
-<div class="panel-head">
-
-<div>
-<div class="panel-title">
-دانلود برنامه اتصال
-</div>
-
-<div class="panel-sub">
-Android / iPhone / iPad / Windows
-</div>
-
-</div>
-
-</div>
-
-<div class="download-grid">
-
-<a
-class="download"
-href="https://play.google.com/store/apps/details?id=com.happproxy"
-target="_blank"
-rel="noopener"
->
-Happ Android
-<span>
-Google Play
-</span>
-</a>
-
-<a
-class="download"
-href="https://dl.v2rayng.org/releases/latest/v2rayNG_2.2.6_arm64-v8a.apk"
-target="_blank"
-rel="noopener"
->
-v2rayNG
-<span>
-Android APK
-</span>
-</a>
-
-<a
-class="download"
-href="https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box"
-target="_blank"
-rel="noopener"
->
-V2Box Android
-<span>
-Google Play
-</span>
-</a>
-
-<a
-class="download"
-href="https://apps.apple.com/app/happ-proxy-utility/id6504287215"
-target="_blank"
-rel="noopener"
->
-Happ
-<span>
-iPhone / iPad
-</span>
-</a>
-
-<a
-class="download"
-href="https://apps.apple.com/app/v2box-v2ray-client/id6446814690"
-target="_blank"
-rel="noopener"
->
-V2Box
-<span>
-iPhone / iPad
-</span>
-</a>
-
-<a
-class="download"
-href="https://apps.apple.com/app/streisand/id6450534064"
-target="_blank"
-rel="noopener"
->
-Streisand
-<span>
-iPhone / iPad
-</span>
-</a>
-
-<a
-class="download"
-href="https://apps.apple.com/app/foxray/id6448898396"
-target="_blank"
-rel="noopener"
->
-FoXray
-<span>
-iPhone / iPad
-</span>
-</a>
-
-<a
-class="download"
-href="https://github.com/2dust/v2rayN/releases/latest"
-target="_blank"
-rel="noopener"
->
-v2rayN
-<span>
-Windows
-</span>
-</a>
-
-<a
-class="download"
-href="https://happ-proxy.com/"
-target="_blank"
-rel="noopener"
->
-Happ
-<span>
-Windows
-</span>
-</a>
-
-</div>
-
-<div class="notice">
-
-<strong>
-اطلاعیه مهم | آپدیت برنامه اتصال
-</strong>
-
-<br>
-
-دوستان عزیز ❤️
-برای اینکه کانفیگ‌های جدید بهترین
-سازگاری، پایداری و عملکرد رو داشته باشن،
-لطفاً برنامه‌ای که برای اتصال استفاده می‌کنید
-رو به آخرین نسخه آپدیت کنید. 🔄⚡️
-
-</div>
-
-</div>
-
-</div>
-
-
-<!-- ===================================================== -->
-<!-- MANUAL MODAL -->
-<!-- ===================================================== -->
-
-<div
-id="manualModal"
-class="modal-backdrop"
->
-
-<div class="modal">
-
-<div class="modal-head">
-
-<div class="modal-title">
-ساخت کانفیگ دستی
-</div>
-
-<button
-class="close"
-onclick="closeManualModal()"
->
-×
-</button>
-
-</div>
-
-<div class="form-grid">
-
-<div class="field">
-
-<label>
-نام کانفیگ
-</label>
-
-<input
-id="manualName"
-placeholder="نام کانفیگ"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-پروتکل
-</label>
-
-<select id="manualProtocol">
-
-<option value="vless-ws">
-VLESS WebSocket
-</option>
-
-<option value="xhttp-packet-up">
-XHTTP Packet Up
-</option>
-
-<option value="xhttp-stream-up">
-XHTTP Stream Up
-</option>
-
-<option value="xhttp-stream-one">
-XHTTP Stream One
-</option>
-
-</select>
-
-</div>
-
-
-<div class="field">
-
-<label>
-حجم
-</label>
-
-<input
-id="manualVolume"
-type="number"
-min="0"
-placeholder="0 = نامحدود"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-واحد حجم
-</label>
-
-<select id="manualVolumeUnit">
-
-<option value="GB">
-GB
-</option>
-
-<option value="MB">
-MB
-</option>
-
-<option value="TB">
-TB
-</option>
-
-</select>
-
-</div>
-
-
-<div class="field">
-
-<label>
-تعداد روز
-</label>
-
-<input
-id="manualDays"
-type="number"
-min="0"
-placeholder="0 = نامحدود"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-محدودیت IP
-</label>
-
-<input
-id="manualIpLimit"
-type="number"
-min="0"
-placeholder="0 = نامحدود"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-محدودیت اتصال
-</label>
-
-<input
-id="manualConnections"
-type="number"
-min="0"
-placeholder="0 = نامحدود"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-سرعت
-</label>
-
-<input
-id="manualSpeed"
-type="number"
-min="0"
-placeholder="0 = نامحدود"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-Fingerprint
-</label>
-
-<select id="manualFingerprint">
-
-<option value="chrome">
-Chrome
-</option>
-
-<option value="firefox">
-Firefox
-</option>
-
-<option value="safari">
-Safari
-</option>
-
-<option value="ios">
-iOS
-</option>
-
-<option value="android">
-Android
-</option>
-
-<option value="edge">
-Edge
-</option>
-
-<option value="360">
-360
-</option>
-
-<option value="qq">
-QQ
-</option>
-
-<option value="random">
-Random
-</option>
-
-<option value="randomized">
-Randomized
-</option>
-
-</select>
-
-</div>
-
-
-<div class="field">
-
-<label>
-Fragment
-</label>
-
-<select id="manualFragment">
-
-<option value="off">
-خاموش
-</option>
-
-<option value="safe">
-Safe
-</option>
-
-<option value="balanced">
-Balanced
-</option>
-
-<option value="aggressive">
-Aggressive
-</option>
-
-</select>
-
-</div>
-
-
-<div class="field">
-
-<label>
-Port
-</label>
-
-<input
-id="manualPort"
-type="number"
-min="1"
-max="65535"
-value="443"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-ALPN
-</label>
-
-<input
-id="manualAlpn"
-value="http/1.1"
-/>
-
-</div>
-
-
-<div class="field full">
-
-<label>
-یادداشت
-</label>
-
-<textarea
-id="manualNote"
-placeholder="یادداشت اختیاری"
-></textarea>
-
-</div>
-
-</div>
-
-<div class="modal-actions">
-
-<button
-class="modal-btn secondary"
-onclick="closeManualModal()"
->
-انصراف
-</button>
-
-<button
-class="modal-btn primary"
-onclick="createManual()"
->
-ساخت کانفیگ
-</button>
-
-</div>
-
-</div>
-
-</div>
-
-
-<!-- ===================================================== -->
-<!-- AUTO MODAL -->
-<!-- ===================================================== -->
-
-<div
-id="autoModal"
-class="modal-backdrop"
->
-
-<div class="modal">
-
-<div class="modal-head">
-
-<div class="modal-title">
-ساخت خودکار
-</div>
-
-<button
-class="close"
-onclick="closeAutoModal()"
->
-×
-</button>
-
-</div>
-
-<div
-style="
-color:rgba(255,255,255,.55);
-font-size:11px;
-line-height:2;
-"
->
-
-کانفیگ خودکار با نام تصادفی
-<code>pxpanel_********</code>
-ساخته می‌شود.
-
-<br>
-
-حجم: <b>نامحدود</b>
-
-<br>
-
-زمان: <b>نامحدود</b>
-
-<br>
-
-IP: <b>نامحدود</b>
-
-<br>
-
-سرعت: <b>نامحدود</b>
-
-<br>
-
-اتصال: <b>نامحدود</b>
-
-<br>
-
-پروتکل:
-<b>VLESS WebSocket</b>
-
-<br>
-
-Port:
-<b>443</b>
-
-</div>
-
-<div class="modal-actions">
-
-<button
-class="modal-btn secondary"
-onclick="closeAutoModal()"
->
-انصراف
-</button>
-
-<button
-class="modal-btn primary"
-onclick="createAuto()"
->
-ساخت خودکار
-</button>
-
-</div>
-
-</div>
-
-</div>
-
-
-<!-- ===================================================== -->
-<!-- PASSWORD MODAL -->
-<!-- ===================================================== -->
-
-<div
-id="passwordModal"
-class="modal-backdrop"
->
-
-<div class="modal">
-
-<div class="modal-head">
-
-<div class="modal-title">
-تغییر رمز پنل
-</div>
-
-<button
-class="close"
-onclick="closePasswordModal()"
->
-×
-</button>
-
-</div>
-
-<div class="form-grid">
-
-<div class="field full">
-
-<label>
-رمز فعلی
-</label>
-
-<input
-id="currentPassword"
-type="password"
-/>
-
-</div>
-
-<div class="field">
-
-<label>
-رمز جدید
-</label>
-
-<input
-id="newPassword"
-type="password"
-/>
-
-</div>
-
-<div class="field">
-
-<label>
-تکرار رمز جدید
-</label>
-
-<input
-id="repeatPassword"
-type="password"
-/>
-
-</div>
-
-</div>
-
-<div class="modal-actions">
-
-<button
-class="modal-btn secondary"
-onclick="closePasswordModal()"
->
-انصراف
-</button>
-
-<button
-class="modal-btn primary"
-onclick="changePassword()"
->
-ذخیره رمز
-</button>
-
-</div>
-
-</div>
-
-</div>
-
-
-    <!-- LOGIN NOTICE START — DELETE THIS WHOLE BLOCK TO DISABLE THE LOGIN NOTICE -->
-<div id="loginNoticeModal" class="login-notice-backdrop" role="dialog" aria-modal="true">
-<div class="login-notice">
-<div class="login-notice-head"><div class="login-notice-icon">ⓘ</div><div><h3>راهنمای اتصال سرویس</h3><p>برای اضافه‌کردن اشتراک، از یکی از برنامه‌های زیر استفاده کنید.</p></div></div>
-<div class="login-notice-body"><b>پیشنهاد:</b> لینک SUB را داخل برنامه Import/Subscription اضافه کنید. برای اتصال مستقیم هم می‌توانید VLESS را وارد کنید.<br>کانال تلگرام: <b>logic_sec</b></div>
-<div class="notice-downloads"><a class="notice-download" href="https://github.com/2dust/v2rayNG/releases/latest" target="_blank" rel="noopener noreferrer"><strong>v2rayNG</strong><span>Android</span></a><a class="notice-download" href="https://github.com/2dust/v2rayN/releases/latest" target="_blank" rel="noopener noreferrer"><strong>v2rayN</strong><span>Windows / macOS / Linux</span></a><a class="notice-download" href="https://github.com/hiddify/hiddify-app/releases/latest" target="_blank" rel="noopener noreferrer"><strong>Hiddify</strong><span>Android / Windows / macOS / Linux</span></a></div>
-<div class="login-notice-actions"><button type="button" onclick="closeLoginNotice()">متوجه شدم</button></div>
-</div></div>
-    <!-- LOGIN NOTICE END -->
-
-<div
-id="toast"
-class="toast"
-></div>
-
-
+<div class="app">
+<aside class="sidebar">
+<div class="brand"><div class="logo">PX</div><div><b>PixonPanel</b><small>12.0.1 Control Center</small></div></div>
+<div class="nav-title">مدیریت</div>
+<nav class="nav">
+<button class="active" data-view="dashboard"><span><i class="ico">⌂</i> داشبورد</span></button>
+<button data-view="configs"><span><i class="ico">◇</i> کانفیگ‌ها</span></button>
+<button data-view="create" onclick="location.href='/dashboard/create'"><span><i class="ico">＋</i> ساخت کانفیگ</span></button>
+<button data-view="groups"><span><i class="ico">◎</i> گروه‌ها</span></button>
+<button data-view="connections"><span><i class="ico">⇄</i> اتصال‌ها</span></button>
+<button data-view="proxies"><span><i class="ico">◌</i> SOCKS5</span></button>
+<button data-view="info"><span><i class="ico">i</i> متن INFO</span></button>
+<button data-view="settings"><span><i class="ico">⚙</i> تنظیمات</span></button>
+</nav>
+<div class="side-bottom"><a class="github" href="https://github.com/iran-px-panel/pxpanel/" target="_blank" rel="noopener"><strong>GitHub · Star بده</strong><small>iran-px-panel/pxpanel</small></a><a class="logout" href="/logout">خروج از پنل</a></div>
+</aside>
+<main class="main">
+<div class="top"><div><h1 id="pageTitle">داشبورد</h1><p id="pageSub">نمای کلی سرویس، آمار و لاگ‌های اخیر</p></div><div class="top-actions"><button class="btn primary" onclick="location.href='/dashboard/create'">+ ساخت کانفیگ</button><button class="btn" onclick="refreshAll()">بروزرسانی</button></div></div>
+
+<section id="view-dashboard" class="view active">
+<div class="grid">
+<div class="card"><div class="stat-label">کل کانفیگ‌ها</div><div id="sLinks" class="stat-value accent">-</div></div>
+<div class="card"><div class="stat-label">کانفیگ فعال</div><div id="sActive" class="stat-value green">-</div></div>
+<div class="card"><div class="stat-label">اتصالات فعال</div><div id="sConn" class="stat-value cyan">-</div></div>
+<div class="card"><div class="stat-label">ترافیک</div><div id="sTraffic" class="stat-value orange">-</div></div>
+<div class="card"><div class="stat-label">درخواست‌ها</div><div id="sReq" class="stat-value">-</div></div>
+<div class="card"><div class="stat-label">خطاها</div><div id="sErr" class="stat-value red">-</div></div>
+</div>
+<div class="section"><div class="section-head"><b>فعالیت‌های اخیر</b><span id="uptime">Uptime: -</span></div><div id="logs" class="logs">در حال بارگذاری...</div></div>
+<div class="section"><div class="section-head"><b>آخرین کانفیگ‌ها</b><span>Live overview</span></div><div class="table-wrap"><table><thead><tr><th>نام</th><th>پروتکل</th><th>SNI</th><th>وضعیت</th><th>مصرف</th><th>اتصال</th><th>عملیات</th></tr></thead><tbody id="dashTable"></tbody></table></div></div>
+</section>
+
+<section id="view-configs" class="view"><div class="section"><div class="section-head"><b>مدیریت کانفیگ‌ها</b><span>خاموش / فعال / کپی / INFO / حذف</span></div><div class="table-wrap"><table><thead><tr><th>نام / UUID</th><th>پروتکل</th><th>SNI</th><th>Proxy</th><th>وضعیت</th><th>مصرف</th><th>VLESS</th><th>عملیات</th></tr></thead><tbody id="configTable"></tbody></table></div></div></section>
+
+<section id="view-create" class="view"><div class="section"><div class="section-head"><b>ساخت کانفیگ پیشرفته</b><span>بدون پنجره بازشو</span></div><div class="notice-box">تمام تنظیمات این صفحه مستقیماً روی کانفیگ ذخیره می‌شوند. <b>SNI</b> اختیاری است و در صورت خالی بودن از دامنه پنل استفاده می‌شود. SOCKS5 به‌عنوان پروکسی مدیریت‌شده به کانفیگ متصل می‌شود؛ خود URI استاندارد VLESS پارامتر proxy-chain ندارد و لینک SOCKS5 جداگانه در INFO نمایش داده می‌شود.</div><div class="form-grid">
+<div class="field"><label>نام کانفیگ</label><input id="cName" placeholder="مثلاً VIP-01"></div>
+<div class="field"><label>پروتکل</label><select id="cProtocol"><option value="vless-ws">VLESS WebSocket</option><option value="xhttp-packet-up">XHTTP Packet Up</option><option value="xhttp-stream-up">XHTTP Stream Up</option><option value="xhttp-stream-one">XHTTP Stream One</option></select></div>
+<div class="field"><label>حجم</label><input id="cVolume" type="number" min="0" value="0" placeholder="0 = نامحدود"></div>
+<div class="field"><label>واحد حجم</label><select id="cUnit"><option>GB</option><option>MB</option><option>TB</option><option>KB</option></select></div>
+<div class="field"><label>تعداد روز</label><input id="cDays" type="number" min="0" value="0" placeholder="0 = نامحدود"></div>
+<div class="field"><label>Port</label><input id="cPort" type="number" min="1" max="65535" value="443"></div>
+<div class="field"><label>SNI</label><input id="cSni" placeholder="مثلاً cdn.example.com"></div>
+<div class="field"><label>ALPN</label><input id="cAlpn" value="http/1.1"></div>
+<div class="field"><label>Fingerprint</label><select id="cFp"><option>chrome</option><option>firefox</option><option>safari</option><option>ios</option><option>android</option><option>edge</option><option>360</option><option>qq</option><option>random</option><option>randomized</option></select></div>
+<div class="field"><label>Fragment</label><select id="cFragment"><option value="off">خاموش</option><option value="safe">Safe</option><option value="balanced">Balanced</option><option value="aggressive">Aggressive</option></select></div>
+<div class="field"><label>محدودیت IP</label><input id="cIp" type="number" min="0" value="0"></div>
+<div class="field"><label>محدودیت اتصال</label><input id="cConn" type="number" min="0" value="0"></div>
+<div class="field"><label>محدودیت سرعت</label><input id="cSpeed" type="number" min="0" value="0"></div>
+<div class="field"><label>واحد سرعت</label><select id="cSpeedUnit"><option>MBIT</option><option>MB</option><option>KB</option></select></div>
+<div class="field"><label>پروکسی SOCKS5</label><select id="cProxy"><option value="">بدون پروکسی</option></select></div><div class="field"><label>گروه اشتراک</label><select id="cGroup"><option value="">بدون گروه</option></select></div>
+<div class="field full"><label>یادداشت</label><textarea id="cNote" placeholder="یادداشت داخلی کانفیگ"></textarea></div>
+</div><div class="form-actions"><button class="btn" onclick="resetCreate()">پاک کردن</button><button class="btn primary" onclick="createConfig()">ساخت و ذخیره کانفیگ</button></div></div></section>
+
+<section id="view-groups" class="view"><div class="section"><div class="section-head"><b>گروه‌ها</b><button class="btn primary" onclick="createGroup()">+ ساخت گروه</button></div><div id="groups" class="cards"></div></div></section>
+<section id="view-connections" class="view"><div class="section"><div class="section-head"><b>اتصال‌های فعال</b><span>Live connections</span></div><div class="table-wrap"><table><thead><tr><th>IP</th><th>جلسه</th><th>ترافیک</th><th>کانفیگ‌ها</th><th>آخرین اتصال</th></tr></thead><tbody id="connectionTable"></tbody></table></div></div></section>
+<section id="view-proxies" class="view"><div class="section"><div class="section-head"><b>مدیریت SOCKS5</b><span>فقط SOCKS5</span></div><div class="form-grid"><div class="field"><label>نام</label><input id="pName" value="Proxy 01"></div><div class="field"><label>Host</label><input id="pHost" placeholder="127.0.0.1"></div><div class="field"><label>Port</label><input id="pPort" type="number" value="1080"></div><div class="field"><label>Username</label><input id="pUser"></div><div class="field"><label>Password</label><input id="pPass" type="password"></div></div><div class="form-actions"><button class="btn primary" onclick="addProxy()">افزودن SOCKS5</button></div><div id="proxyCards" class="cards"></div></div></section>
+<section id="view-info" class="view"><div class="section"><div class="section-head"><b>متن INFO عمومی</b><span>برای همه کاربران نمایش داده می‌شود</span></div><div class="form-grid"><div class="field full"><label>متن بالای صفحه INFO</label><textarea id="globalInfo" style="min-height:180px" placeholder="مثلاً اطلاعیه سرویس، وضعیت، قوانین یا راهنمای اتصال..."></textarea></div></div><div class="form-actions"><button class="btn primary" onclick="saveInfo()">ذخیره متن INFO</button></div><div class="notice-box">این متن فقط برای نمایش عمومی در بالای صفحه INFO است و از داخل پنل قابل ویرایش می‌باشد.</div></div></section>
+<section id="view-settings" class="view"><div class="section"><div class="section-head"><b>تنظیمات</b><span>Control Center</span></div><div class="cards"><div class="card"><div class="stat-label">نسخه</div><div class="stat-value">12.0.1</div></div><div class="card"><div class="stat-label">داده‌ها</div><div class="stat-value">JSON</div></div><div class="card"><div class="stat-label">Timezone</div><div class="stat-value">Tehran</div></div></div><div class="notice-box">برای تغییر رمز ورود از دکمه تنظیمات امنیتی در نسخه فعلی API استفاده می‌شود. این نسخه بدون دیتابیس خارجی کار می‌کند و داده‌ها در volume ذخیره می‌شوند.</div></div></section>
+</main></div><div id="toast" class="toast"></div>
 <script>
-
-let editingLink = null;
-
-
-/* LOGIN NOTICE START — DELETE THIS WHOLE BLOCK TO DISABLE THE LOGIN NOTICE */
-function closeLoginNotice(){const modal=document.getElementById("loginNoticeModal");if(modal)modal.remove()}
-window.addEventListener("keydown",event=>{if(event.key==="Escape")closeLoginNotice()});
-/* LOGIN NOTICE END */
-
-function escapeHtml(value){
-
-    return String(
-        value ?? ""
-    )
-
-    .replaceAll(
-        "&",
-        "&amp;"
-    )
-
-    .replaceAll(
-        "<",
-        "&lt;"
-    )
-
-    .replaceAll(
-        ">",
-        "&gt;"
-    )
-
-    .replaceAll(
-        '"',
-        "&quot;"
-    )
-
-    .replaceAll(
-        "'",
-        "&#039;"
-    );
-
-}
-
-
-function formatBytes(value){
-
-    value =
-        Number(
-            value || 0
-        );
-
-    if(
-        value < 1024
-    ){
-        return (
-            value +
-            " B"
-        );
-    }
-
-    if(
-        value < 1024 ** 2
-    ){
-        return (
-            (
-                value /
-                1024
-            ).toFixed(1)
-            +
-            " KB"
-        );
-    }
-
-    if(
-        value < 1024 ** 3
-    ){
-        return (
-            (
-                value /
-                1024 ** 2
-            ).toFixed(2)
-            +
-            " MB"
-        );
-    }
-
-    return (
-        (
-            value /
-            1024 ** 3
-        ).toFixed(2)
-        +
-        " GB"
-    );
-
-}
-
-
-function showToast(message){
-
-    const toast =
-        document.getElementById(
-            "toast"
-        );
-
-    toast.textContent =
-        message;
-
-    toast.classList.add(
-        "show"
-    );
-
-    clearTimeout(
-        window.__toastTimer
-    );
-
-    window.__toastTimer =
-        setTimeout(
-            () => {
-                toast.classList.remove(
-                    "show"
-                );
-            },
-            2200
-        );
-
-}
-
-
-async function api(
-    url,
-    options = {}
-){
-
-    try{
-
-        const response =
-            await fetch(
-                url,
-                {
-                    cache:"no-store",
-                    credentials:"same-origin",
-                    ...options
-                }
-            );
-
-        if(
-            response.status === 401
-        ){
-
-            location.href =
-                "/login";
-
-            return null;
-
-        }
-
-        let data = null;
-
-        try{
-
-            data =
-                await response.json();
-
-        }catch{
-
-            data = {
-                ok:false,
-                error:
-                    "پاسخ سرور قابل خواندن نیست"
-            };
-
-        }
-
-        if(
-            !response.ok
-        ){
-
-            const message =
-                data.detail ||
-                data.error ||
-                "خطای سرور";
-
-            showToast(
-                message
-            );
-
-            console.error(
-                "API error:",
-                url,
-                data
-            );
-
-            return null;
-        }
-
-        return data;
-
-    }catch(error){
-
-        console.error(
-            "Request failed:",
-            url,
-            error
-        );
-
-        showToast(
-            "ارتباط با سرور برقرار نشد"
-        );
-
-        return null;
-
-    }
-
-}
-
-
-async function refresh(){
-
-    const results =
-        await Promise.all([
-            api("/stats"),
-            api("/api/links"),
-            api("/api/activity")
-        ]);
-
-    const statsData =
-        results[0];
-
-    const linksData =
-        results[1];
-
-    const activity =
-        results[2];
-
-    if(statsData){
-
-        document.getElementById(
-            "totalLinks"
-        ).textContent =
-            statsData.links_count;
-
-        document.getElementById(
-            "activeLinks"
-        ).textContent =
-            statsData.active_links;
-
-        document.getElementById(
-            "connections"
-        ).textContent =
-            statsData.active_connections;
-
-        document.getElementById(
-            "traffic"
-        ).textContent =
-            formatBytes(
-                statsData.total_traffic_bytes
-            );
-
-        document.getElementById(
-            "requests"
-        ).textContent =
-            statsData.total_requests;
-
-        document.getElementById(
-            "uptime"
-        ).textContent =
-            statsData.uptime;
-    }
-
-
-    if(linksData){
-
-        const table =
-            document.getElementById(
-                "linksTable"
-            );
-
-        table.innerHTML = "";
-
-
-        if(
-            !linksData.links ||
-            !linksData.links.length
-        ){
-
-            table.innerHTML = `
-                <tr>
-                    <td
-                    colspan="8"
-                    class="empty"
-                    >
-                    هنوز کانفیگی ساخته نشده است.
-                    </td>
-                </tr>
-            `;
-
-        }else{
-
-            for(
-                const link
-                of linksData.links
-            ){
-
-                const row =
-                    document.createElement(
-                        "tr"
-                    );
-
-                const limit =
-                    Number(
-                        link.limit_bytes ||
-                        0
-                    );
-
-                const used =
-                    Number(
-                        link.used_bytes ||
-                        0
-                    );
-
-                let usageText =
-                    formatBytes(
-                        used
-                    );
-
-                if(limit > 0){
-
-                    usageText +=
-                        " / " +
-                        formatBytes(
-                            limit
-                        );
-
-                }else{
-
-                    usageText +=
-                        " / ∞";
-                }
-
-
-                row.innerHTML = `
-
-<td>
-
-<div style="font-weight:700">
-${escapeHtml(
-    link.label
-)}
-</div>
-
-<div
-style="
-margin-top:3px;
-color:rgba(255,255,255,.25);
-font-size:8px;
-"
->
-${escapeHtml(
-    link.uuid
-)}
-</div>
-
-</td>
-
-
-<td>
-${escapeHtml(
-    link.protocol
-)}
-</td>
-
-
-<td>
-
-<span class="
-    badge
-    ${
-        link.active
-        ? "active"
-        : "off"
-    }
-">
-
-${
-    link.active
-    ? "فعال"
-    : "غیرفعال"
-}
-
-</span>
-
-</td>
-
-
-<td>
-${usageText}
-</td>
-
-
-<td>
-${
-    link.expires_at
-    ? escapeHtml(
-        link.expires_at
-      )
-    : "∞"
-}
-</td>
-
-
-<td>
-${link.connected_ips || 0}
-</td>
-
-
-<td>
-
-<div
-class="url-box"
-title="${escapeHtml(link.vless)}"
->
-${escapeHtml(link.vless)}
-</div>
-
-</td>
-
-
-<td>
-
-<div class="actions">
-
-<button
-class="action primary"
-type="button"
-data-action="copy-vless"
->
-VLESS
-</button>
-
-<button
-class="action"
-type="button"
-data-action="copy-sub"
->
-SUB
-</button>
-
-<button
-class="action"
-type="button"
-data-action="open-info"
->
-INFO
-</button>
-
-<button
-class="action"
-type="button"
-data-action="toggle"
->
-${
-    link.active
-    ? "خاموش"
-    : "فعال"
-}
-</button>
-
-<button
-class="action"
-type="button"
-data-action="reset"
->
-ریست
-</button>
-
-<button
-class="action danger"
-type="button"
-data-action="delete"
->
-حذف
-</button>
-
-</div>
-
-</td>
-
-`;
-
-                const actionButtons =
-                    row.querySelectorAll(
-                        "button[data-action]"
-                    );
-
-                actionButtons.forEach(
-                    (button) => {
-                        button.addEventListener(
-                            "click",
-                            async () => {
-                                const action =
-                                    button.dataset.action;
-
-                                if (action === "copy-vless") {
-                                    await copyText(link.vless);
-                                    return;
-                                }
-
-                                if (action === "copy-sub") {
-                                    await copyText(link.sub);
-                                    return;
-                                }
-
-                                if (action === "open-info") {
-                                    if (!link.info) {
-                                        showToast("لینک INFO موجود نیست");
-                                        return;
-                                    }
-                                    window.open(
-                                        String(link.info),
-                                        "_blank",
-                                        "noopener,noreferrer"
-                                    );
-                                    return;
-                                }
-
-                                button.disabled = true;
-                                try {
-                                    if (action === "toggle") {
-                                        await toggleLink(
-                                            link.uuid,
-                                            !Boolean(link.active)
-                                        );
-                                    } else if (action === "reset") {
-                                        await resetUsage(link.uuid);
-                                    } else if (action === "delete") {
-                                        await deleteLink(link.uuid);
-                                    }
-                                } finally {
-                                    button.disabled = false;
-                                }
-                            }
-                        );
-                    }
-                );
-
-                table.appendChild(
-                    row
-                );
-
-            }
-
-        }
-    }
-
-
-    if(
-        activity
-        &&
-        activity.logs
-    ){
-
-        document.getElementById(
-            "logs"
-        ).textContent =
-            activity.logs
-                .slice()
-                .reverse()
-                .map(
-                    item =>
-                        `[${item.level}] ${item.message}`
-                )
-                .join(
-                    "\n"
-                )
-                ||
-                "فعالیتی ثبت نشده است";
-
-    }
-
-}
-
-
-async function copyText(text){
-
-    const value =
-        String(text ?? "").trim();
-
-    if (!value) {
-        showToast("متنی برای کپی وجود ندارد");
-        return false;
-    }
-
-    try {
-        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-            await navigator.clipboard.writeText(value);
-            showToast("کپی شد");
-            return true;
-        }
-    } catch (error) {
-        console.warn("Clipboard API failed:", error);
-    }
-
-    try {
-        const textarea = document.createElement("textarea");
-        textarea.value = value;
-        textarea.setAttribute("readonly", "");
-        textarea.style.position = "fixed";
-        textarea.style.left = "-9999px";
-        textarea.style.top = "0";
-        textarea.style.opacity = "0";
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        textarea.setSelectionRange(0, textarea.value.length);
-        const copied = document.execCommand("copy");
-        textarea.remove();
-
-        if (copied) {
-            showToast("کپی شد");
-            return true;
-        }
-    } catch (error) {
-        console.warn("Legacy clipboard fallback failed:", error);
-    }
-
-    try {
-        window.prompt("لینک را کپی کنید:", value);
-    } catch (error) {
-        console.warn("Prompt fallback failed:", error);
-    }
-
-    return false;
-
-}
-
-function openManualModal(){
-
-    document
-        .getElementById(
-            "manualModal"
-        )
-        .classList.add(
-            "open"
-        );
-
-}
-
-
-function closeManualModal(){
-
-    document
-        .getElementById(
-            "manualModal"
-        )
-        .classList.remove(
-            "open"
-        );
-
-}
-
-
-function openAutoModal(){
-
-    document
-        .getElementById(
-            "autoModal"
-        )
-        .classList.add(
-            "open"
-        );
-
-}
-
-
-function closeAutoModal(){
-
-    document
-        .getElementById(
-            "autoModal"
-        )
-        .classList.remove(
-            "open"
-        );
-
-}
-
-
-function openPasswordModal(){
-
-    document
-        .getElementById(
-            "passwordModal"
-        )
-        .classList.add(
-            "open"
-        );
-
-}
-
-
-function closePasswordModal(){
-
-    document
-        .getElementById(
-            "passwordModal"
-        )
-        .classList.remove(
-            "open"
-        );
-
-}
-
-
-async function createAuto(){
-
-    closeAutoModal();
-
-    showToast(
-        "در حال ساخت کانفیگ..."
-    );
-
-    const result =
-        await api(
-            "/api/links/auto",
-            {
-                method:"POST"
-            }
-        );
-
-    if(
-        !result
-        ||
-        !result.ok
-    ){
-        return;
-    }
-
-    await copyText(
-        result.vless
-    );
-
-    showToast(
-        "کانفیگ ساخته شد و VLESS کپی شد"
-    );
-
-    await refresh();
-
-}
-
-
-async function createManual(){
-
-    const body = {
-
-        label:
-            document
-                .getElementById(
-                    "manualName"
-                )
-                .value
-                .trim()
-            ||
-            "کانفیگ جدید",
-
-        limit_value:
-            Number(
-                document
-                    .getElementById(
-                        "manualVolume"
-                    )
-                    .value
-                || 0
-            ),
-
-        limit_unit:
-            document
-                .getElementById(
-                    "manualVolumeUnit"
-                )
-                .value,
-
-        expires_days:
-            Number(
-                document
-                    .getElementById(
-                        "manualDays"
-                    )
-                    .value
-                || 0
-            ),
-
-        ip_limit:
-            Number(
-                document
-                    .getElementById(
-                        "manualIpLimit"
-                    )
-                    .value
-                || 0
-            ),
-
-        connection_limit:
-            Number(
-                document
-                    .getElementById(
-                        "manualConnections"
-                    )
-                    .value
-                || 0
-            ),
-
-        speed_limit_value:
-            Number(
-                document
-                    .getElementById(
-                        "manualSpeed"
-                    )
-                    .value
-                || 0
-            ),
-
-        speed_limit_unit:
-            "MBIT",
-
-        protocol:
-            document
-                .getElementById(
-                    "manualProtocol"
-                )
-                .value,
-
-        fingerprint:
-            document
-                .getElementById(
-                    "manualFingerprint"
-                )
-                .value,
-
-        fragment:
-            document
-                .getElementById(
-                    "manualFragment"
-                )
-                .value,
-
-        port:
-            Number(
-                document
-                    .getElementById(
-                        "manualPort"
-                    )
-                    .value
-                || 443
-            ),
-
-        alpn:
-            document
-                .getElementById(
-                    "manualAlpn"
-                )
-                .value,
-
-        note:
-            document
-                .getElementById(
-                    "manualNote"
-                )
-                .value
-
-    };
-
-
-    const result =
-        await api(
-            "/api/links",
-            {
-                method:"POST",
-
-                headers:{
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body:
-                    JSON.stringify(
-                        body
-                    )
-            }
-        );
-
-
-    if(
-        !result
-    ){
-        return;
-    }
-
-
-    closeManualModal();
-
-    if(result.vless){
-
-        await copyText(
-            result.vless
-        );
-
-        showToast(
-            "کانفیگ ساخته شد"
-        );
-
-    }
-
-    await refresh();
-
-}
-
-
-async function toggleLink(
-    uuid,
-    active
-){
-
-    const result =
-        await api(
-            "/api/links/" +
-            encodeURIComponent(uuid),
-            {
-                method:"PATCH",
-                headers:{
-                    "Content-Type":"application/json"
-                },
-                body:JSON.stringify({
-                    active:Boolean(active)
-                })
-            }
-        );
-
-    if (!result || result.ok !== true) {
-        return false;
-    }
-
-    showToast(
-        active
-        ? "کانفیگ فعال شد"
-        : "کانفیگ غیرفعال شد"
-    );
-
-    await refresh();
-    return true;
-
-}
-
-
-async function resetUsage(
-    uuid
-){
-
-    const result =
-        await api(
-            "/api/links/" +
-            encodeURIComponent(uuid) +
-            "/reset-usage",
-            {
-                method:"POST"
-            }
-        );
-
-    if (!result || result.ok !== true) {
-        return false;
-    }
-
-    showToast("مصرف ریست شد");
-    await refresh();
-    return true;
-
-}
-
-
-async function deleteLink(
-    uuid
-){
-
-    if (!confirm("این کانفیگ حذف شود؟")) {
-        return false;
-    }
-
-    const result =
-        await api(
-            "/api/links/" +
-            encodeURIComponent(uuid),
-            {
-                method:"DELETE"
-            }
-        );
-
-    if (!result || result.ok !== true) {
-        return false;
-    }
-
-    showToast("کانفیگ حذف شد");
-    await refresh();
-    return true;
-
-}
-
-
-async function changePassword(){
-
-    const current =
-        document
-            .getElementById(
-                "currentPassword"
-            )
-            .value;
-
-    const newPassword =
-        document
-            .getElementById(
-                "newPassword"
-            )
-            .value;
-
-    const repeat =
-        document
-            .getElementById(
-                "repeatPassword"
-            )
-            .value;
-
-
-    const result =
-        await api(
-            "/api/change-password",
-            {
-                method:"POST",
-
-                headers:{
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body:
-                    JSON.stringify({
-
-                        current_password:
-                            current,
-
-                        new_password:
-                            newPassword,
-
-                        repeat_password:
-                            repeat
-
-                    })
-            }
-        );
-
-
-    if(
-        result
-        &&
-        result.ok
-    ){
-
-        closePasswordModal();
-
-        document
-            .getElementById(
-                "currentPassword"
-            )
-            .value = "";
-
-        document
-            .getElementById(
-                "newPassword"
-            )
-            .value = "";
-
-        document
-            .getElementById(
-                "repeatPassword"
-            )
-            .value = "";
-
-        showToast(
-            "رمز عبور تغییر کرد"
-        );
-
-    }
-
-}
-
-
-refresh();
-
-setInterval(
-    refresh,
-    1000
-);
-
-</script>
-
-</body>
-</html>
+const state={links:[],groups:[],proxies:[]};
+const titles={dashboard:['داشبورد','نمای کلی سرویس، آمار و لاگ‌های اخیر'],configs:['کانفیگ‌ها','مدیریت کامل کانفیگ‌ها'],create:['ساخت کانفیگ','ساخت دستی پیشرفته بدون پنجره'],groups:['گروه‌ها','ساخت و مدیریت Subscription Group'],connections:['اتصال‌ها','اتصال‌های فعال و IPها'],proxies:['SOCKS5','مدیریت پروکسی‌های SOCKS5'],info:['متن INFO','اطلاعیه عمومی قابل ویرایش'],settings:['تنظیمات','تنظیمات کلی پنل']};
+function toast(t){const x=document.getElementById('toast');x.textContent=t;x.classList.add('show');clearTimeout(window.__t);window.__t=setTimeout(()=>x.classList.remove('show'),2200)}
+function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
+function bytes(n){n=Number(n||0);if(n<1024)return n+' B';if(n<1024**2)return (n/1024).toFixed(1)+' KB';if(n<1024**3)return (n/1024**2).toFixed(2)+' MB';return (n/1024**3).toFixed(2)+' GB'}
+async function api(url,opt={}){const r=await fetch(url,{cache:'no-store',credentials:'same-origin',...opt});if(r.status===401){location.href='/login';return null}let d={};try{d=await r.json()}catch{}if(!r.ok){toast(d.detail||d.error||'خطای سرور');return null}return d}
+function go(v){document.querySelectorAll('.nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===v));document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));document.getElementById('view-'+v).classList.add('active');document.getElementById('pageTitle').textContent=titles[v][0];document.getElementById('pageSub').textContent=titles[v][1];if(v==='groups')loadGroups();if(v==='connections')loadConnections();if(v==='proxies')loadProxies();if(v==='info')loadInfo();if(v==='create'){loadProxies(true);loadCreateGroups()}}
+document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>go(b.dataset.view));
+async function refreshAll(){const [st,li,ac]=await Promise.all([api('/stats'),api('/api/links'),api('/api/activity')]);if(st){sLinks.textContent=st.links_count;sActive.textContent=st.active_links;sConn.textContent=st.active_connections;sTraffic.textContent=bytes(st.total_traffic_bytes);sReq.textContent=st.total_requests;sErr.textContent=st.total_errors;uptime.textContent='Uptime: '+st.uptime}if(li){state.links=li.links||[];renderLinks()}if(ac){logs.textContent=(ac.logs||[]).slice().reverse().map(x=>'['+x.level+'] '+x.message+'  '+x.time).join('\n')||'لاگی ثبت نشده است'}}
+function rowActions(l){return `<div class="actions"><button class="mini" onclick="copyText(${JSON.stringify(l.vless)})">VLESS</button><button class="mini" onclick="copyText(${JSON.stringify(l.sub)})">SUB</button><button class="mini" onclick="window.open(${JSON.stringify(l.info)},'_blank','noopener')">INFO</button><button class="mini" onclick="toggleLink(${JSON.stringify(l.uuid)},${!l.active})">${l.active?'خاموش':'فعال'}</button><button class="mini" onclick="resetLink(${JSON.stringify(l.uuid)})">ریست</button><button class="mini red" onclick="deleteLink(${JSON.stringify(l.uuid)})">حذف</button></div>`}
+function renderLinks(){const d=document.getElementById('dashTable'),c=document.getElementById('configTable');d.innerHTML='';c.innerHTML='';if(!state.links.length){d.innerHTML='<tr><td colspan="7" class="empty">کانفیگی وجود ندارد.</td></tr>';c.innerHTML='<tr><td colspan="8" class="empty">کانفیگی وجود ندارد.</td></tr>';return}state.links.forEach(l=>{const use=bytes(l.used_bytes)+(l.limit_bytes?' / '+bytes(l.limit_bytes):' / ∞');const tr=document.createElement('tr');tr.innerHTML=`<td><b>${esc(l.label)}</b><div class="hint">${esc(l.uuid)}</div></td><td>${esc(l.protocol)}</td><td class="mono">${esc(l.sni||location.hostname)}</td><td><span class="badge ${l.active?'on':'off'}">${l.active?'فعال':'خاموش'}</span></td><td>${use}</td><td>${l.connected_ips||0}</td><td>${rowActions(l)}</td>`;d.appendChild(tr);const cr=document.createElement('tr');cr.innerHTML=`<td><b>${esc(l.label)}</b><div class="hint">${esc(l.uuid)}</div></td><td>${esc(l.protocol)}</td><td class="mono">${esc(l.sni||location.hostname)}</td><td>${esc(l.proxy?.name||'بدون پروکسی')}</td><td><span class="badge ${l.active?'on':'off'}">${l.active?'فعال':'خاموش'}</span></td><td>${use}</td><td><div class="mono" title="${esc(l.vless)}">${esc(l.vless)}</div></td><td>${rowActions(l)}</td>`;c.appendChild(cr)})}
+async function copyText(t){try{await navigator.clipboard.writeText(String(t));toast('کپی شد')}catch{const x=document.createElement('textarea');x.value=t;document.body.appendChild(x);x.select();document.execCommand('copy');x.remove();toast('کپی شد')}}
+async function toggleLink(id,on){if(await api('/api/links/'+id+'/action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:on?'enable':'disable'})}))refreshAll()}
+async function resetLink(id){if(await api('/api/links/'+id+'/reset-usage',{method:'POST'}))refreshAll()}
+async function deleteLink(id){if(!confirm('این کانفیگ حذف شود؟'))return;if(await api('/api/links/'+id,{method:'DELETE'}))refreshAll()}
+function resetCreate(){['cName','cVolume','cDays','cSni','cNote'].forEach(id=>document.getElementById(id).value='');cVolume.value=0;cDays.value=0;cPort.value=443;cAlpn.value='http/1.1';cIp.value=0;cConn.value=0;cSpeed.value=0;cFp.value='chrome';cFragment.value='off';cProxy.value='';cGroup.value=''}
+async function loadProxies(forCreate=false){const d=await api('/api/proxies');if(!d)return;state.proxies=d.proxies||[];const box=document.getElementById('proxyCards');if(box)box.innerHTML=state.proxies.length?state.proxies.map(p=>`<div class="card"><b>${esc(p.name)}</b><div class="hint">SOCKS5 · ${esc(p.host)}:${p.port}</div><div class="proxy-url">${esc(p.url)}</div><div class="actions" style="margin-top:8px"><button class="mini" onclick="copyText(${JSON.stringify(p.url)})">کپی</button><button class="mini red" onclick="deleteProxy(${JSON.stringify(p.id)})">حذف</button></div></div>`).join(''):'<div class="empty">پروکسی ثبت نشده است.</div>';if(forCreate){const s=document.getElementById('cProxy');s.innerHTML='<option value="">بدون پروکسی</option>'+state.proxies.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} — ${esc(p.host)}:${p.port}</option>`).join('')}}
+async function addProxy(){const d=await api('/api/proxies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:pName.value,host:pHost.value,port:pPort.value,username:pUser.value,password:pPass.value})});if(d){toast('پروکسی اضافه شد');pHost.value='';pUser.value='';pPass.value='';loadProxies(true)}}
+async function deleteProxy(id){if(!confirm('پروکسی حذف شود؟'))return;if(await api('/api/proxies/'+id,{method:'DELETE'}))loadProxies(true)}
+async function createConfig(){const d=await api('/api/links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:cName.value,protocol:cProtocol.value,limit_value:cVolume.value,limit_unit:cUnit.value,expires_days:cDays.value,port:cPort.value,sni:cSni.value,alpn:cAlpn.value,fingerprint:cFp.value,fragment:cFragment.value,ip_limit:cIp.value,connection_limit:cConn.value,speed_limit_value:cSpeed.value,speed_limit_unit:cSpeedUnit.value,proxy_id:cProxy.value||null,sub_id:cGroup.value||null,note:cNote.value})});if(d){toast('کانفیگ ساخته شد');resetCreate();await refreshAll();go('configs')}}
+async function loadCreateGroups(){const d=await api('/api/subs');if(!d)return;const s=document.getElementById('cGroup');s.innerHTML='<option value="">بدون گروه</option>'+(d.subs||[]).map(g=>`<option value="${esc(g.sub_id)}">${esc(g.name)} — ${g.links_count} کانفیگ</option>`).join('')}
+async function loadGroups(){const d=await api('/api/subs');if(!d)return;state.groups=d.subs||[];groups.innerHTML=state.groups.length?state.groups.map(g=>`<div class="card"><b>${esc(g.name)}</b><div class="hint">${esc(g.desc||'بدون توضیح')}</div><div style="margin-top:10px">${g.links_count} کانفیگ · ${g.active_count} فعال</div><div class="mono" style="margin-top:7px">${esc(g.sub_url)}</div><div class="actions" style="margin-top:8px"><button class="mini" onclick="copyText(${JSON.stringify(g.sub_url)})">SUB</button><button class="mini" onclick="copyText(${JSON.stringify(g.public_url)})">PUBLIC</button><button class="mini red" onclick="deleteGroup(${JSON.stringify(g.sub_id)})">حذف</button></div></div>`).join(''):'<div class="empty">گروهی ساخته نشده است.</div>'}
+async function createGroup(){const name=prompt('نام گروه:','گروه جدید');if(name===null)return;const desc=prompt('توضیح گروه:','');if(desc===null)return;const pw=prompt('رمز گروه (اختیاری):','');if(await api('/api/subs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,desc,password:pw||''})}))loadGroups()}
+async function deleteGroup(id){if(!confirm('گروه حذف شود؟'))return;if(await api('/api/subs/'+id,{method:'DELETE'}))loadGroups()}
+async function loadConnections(){const d=await api('/api/connections');if(!d)return;connectionTable.innerHTML=(d.connections||[]).map(x=>`<tr><td class="mono">${esc(x.ip)}</td><td>${x.sessions||0}</td><td>${bytes(x.bytes||0)}</td><td>${esc((x.labels||[]).join(', '))}</td><td>${esc(x.last_connected_at||'-')}</td></tr>`).join('')||'<tr><td colspan="5" class="empty">اتصال فعالی وجود ندارد.</td></tr>'}
+async function loadInfo(){const d=await api('/api/settings/info');if(d)globalInfo.value=d.info_text||''}
+async function saveInfo(){if(await api('/api/settings/info',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({info_text:globalInfo.value})}))toast('متن INFO ذخیره شد')}
+refreshAll();setInterval(refreshAll,5000);
+</script></body></html>
 """
+
+CREATE_CONFIG_HTML = DASHBOARD_HTML.replace("refreshAll();setInterval(refreshAll,5000);", "go(\"create\");refreshAll();setInterval(refreshAll,5000);")
+
+
+@app.get(
+    "/dashboard/create",
+    response_class=HTMLResponse,
+)
+async def dashboard_create_page(request: Request):
+    if not await is_valid_session(request.cookies.get(SESSION_COOKIE)):
+        return RedirectResponse("/login")
+    return HTMLResponse(CREATE_CONFIG_HTML)
 
 
 @app.get(
