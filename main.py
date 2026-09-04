@@ -1,5 +1,5 @@
 # ============================================================
-# PXPanel 13.5.0
+# PXPanel 13.6.0
 # Railway Ready
 # ============================================================
 
@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.5.0"
+APP_VERSION = "13.6.0"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -2083,7 +2083,7 @@ PX Panel
 </div>
 
 <div class="version">
-13.5.0
+13.6.0
 </div>
 </div>
 
@@ -2131,7 +2131,7 @@ class="btn secondary"
 <div class="footer">
 
 <span>
-PX Panel · 13.5.0
+PX Panel · 13.6.0
 </span>
 
 <a
@@ -2401,7 +2401,7 @@ P
 </h1>
 
 <div class="version">
-13.5.0
+13.6.0
 </div>
 
 <div class="desc">
@@ -3798,7 +3798,7 @@ async def subscription_single(
     else:
         time_text = "∞"
     label = str(link.get("label") or "Config")
-    stats_remark = f"0.0.0.0 | {label} | {volume_text} | {time_text}"
+    stats_remark = f"{label} | {volume_text} | {time_text}"
     stats_line = generate_vless_link(uuid, "0.0.0.0", remark=stats_remark, protocol=link.get("protocol", DEFAULT_PROTOCOL), fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT), alpn=link.get("alpn"), port=link.get("port", DEFAULT_PORT))
     lines = [stats_line]
     used_names = set()
@@ -3818,7 +3818,7 @@ async def subscription_single(
             used_names.add(name)
             lines.append(generate_vless_link(uuid, host, remark=name, protocol=link.get("protocol", DEFAULT_PROTOCOL), fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT), alpn=link.get("alpn"), port=link.get("port", DEFAULT_PORT)))
     content = base64.b64encode("\n".join(lines).encode()).decode()
-    profile_title = stats_remark
+    profile_title = f"0.0.0.0 | {stats_remark}"
     headers = subscription_metadata_headers(
         used,
         limit,
@@ -4999,7 +4999,7 @@ PX Panel
 </h1>
 
 <div class="version">
-13.5.0
+13.6.0
 </div>
 
 <div class="text">
@@ -5320,6 +5320,64 @@ async def public_sub_data(
 
 
 
+
+@app.post("/api/mix-sub")
+async def mix_subscription(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON نامعتبر")
+    ids = body.get("link_ids") or []
+    if not isinstance(ids, list) or len(ids) < 2:
+        raise HTTPException(status_code=400, detail="حداقل ۲ کانفیگ انتخاب کنید")
+    if len(ids) > 40:
+        raise HTTPException(status_code=400, detail="حداکثر ۴۰ کانفیگ")
+    host = get_host(request)
+    lines = []
+    used_names = set()
+    total_used = 0
+    total_limit = 0
+    labels = []
+    async with LINKS_LOCK:
+        for lid in ids:
+            link = LINKS.get(lid)
+            if not link or not is_link_allowed(link):
+                continue
+            labels.append(str(link.get("label") or lid[:8]))
+            total_used += int(link.get("used_bytes", 0) or 0)
+            total_limit += int(link.get("limit_bytes", 0) or 0)
+            name = random_config_name(used_names)
+            used_names.add(name)
+            lines.append(generate_vless_link(
+                lid, host, remark=name,
+                protocol=link.get("protocol", DEFAULT_PROTOCOL),
+                fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
+                alpn=link.get("alpn"),
+                port=link.get("port", DEFAULT_PORT),
+            ))
+    if not lines:
+        raise HTTPException(status_code=400, detail="هیچ کانفیگ معتبری انتخاب نشده")
+    # stats first line
+    vol = f"{fmt_bytes(total_used)}/{fmt_bytes(total_limit)}" if total_limit > 0 else f"{fmt_bytes(total_used)}/∞"
+    mix_label = "Mix-" + random_config_name()[:6]
+    stats = f"{mix_label} | {vol} | {len(lines)} configs"
+    first = generate_vless_link(ids[0], "127.0.0.1", remark=stats, protocol="vless-ws")
+    content = base64.b64encode(("\n".join([first] + lines)).encode()).decode()
+    # store as a sub group for reuse
+    sub_id, sub = await create_sub_group(name=mix_label, desc="مخلوط‌سازی کانفیگ‌ها")
+    async with SUBS_LOCK:
+        if sub_id in SUBS:
+            SUBS[sub_id]["link_ids"] = list(ids)
+    await save_state()
+    return {
+        "ok": True,
+        "sub_url": f"https://{host}/sub-group/{sub['uuid_key']}",
+        "name": mix_label,
+        "count": len(lines),
+        "content_preview": stats,
+    }
+
+
 @app.get("/api/categories")
 async def list_categories(_=Depends(require_auth)):
     items = [{**cat, "id": cid} for cid, cat in CATEGORIES.items()]
@@ -5365,6 +5423,44 @@ async def create_category(request: Request, _=Depends(require_auth)):
     CATEGORIES[cid] = record
     await save_state()
     return {"ok": True, **record}
+
+
+@app.patch("/api/categories/{cid}")
+async def update_category(cid: str, request: Request, _=Depends(require_auth)):
+    if cid not in CATEGORIES:
+        raise HTTPException(status_code=404, detail="یافت نشد")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON نامعتبر")
+    cat = CATEGORIES[cid]
+    if "name" in body:
+        cat["name"] = str(body.get("name") or cat["name"]).strip()[:40]
+    if "limit_value" in body:
+        lv = safe_float(body.get("limit_value", 0))
+        unit = str(body.get("limit_unit") or "GB").upper()
+        cat["limit_bytes"] = 0 if lv <= 0 else parse_size_to_bytes(lv, unit)
+    if "expires_days" in body:
+        cat["expires_days"] = safe_int(body.get("expires_days", 0), minimum=0)
+    if "connection_limit" in body:
+        cat["connection_limit"] = safe_int(body.get("connection_limit", 0), minimum=0)
+    if "speed_limit_value" in body:
+        sv = safe_float(body.get("speed_limit_value", 0))
+        cat["speed_limit_bytes"] = 0 if sv <= 0 else parse_speed_to_bytes(sv, "MBIT")
+    if "ip_limit" in body:
+        cat["ip_limit"] = safe_int(body.get("ip_limit", 0), minimum=0)
+    if "clean_ips" in body:
+        raw = body.get("clean_ips") or ""
+        if isinstance(raw, list):
+            cat["clean_ips"] = [str(x).strip() for x in raw if str(x).strip()]
+        else:
+            cat["clean_ips"] = [x.strip() for x in str(raw).replace(",", "\n").splitlines() if x.strip()]
+    if "random_name" in body:
+        cat["random_name"] = bool(body.get("random_name"))
+    if "single_user" in body:
+        cat["single_user"] = bool(body.get("single_user"))
+    await save_state()
+    return {"ok": True, **cat}
 
 @app.delete("/api/categories/{cid}")
 async def delete_category(cid: str, _=Depends(require_auth)):
@@ -5898,7 +5994,7 @@ content="width=device-width,initial-scale=1"
 />
 
 <title>
-PX Panel 13.5.0
+PX Panel 13.6.0
 </title>
 
 <link
@@ -6709,7 +6805,7 @@ PX Panel
 <div class="brand-desc">
 داشبورد مدیریت سرویس
 </div>
-<div class="brand-version">13.5.0</div>
+<div class="brand-version">13.6.0</div>
 <div style="margin-top:5px;font-size:10px;display:flex;align-items:center;gap:6px">
 <svg width="14" height="14" viewBox="0 0 24 24" fill="#ff0000"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.75 15.5v-7l6.5 3.5-6.5 3.5z"/></svg>
 <a href="https://www.youtube.com/@LogicSec_YT" target="_blank" rel="noopener" style="color:#93c5fd;text-decoration:none">LogicSec_YT</a>
@@ -6729,6 +6825,9 @@ PX Panel
 </button>
 <button class="top-btn" onclick="openCategoryModal()" title="دسته‌بندی" style="min-width:44px">
 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h16M4 12h10M4 18h14"/></svg>
+</button>
+<button class="top-btn" onclick="openMixModal()" title="مخلوط‌سازی کانفیگ‌ها" style="min-width:44px;background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.35);color:#fca5a5">
+<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
 </button>
 
 <button
@@ -7434,6 +7533,10 @@ class="modal-backdrop"
   <option value="http" style="background-color: #1f2937; color: #ffffff;">HTTP Proxy</option>
   <option value="hysteria2" style="background-color: #1f2937; color: #ffffff;">Hysteria 2</option>
   <option value="tuic" style="background-color: #1f2937; color: #ffffff;">TUIC</option>
+  <option value="highspeed-demo" style="background-color: #1f2937; color: #60a5fa;">HighSpeed Upload/Download (دمو)</option>
+  <option value="gaming-lite-demo" style="background-color: #1f2937; color: #60a5fa;">Gaming Lite (دمو)</option>
+  <option value="xhttp-packet-up" style="background-color: #1f2937; color: #60a5fa;">XHTTP Packet Up</option>
+  <option value="xhttp-stream-up" style="background-color: #1f2937; color: #60a5fa;">XHTTP Stream Up</option>
 </select>
 
 </div>
@@ -7742,22 +7845,37 @@ onclick="changePassword()"
 </div>
 <!-- LOGIN NOTICE END -->
 
+<div id="mixModal" class="modal-backdrop">
+<div class="modal" style="max-width:640px">
+<div class="modal-head"><div class="modal-title">مخلوط‌سازی کانفیگ‌ها</div>
+<button class="close" onclick="closeMixModal()">×</button></div>
+<p style="color:rgba(255,255,255,.55);font-size:11px;line-height:1.9;margin:0 0 12px">
+چند کانفیگ از لیست «مدیریت کانفیگ‌ها» را انتخاب کنید تا داخل یک ساب واحد ترکیب شوند.
+حداقل ۲ و حداکثر ۴۰ کانفیگ. بعد از ساخت، لینک ساب مخلوط در اختیار شماست.
+</p>
+<div id="mixList" style="max-height:280px;overflow:auto;margin-bottom:12px"></div>
+<div class="modal-actions">
+<button class="modal-btn secondary" onclick="closeMixModal()">بستن</button>
+<button class="modal-btn primary" style="background:linear-gradient(135deg,#dc2626,#ef4444)" onclick="doMixConfigs()">ساخت ساب مخلوط</button>
+</div></div></div>
+
 <div id="categoryModal" class="modal-backdrop">
 <div class="modal" style="max-width:620px">
 <div class="modal-head"><div class="modal-title">دسته‌بندی‌ها</div>
 <button class="close" onclick="closeCategoryModal()">×</button></div>
 <div id="categoryList" style="font-size:11px;margin-bottom:12px"></div>
 <div class="form-grid">
-<div class="field full"><label>نام</label><input id="catName" /></div>
-<div class="field"><label>حجم</label><input id="catVolume" type="number" min="0" /></div>
-<div class="field"><label>واحد</label><select id="catVolumeUnit"><option value="GB">GB</option><option value="MB">MB</option></select></div>
-<div class="field"><label>روز</label><input id="catDays" type="number" min="0" /></div>
-<div class="field"><label>IP Limit</label><input id="catIp" type="number" min="0" /></div>
-<div class="field"><label>اتصال</label><input id="catConn" type="number" min="0" /></div>
-<div class="field"><label>سرعت Mbit</label><input id="catSpeed" type="number" min="0" /></div>
-<div class="field full"><label>IP تمیز</label><textarea id="catClean" style="min-height:48px;direction:ltr"></textarea></div>
+<div class="field full"><label>نام</label><input id="catName" placeholder="نام دسته‌بندی" /></div>
+<div class="field"><label>حجم</label><input id="catVolume" type="number" min="0" placeholder="0 = نامحدود" /></div>
+<div class="field"><label>واحد</label><select id="catVolumeUnit"><option value="GB">GB</option><option value="MB">MB</option><option value="TB">TB</option></select></div>
+<div class="field"><label>روز</label><input id="catDays" type="number" min="0" placeholder="0 = نامحدود" /></div>
+<div class="field"><label>IP Limit</label><input id="catIp" type="number" min="0" placeholder="0 = نامحدود" /></div>
+<div class="field"><label>اتصال</label><input id="catConn" type="number" min="0" placeholder="0 = نامحدود" /></div>
+<div class="field"><label>سرعت Mbit</label><input id="catSpeed" type="number" min="0" placeholder="0 = نامحدود" /></div>
+<div class="field full"><label>IP تمیز</label><textarea id="catClean" style="min-height:48px;direction:ltr" placeholder="اختیاری"></textarea></div>
 <div class="field"><label><input type="checkbox" id="catRandom"> اسم تصادفی</label></div>
 <div class="field"><label><input type="checkbox" id="catSingle"> تک‌کاربره</label></div>
+<input type="hidden" id="catEditId" value="" />
 </div>
 <div class="modal-actions">
 <button class="modal-btn secondary" onclick="closeCategoryModal()">بستن</button>
@@ -8836,6 +8954,37 @@ async function changePassword(){
 }
 
 
+function openMixModal(){
+  var list=document.getElementById("mixList");
+  if(!list)return;
+  api("/api/links").then(function(data){
+    if(!data||!data.links){list.innerHTML="<div class='empty'>کانفیگی نیست</div>";return;}
+    var html="";
+    data.links.forEach(function(link){
+      if(!link.active)return;
+      html+="<label style='display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.03);margin-bottom:5px;cursor:pointer'>";
+      html+="<input type='checkbox' class='mix-check' value='"+link.uuid+"' style='width:16px;height:16px'>";
+      html+="<span style='flex:1'><b>"+escapeHtml(link.label)+"</b> <span style='color:rgba(255,255,255,.35);font-size:9px'>"+escapeHtml(link.protocol||"")+"</span></span>";
+      html+="<span style='color:#60a5fa;font-size:10px'>دسته "+(link.category_number!=null?link.category_number:0)+"</span>";
+      html+="</label>";
+    });
+    list.innerHTML=html||"<div class='empty'>کانفیگ فعالی نیست</div>";
+  });
+  document.getElementById("mixModal").classList.add("open");
+}
+function closeMixModal(){document.getElementById("mixModal").classList.remove("open");}
+async function doMixConfigs(){
+  var ids=[];
+  document.querySelectorAll(".mix-check:checked").forEach(function(el){ids.push(el.value);});
+  if(ids.length<2){showToast("حداقل ۲ کانفیگ انتخاب کنید");return;}
+  var res=await api("/api/mix-sub",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({link_ids:ids})});
+  if(res&&res.ok){
+    showToast("ساب مخلوط ساخته شد ("+res.count+")");
+    if(res.sub_url){await copyText(res.sub_url);showToast("لینک ساب کپی شد");}
+    closeMixModal();
+  }
+}
+
 function toggleAlarmCheck(){
   var cb=document.getElementById("manualAlarm");
   var box=document.getElementById("alarmToggle");
@@ -8849,17 +8998,37 @@ function closeCategoryModal(){document.getElementById("categoryModal").classList
 async function loadCategoriesUI(){
   var data=await api("/api/categories");
   if(!data||!data.categories)return;
+  window.__cats = data.categories;
   var list=document.getElementById("categoryList");
   var html=""; var opts="";
   data.categories.forEach(function(cat){
     opts+="<option value='"+cat.id+"'>"+cat.number+" — "+escapeHtml(cat.name)+"</option>";
-    html+="<div style='display:flex;justify-content:space-between;padding:8px;border-radius:10px;background:rgba(255,255,255,.03);margin-bottom:5px'><span><b style='color:#60a5fa'>"+cat.number+"</b> — "+escapeHtml(cat.name)+"</span>";
-    if(cat.id!=="0"&&cat.id!=="1") html+="<button class='action danger' onclick=\"deleteCategory('"+cat.id+"')\">حذف</button>";
-    html+="</div>";
+    html+="<div style='display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:10px;background:rgba(255,255,255,.03);margin-bottom:5px;gap:8px'><span><b style='color:#60a5fa'>"+cat.number+"</b> — "+escapeHtml(cat.name);
+    if(cat.single_user) html+=" <span style='color:#fbbf24;font-size:9px'>تک‌کاربره</span>";
+    html+="</span><span style='display:flex;gap:4px'>";
+    html+="<button class='action' type='button' onclick=\"editCategory('"+cat.id+"')\">ویرایش</button>";
+    if(cat.id!=="0"&&cat.id!=="1") html+="<button class='action danger' type='button' onclick=\"deleteCategory('"+cat.id+"')\">حذف</button>";
+    html+="</span></div>";
   });
   if(list) list.innerHTML=html;
   ["manualCategory","autoCategory"].forEach(function(id){var s=document.getElementById(id);if(s){var v=s.value;s.innerHTML=opts;if(v)s.value=v;}});
 }
+function editCategory(id){
+  var cat=(window.__cats||[]).find(function(x){return x.id===id});
+  if(!cat)return;
+  document.getElementById("catEditId").value=id;
+  document.getElementById("catName").value=cat.name||"";
+  document.getElementById("catVolume").value="";
+  document.getElementById("catDays").value=cat.expires_days||0;
+  document.getElementById("catIp").value=cat.ip_limit||0;
+  document.getElementById("catConn").value=cat.connection_limit||0;
+  document.getElementById("catSpeed").value="";
+  document.getElementById("catClean").value=(cat.clean_ips||[]).join("\n");
+  document.getElementById("catRandom").checked=!!cat.random_name;
+  document.getElementById("catSingle").checked=!!cat.single_user;
+  showToast("در حال ویرایش: "+cat.name);
+}
+
 async function createCategory(){
   var body={name:(document.getElementById("catName").value||"").trim()||"دسته جدید",
     limit_value:Number(document.getElementById("catVolume").value||0),
@@ -8871,8 +9040,19 @@ async function createCategory(){
     clean_ips:(document.getElementById("catClean").value||"").trim(),
     random_name:!!document.getElementById("catRandom").checked,
     single_user:!!document.getElementById("catSingle").checked};
-  var res=await api("/api/categories",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  if(res&&res.ok){showToast("ساخته شد");document.getElementById("catName").value="";await loadCategoriesUI();}
+  var editId=(document.getElementById("catEditId")||{}).value||"";
+  var res;
+  if(editId){
+    res=await api("/api/categories/"+encodeURIComponent(editId),{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  } else {
+    res=await api("/api/categories",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  }
+  if(res&&res.ok){
+    showToast(editId?"ویرایش شد":"ساخته شد");
+    document.getElementById("catName").value="";
+    document.getElementById("catEditId").value="";
+    await loadCategoriesUI();
+  }
 }
 async function deleteCategory(id){
   if(!confirm("حذف؟"))return;
@@ -8955,8 +9135,8 @@ setInterval(refresh, 3000);
             </div>
 
             <div style="min-width:0;flex:1;">
-                <div style="font-size:18px;font-weight:900;color:#fff;line-height:1.5;">هشدار مهم قبل ساخت کانفیگ</div>
-                <div style="margin-top:5px;font-size:11px;color:rgba(255,255,255,.45);">بررسی دامنه و محدودیت‌های منطقه‌ای</div>
+                <div style="font-size:18px;font-weight:900;color:#fff;line-height:1.5;">به بهترین نسخه PX Panel خوش اومدید عشقا 💙</div>
+                <div style="margin-top:5px;font-size:11px;color:rgba(255,255,255,.45);">کانال تلگرام: LogicSec</div>
             </div>
 
             <button
@@ -8997,9 +9177,14 @@ setInterval(refresh, 3000);
                 text-align:right;
             "
         >
-            <strong style="color:#fbbf24;">⚠️⚠️</strong> اگه براتون پنل نصب شد ولی کانفیگ ها پینگ ندادن — دامنه فیلتر شده — دوباره بسازید <strong style="color:#fbbf24;">⚠️⚠️</strong>
-            <div style="margin-top:10px;color:rgba(255,255,255,.48);font-size:11px;line-height:1.9;">
-                ممکنه دسترسی دامنه به‌دلیل محدودیت‌های منطقه‌ای، اپراتور یا ISP متفاوت باشه. در این شرایط یک دامنه جدید امتحان کنید.
+            <div style="color:rgba(255,255,255,.85);font-size:13px;line-height:2;margin-bottom:10px;">
+              به <b style="color:#60a5fa;">PX Panel</b> خوش آمدید. پنل آماده مدیریت کانفیگ‌ها، دسته‌بندی و سابسکریپشن است.
+            </div>
+            <div style="margin-top:8px;padding:12px;border-radius:12px;background:rgba(37,99,235,.1);border:1px solid rgba(96,165,250,.2);color:#93c5fd;font-size:12px;">
+              کانال تلگرام: <b>LogicSec</b>
+            </div>
+            <div style="margin-top:12px;color:rgba(255,255,255,.5);font-size:11px;line-height:1.9;">
+              اگر کانفیگ‌ها پینگ ندادند، دامنه ممکن است فیلتر شده باشد — دامنه جدید بسازید.
             </div>
         </div>
 
