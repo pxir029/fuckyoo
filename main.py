@@ -1,5 +1,5 @@
 # ============================================================
-# PXPanel 13.6.0
+# PXPanel 13.6.1
 # Railway Ready
 # ============================================================
 
@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.6.0"
+APP_VERSION = "13.6.1"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -2083,7 +2083,7 @@ PX Panel
 </div>
 
 <div class="version">
-13.6.0
+13.6.1
 </div>
 </div>
 
@@ -2131,7 +2131,7 @@ class="btn secondary"
 <div class="footer">
 
 <span>
-PX Panel · 13.6.0
+PX Panel · 13.6.1
 </span>
 
 <a
@@ -2401,7 +2401,7 @@ P
 </h1>
 
 <div class="version">
-13.6.0
+13.6.1
 </div>
 
 <div class="desc">
@@ -4999,7 +4999,7 @@ PX Panel
 </h1>
 
 <div class="version">
-13.6.0
+13.6.1
 </div>
 
 <div class="text">
@@ -5994,7 +5994,7 @@ content="width=device-width,initial-scale=1"
 />
 
 <title>
-PX Panel 13.6.0
+PX Panel 13.6.1
 </title>
 
 <link
@@ -6805,7 +6805,7 @@ PX Panel
 <div class="brand-desc">
 داشبورد مدیریت سرویس
 </div>
-<div class="brand-version">13.6.0</div>
+<div class="brand-version">13.6.1</div>
 <div style="margin-top:5px;font-size:10px;display:flex;align-items:center;gap:6px">
 <svg width="14" height="14" viewBox="0 0 24 24" fill="#ff0000"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.75 15.5v-7l6.5 3.5-6.5 3.5z"/></svg>
 <a href="https://www.youtube.com/@LogicSec_YT" target="_blank" rel="noopener" style="color:#93c5fd;text-decoration:none">LogicSec_YT</a>
@@ -7015,19 +7015,17 @@ VLESS
 <div class="panel-head">
 
 <div>
-<div class="panel-title">
-اخریـن فعالیت‌هـا
+<div class="panel-title">آخرین فعالیت‌ها</div>
+<div class="panel-sub">لاگ زنده سیستم · حداکثر ۱۵۰ رویداد</div>
 </div>
-</div>
+
+<button class="top-btn" onclick="refresh()" style="font-size:10px">↻ بروزرسانی</button>
 
 </div>
 
-<pre
-id="logs"
-class="pre"
->
-در حال بارگذاری...
-</pre>
+<div id="logs" style="padding:10px 12px;max-height:340px;overflow:auto">
+<div style="text-align:center;color:rgba(255,255,255,.3);padding:24px;font-size:11px">در حال بارگذاری...</div>
+</div>
 
 </div>
 
@@ -8429,28 +8427,49 @@ data-action="delete"
     }
 
 
-    if(
-        activity
-        &&
-        activity.logs
-    ){
-
-        document.getElementById(
-            "logs"
-        ).textContent =
-            activity.logs
-                .slice()
-                .reverse()
-                .map(
-                    item =>
-                        `[${item.level}] ${item.message}`
-                )
-                .join(
-                    "\n"
-                )
-                ||
-                "فعالیتی ثبت نشده است";
-
+    if(activity && activity.logs){
+        var box = document.getElementById("logs");
+        if(box){
+            var items = activity.logs.slice().reverse();
+            if(!items.length){
+                box.innerHTML = "<div style='text-align:center;color:rgba(255,255,255,.3);padding:24px;font-size:11px'>فعالیتی ثبت نشده است</div>";
+            } else {
+                var html = "";
+                items.forEach(function(item){
+                    var level = (item.level || "info").toLowerCase();
+                    var color = "#60a5fa";
+                    var bg = "rgba(37,99,235,.08)";
+                    var border = "rgba(96,165,250,.18)";
+                    var icon = "ℹ";
+                    if(level === "ok" || level === "success"){
+                        color = "#4ade80"; bg = "rgba(34,197,94,.08)"; border = "rgba(74,222,128,.2)"; icon = "✓";
+                    } else if(level === "err" || level === "error"){
+                        color = "#f87171"; bg = "rgba(239,68,68,.08)"; border = "rgba(248,113,113,.2)"; icon = "!";
+                    } else if(level === "warn" || level === "warning"){
+                        color = "#fbbf24"; bg = "rgba(245,158,11,.08)"; border = "rgba(251,191,36,.2)"; icon = "⚠";
+                    }
+                    var t = item.time || "";
+                    try {
+                        if(t){
+                            var d = new Date(t);
+                            if(!isNaN(d.getTime())){
+                                t = d.toLocaleString("fa-IR", {hour:"2-digit", minute:"2-digit", second:"2-digit", day:"2-digit", month:"2-digit"});
+                            }
+                        }
+                    } catch(e){}
+                    var kind = item.kind ? ("<span style='opacity:.55;margin-left:6px'>· " + escapeHtml(item.kind) + "</span>") : "";
+                    html += "<div style='display:flex;gap:10px;align-items:flex-start;padding:10px 12px;margin-bottom:6px;border-radius:12px;background:" + bg + ";border:1px solid " + border + "'>";
+                    html += "<div style='flex:0 0 28px;width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:" + color + ";background:rgba(0,0,0,.2);border:1px solid " + border + "'>" + icon + "</div>";
+                    html += "<div style='flex:1;min-width:0'>";
+                    html += "<div style='font-size:11px;font-weight:600;color:rgba(255,255,255,.88);line-height:1.7'>" + escapeHtml(item.message || "") + "</div>";
+                    html += "<div style='margin-top:3px;font-size:9px;color:rgba(255,255,255,.35);display:flex;gap:8px;flex-wrap:wrap'>";
+                    html += "<span style='color:" + color + ";font-weight:700'>" + escapeHtml(level.toUpperCase()) + "</span>" + kind;
+                    if(t) html += "<span style='margin-right:auto;direction:ltr'>" + escapeHtml(t) + "</span>";
+                    html += "</div></div></div>";
+                });
+                box.innerHTML = html;
+            }
+        }
     }
 
 }
