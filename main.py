@@ -1,5 +1,5 @@
 # ============================================================
-# PXPanel 13.4.0
+# PXPanel 13.5.0
 # Railway Ready
 # ============================================================
 
@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.4.0"
+APP_VERSION = "13.5.0"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -194,6 +194,7 @@ LINKS: dict = {}
 SUBS: dict = {}
 SESSIONS: dict = {}
 connections: dict = {}
+CATEGORIES: dict = {}
 
 stats = {
     "total_bytes": 0,
@@ -376,28 +377,26 @@ def generate_uuid():
     )
 
 
-
 def random_config_name(existing=None):
     existing = existing or set()
     alphabet = string.ascii_lowercase + string.digits
-    for _ in range(50):
-        name = "cfg_" + "".join(secrets.choice(alphabet) for _ in range(10))
-        if name not in existing:
+    for _ in range(80):
+        length = secrets.randbelow(6) + 8
+        name = "".join(secrets.choice(alphabet) for _ in range(length))
+        if name not in existing and name and not name[0].isdigit():
             return name
-    return "cfg_" + secrets.token_hex(6)
+    return secrets.token_hex(6)
+
+def sanitize_config_name(name: str) -> str:
+    if not name:
+        return random_config_name()
+    cleaned = "".join(ch for ch in str(name) if ch.isascii() and ch.isalnum())
+    if not cleaned or cleaned[0].isdigit():
+        cleaned = ("a" + cleaned) if cleaned else random_config_name()
+    return cleaned[:40]
 
 def auto_config_name() -> str:
-    alphabet = (
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789"
-    )
-
-    suffix = "".join(
-        secrets.choice(alphabet)
-        for _ in range(8)
-    )
-
-    return f"cfg_{suffix}"
+    return random_config_name()
 
 
 def now_ir():
@@ -991,7 +990,9 @@ def get_link_info(
     else:
         status_color = "gray"
     clean_ips = link.get("clean_ips") or []
-    show_vless = len(clean_ips) <= 1
+    cfg_count = int(link.get("config_count") or 1)
+    show_vless = len(clean_ips) <= 1 and cfg_count <= 1
+    cat = CATEGORIES.get(str(link.get("category_id") or "0")) or {}
     return {
         "uuid": uid,
         "name": link.get("label", ""),
@@ -1011,10 +1012,15 @@ def get_link_info(
         "note": link.get("note", ""),
         "clean_ips": clean_ips,
         "alarm_enabled": bool(link.get("alarm_enabled", False)),
+        "category_id": str(link.get("category_id") or "0"),
+        "category_number": int(cat.get("number", 0)),
+        "category_name": str(cat.get("name", "عمومی")),
+        "config_count": cfg_count,
         "status_color": status_color,
         "connected_ips": connected_count,
         "show_vless": show_vless,
         "vless": vless_link_for_link(link, uid, host) if show_vless else "",
+        "vless_full": vless_link_for_link(link, uid, host),
         "sub": f"https://{host}/sub/{uid}",
         "info": f"https://{host}/info/{uid}",
         "support": SUPPORT_USERNAME,
@@ -1058,6 +1064,13 @@ async def load_state():
         SUBS.update(
             data.get(
                 "subs",
+                {},
+            )
+        )
+
+        CATEGORIES.update(
+            data.get(
+                "categories",
                 {},
             )
         )
@@ -1120,6 +1133,8 @@ async def load_state():
             )
             link.setdefault("clean_ips", [])
             link.setdefault("alarm_enabled", False)
+            link.setdefault("category_id", "0")
+            link.setdefault("config_count", 1)
             link.setdefault("usage_history", [])
 
         logger.info(
@@ -1153,6 +1168,9 @@ async def save_state():
 
                 "subs":
                     dict(SUBS),
+
+                "categories":
+                    dict(CATEGORIES),
 
                 "password_hash":
                     AUTH[
@@ -1201,6 +1219,26 @@ async def save_state():
 
 _default_link_created = False
 
+
+
+async def ensure_default_categories():
+    if CATEGORIES:
+        return
+    CATEGORIES["0"] = {
+        "id": "0", "name": "عمومی", "number": 0,
+        "limit_bytes": 0, "expires_days": 0, "connection_limit": 0,
+        "speed_limit_bytes": 0, "ip_limit": 0, "clean_ips": [],
+        "random_name": False, "single_user": False,
+        "created_at": datetime.now().isoformat(),
+    }
+    CATEGORIES["1"] = {
+        "id": "1", "name": "VIP", "number": 1,
+        "limit_bytes": 0, "expires_days": 0, "connection_limit": 1,
+        "speed_limit_bytes": 0, "ip_limit": 1, "clean_ips": [],
+        "random_name": False, "single_user": True,
+        "created_at": datetime.now().isoformat(),
+    }
+    asyncio.create_task(save_state())
 
 async def ensure_default_link():
 
@@ -1311,6 +1349,8 @@ async def make_link(
     fragment: str = "off",
     clean_ips=None,
     alarm_enabled: bool = False,
+    category_id: str = "0",
+    config_count: int = 1,
 ):
 
     protocol = normalize_protocol(protocol)
@@ -1334,10 +1374,7 @@ async def make_link(
 
     record = {
         "label":
-            (
-                label
-                or "لینک جدید"
-            ).strip()[:60],
+            sanitize_config_name((label or "").strip() or random_config_name()),
 
         "limit_bytes":
             max(
@@ -1413,6 +1450,8 @@ async def make_link(
         "protocol_label": PROTOCOL_LABELS.get(protocol, protocol),
         "clean_ips": list(clean_ips or []),
         "alarm_enabled": bool(alarm_enabled),
+        "category_id": str(category_id or "0"),
+        "config_count": max(1, min(40, int(config_count or 1))),
         "usage_history": [],
     }
 
@@ -1771,6 +1810,7 @@ async def startup():
 
     await load_state()
 
+    await ensure_default_categories()
     await ensure_default_link()
 
     log_activity(
@@ -2043,7 +2083,7 @@ PX Panel
 </div>
 
 <div class="version">
-13.4.0
+13.5.0
 </div>
 </div>
 
@@ -2091,7 +2131,7 @@ class="btn secondary"
 <div class="footer">
 
 <span>
-PX Panel · 13.4.0
+PX Panel · 13.5.0
 </span>
 
 <a
@@ -2361,7 +2401,7 @@ P
 </h1>
 
 <div class="version">
-13.4.0
+13.5.0
 </div>
 
 <div class="desc">
@@ -2997,12 +3037,35 @@ async def create_link_api(
     else:
         clean_ips = [x.strip() for x in str(raw_clean).replace(",", "\n").splitlines() if x.strip()]
     alarm_enabled = bool(body.get("alarm_enabled", False))
+    category_id = str(body.get("category_id") or "0")
+    if category_id not in CATEGORIES:
+        category_id = "0"
+    config_count = safe_int(body.get("config_count", 1), minimum=1, maximum=40)
+    cat = CATEGORIES.get(category_id) or {}
+    if cat.get("limit_bytes") and limit_bytes <= 0:
+        limit_bytes = int(cat["limit_bytes"])
+    if cat.get("expires_days") and expires_days <= 0:
+        expires_days = int(cat["expires_days"])
+        expires_at = (datetime.now() + timedelta(days=expires_days)).isoformat() if expires_days > 0 else None
+    if cat.get("connection_limit") and connection_limit <= 0:
+        connection_limit = int(cat["connection_limit"])
+    if cat.get("speed_limit_bytes") and speed_bytes <= 0:
+        speed_bytes = int(cat["speed_limit_bytes"])
+    if cat.get("ip_limit") and ip_limit <= 0:
+        ip_limit = int(cat["ip_limit"])
+    if cat.get("clean_ips") and not clean_ips:
+        clean_ips = list(cat["clean_ips"])
+    if cat.get("single_user"):
+        if ip_limit == 0: ip_limit = 1
+        if connection_limit == 0: connection_limit = 1
+    label_val = body.get("label", "")
+    if cat.get("random_name") or not str(label_val).strip():
+        label_val = random_config_name()
+    else:
+        label_val = sanitize_config_name(str(label_val))
 
     uid, link = await make_link(
-        label=body.get(
-            "label",
-            auto_config_name(),
-        ),
+        label=label_val,
         limit_bytes=limit_bytes,
         expires_at=expires_at,
         note=body.get(
@@ -3028,6 +3091,8 @@ async def create_link_api(
         fragment=fragment,
         clean_ips=clean_ips,
         alarm_enabled=alarm_enabled,
+        category_id=category_id,
+        config_count=config_count,
     )
 
     host = get_host(request)
@@ -3711,15 +3776,10 @@ async def subscription_single(
 
     host = get_host(request)
     clean_ips = link.get("clean_ips") or []
-
     used = int(link.get("used_bytes", 0) or 0)
     limit = int(link.get("limit_bytes", 0) or 0)
     remaining = max(0, limit - used) if limit > 0 else 0
-    if limit > 0:
-        volume_text = f"{fmt_bytes(used)}/{fmt_bytes(limit)} (باقی {fmt_bytes(remaining)})"
-    else:
-        volume_text = f"{fmt_bytes(used)}/∞"
-
+    volume_text = f"{fmt_bytes(used)}/{fmt_bytes(limit)} (باقی {fmt_bytes(remaining)})" if limit > 0 else f"{fmt_bytes(used)}/∞"
     expires_at = link.get("expires_at")
     if expires_at:
         try:
@@ -3732,51 +3792,31 @@ async def subscription_single(
                 days, rem = divmod(secs, 86400)
                 hours, rem = divmod(rem, 3600)
                 mins = rem // 60
-                if days > 0:
-                    time_text = f"{days}د {hours}س"
-                elif hours > 0:
-                    time_text = f"{hours}س {mins}د"
-                else:
-                    time_text = f"{mins}د"
+                time_text = f"{days}د {hours}س" if days else (f"{hours}س {mins}د" if hours else f"{mins}د")
         except Exception:
             time_text = str(expires_at)[:16]
     else:
         time_text = "∞"
-
     label = str(link.get("label") or "Config")
-    # First entry: always a 0.0.0.0 remark with stats (name - volume - time)
     stats_remark = f"0.0.0.0 | {label} | {volume_text} | {time_text}"
-    stats_line = generate_vless_link(
-        uuid,
-        "0.0.0.0",
-        remark=stats_remark,
-        protocol=link.get("protocol", DEFAULT_PROTOCOL),
-        fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
-        alpn=link.get("alpn"),
-        port=link.get("port", DEFAULT_PORT),
-    )
-
+    stats_line = generate_vless_link(uuid, "0.0.0.0", remark=stats_remark, protocol=link.get("protocol", DEFAULT_PROTOCOL), fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT), alpn=link.get("alpn"), port=link.get("port", DEFAULT_PORT))
     lines = [stats_line]
     used_names = set()
-
+    cfg_count = max(1, min(40, int(link.get("config_count") or 1)))
     if clean_ips:
-        for cip in clean_ips:
+        hosts = list(clean_ips)
+        while len(hosts) < cfg_count:
+            hosts.extend(clean_ips)
+        hosts = hosts[:cfg_count]
+        for cip in hosts:
             name = random_config_name(used_names)
             used_names.add(name)
-            vless = generate_vless_link(
-                uuid,
-                cip,
-                remark=name,
-                protocol=link.get("protocol", DEFAULT_PROTOCOL),
-                fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
-                alpn=link.get("alpn"),
-                port=link.get("port", DEFAULT_PORT),
-            )
-            lines.append(vless)
+            lines.append(generate_vless_link(uuid, cip, remark=name, protocol=link.get("protocol", DEFAULT_PROTOCOL), fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT), alpn=link.get("alpn"), port=link.get("port", DEFAULT_PORT)))
     else:
-        real = vless_link_for_link(link, uuid, host)
-        lines.append(real)
-
+        for i in range(cfg_count):
+            name = random_config_name(used_names)
+            used_names.add(name)
+            lines.append(generate_vless_link(uuid, host, remark=name, protocol=link.get("protocol", DEFAULT_PROTOCOL), fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT), alpn=link.get("alpn"), port=link.get("port", DEFAULT_PORT)))
     content = base64.b64encode("\n".join(lines).encode()).decode()
     profile_title = stats_remark
     headers = subscription_metadata_headers(
@@ -3891,44 +3931,6 @@ async def info_page(
 
     status_text = "فعال" if is_link_allowed(snapshot) else "غیرفعال"
     status_class = "good" if status_text == "فعال" else "bad"
-
-    # Alarm banner when alarm_enabled and time/volume expired or near end
-    alarm_banner = ""
-    if snapshot.get("alarm_enabled"):
-        alarm_msgs = []
-        if not is_link_allowed(snapshot):
-            if is_link_expired(snapshot):
-                alarm_msgs.append("زمان کانفیگ به پایان رسیده است")
-            lim = int(snapshot.get("limit_bytes", 0) or 0)
-            usd = int(snapshot.get("used_bytes", 0) or 0)
-            if lim > 0 and usd >= lim:
-                alarm_msgs.append("حجم کانفیگ به پایان رسیده است")
-            if not alarm_msgs:
-                alarm_msgs.append("کانفیگ غیرفعال است")
-        else:
-            # near expiry warnings
-            lim = int(snapshot.get("limit_bytes", 0) or 0)
-            usd = int(snapshot.get("used_bytes", 0) or 0)
-            if lim > 0 and usd >= lim * 0.9:
-                alarm_msgs.append(f"بیش از ۹۰٪ حجم مصرف شده ({fmt_bytes(usd)} از {fmt_bytes(lim)})")
-            exp = snapshot.get("expires_at")
-            if exp:
-                try:
-                    exp_dt = datetime.fromisoformat(str(exp))
-                    now_dt = datetime.now(exp_dt.tzinfo) if getattr(exp_dt, "tzinfo", None) else datetime.now()
-                    secs = int((exp_dt - now_dt).total_seconds())
-                    if 0 < secs <= 86400:
-                        alarm_msgs.append("کمتر از ۲۴ ساعت تا پایان زمان باقی مانده")
-                except Exception:
-                    pass
-        if alarm_msgs:
-            alarm_banner = (
-                '<div style="margin-bottom:16px;padding:14px 16px;border-radius:16px;'
-                'border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);'
-                'color:#fecaca;font-size:13px;font-weight:700;text-align:center">'
-                '🔔 هشدار: ' + " — ".join(alarm_msgs) +
-                '</div>'
-            )
     ip_limit = "نامحدود" if not snapshot.get("ip_limit", 0) else str(snapshot.get("ip_limit"))
     connection_limit = "نامحدود" if not snapshot.get("connection_limit", 0) else str(snapshot.get("connection_limit"))
     speed_limit = "نامحدود" if not snapshot.get("speed_limit_bytes", 0) else fmt_bytes(snapshot.get("speed_limit_bytes", 0)) + "/s"
@@ -4050,8 +4052,6 @@ async def info_page(
       تغییر تم
     </button>
   </div>
-
-  {alarm_banner}
 
   <!-- Hero -->
   <section class="rounded-[26px] sm:rounded-[28px] border dynamic-card backdrop-blur-2xl p-5 sm:p-6 md:p-8">
@@ -4339,7 +4339,7 @@ async def info_page(
 
   <!-- Footer -->
   <div class="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.05] p-4 text-center text-xs text-white/45">
-    پشتیبانی و اطلاعیه‌ها &nbsp;·&nbsp; <b class="text-emerald-300">LogicSec</b>
+    پشتیبانی و اطلاعیه‌ها &nbsp;·&nbsp; <b class="text-emerald-300">کانال تلگرام: logic_sec</b>
   </div>
 
 </div>
@@ -4864,7 +4864,8 @@ async def sub_group_subscription(
     )
     group_expiry_text = group_expiry or "∞"
     group_title = (
-        f"0.0.0.0 | {sub['name']} | {group_volume_text} | {group_expiry_text}"
+        f"0.0.0.0 | {group_volume_text} | {group_expiry_text} | "
+        f"{sub['name']} | کانال تلگرام: logic_sec"
     )
     headers = subscription_metadata_headers(
         total_used,
@@ -4998,7 +4999,7 @@ PX Panel
 </h1>
 
 <div class="version">
-13.4.0
+13.5.0
 </div>
 
 <div class="text">
@@ -5317,6 +5318,66 @@ async def public_sub_data(
             links_out,
     }
 
+
+
+@app.get("/api/categories")
+async def list_categories(_=Depends(require_auth)):
+    items = [{**cat, "id": cid} for cid, cat in CATEGORIES.items()]
+    items.sort(key=lambda x: int(x.get("number", 0)))
+    return {"categories": items}
+
+@app.post("/api/categories")
+async def create_category(request: Request, _=Depends(require_auth)):
+    if len(CATEGORIES) >= 10:
+        raise HTTPException(status_code=400, detail="حداکثر ۱۰ دسته‌بندی")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON نامعتبر")
+    name = str(body.get("name") or "دسته جدید").strip()[:40]
+    used = {int(x.get("number", 0)) for x in CATEGORIES.values()}
+    num = 0
+    while num in used:
+        num += 1
+    cid = str(num)
+    limit_value = safe_float(body.get("limit_value", 0))
+    limit_unit = str(body.get("limit_unit") or "GB").upper()
+    limit_bytes = 0 if limit_value <= 0 else parse_size_to_bytes(limit_value, limit_unit)
+    speed_value = safe_float(body.get("speed_limit_value", 0))
+    speed_bytes = 0 if speed_value <= 0 else parse_speed_to_bytes(speed_value, "MBIT")
+    raw_clean = body.get("clean_ips") or ""
+    if isinstance(raw_clean, list):
+        clean_ips = [str(x).strip() for x in raw_clean if str(x).strip()]
+    else:
+        clean_ips = [x.strip() for x in str(raw_clean).replace(",", "\n").splitlines() if x.strip()]
+    record = {
+        "id": cid, "name": name, "number": num,
+        "limit_bytes": limit_bytes,
+        "expires_days": safe_int(body.get("expires_days", 0), minimum=0),
+        "connection_limit": safe_int(body.get("connection_limit", 0), minimum=0),
+        "speed_limit_bytes": speed_bytes,
+        "ip_limit": safe_int(body.get("ip_limit", 0), minimum=0),
+        "clean_ips": clean_ips,
+        "random_name": bool(body.get("random_name", False)),
+        "single_user": bool(body.get("single_user", False)),
+        "created_at": datetime.now().isoformat(),
+    }
+    CATEGORIES[cid] = record
+    await save_state()
+    return {"ok": True, **record}
+
+@app.delete("/api/categories/{cid}")
+async def delete_category(cid: str, _=Depends(require_auth)):
+    if cid in ("0", "1"):
+        raise HTTPException(status_code=400, detail="پیش‌فرض قابل حذف نیست")
+    if cid not in CATEGORIES:
+        raise HTTPException(status_code=404, detail="یافت نشد")
+    del CATEGORIES[cid]
+    for link in LINKS.values():
+        if str(link.get("category_id")) == cid:
+            link["category_id"] = "0"
+    await save_state()
+    return {"ok": True}
 
 # ============================================================
 # STATS
@@ -5837,7 +5898,7 @@ content="width=device-width,initial-scale=1"
 />
 
 <title>
-PX Panel 13.4.0
+PX Panel 13.5.0
 </title>
 
 <link
@@ -5867,6 +5928,12 @@ body{
     margin:0;
     min-height:100%;
 }
+*::-webkit-scrollbar{width:6px;height:6px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:99px}
+*::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.2)}
+*{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.12) transparent}
+
 
 body{
     min-height:100vh;
@@ -6642,13 +6709,10 @@ PX Panel
 <div class="brand-desc">
 داشبورد مدیریت سرویس
 </div>
-
-<div class="brand-version">
-13.4.0
-</div>
-
-<div style="margin-top:4px;font-size:10px">
-<a href="https://www.youtube.com/@LogicSec_YT" target="_blank" rel="noopener" style="color:#60a5fa;text-decoration:none">کانال یوتیوب: LogicSec_YT</a>
+<div class="brand-version">13.5.0</div>
+<div style="margin-top:5px;font-size:10px;display:flex;align-items:center;gap:6px">
+<svg width="14" height="14" viewBox="0 0 24 24" fill="#ff0000"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.75 15.5v-7l6.5 3.5-6.5 3.5z"/></svg>
+<a href="https://www.youtube.com/@LogicSec_YT" target="_blank" rel="noopener" style="color:#93c5fd;text-decoration:none">LogicSec_YT</a>
 </div>
 
 </div>
@@ -6657,20 +6721,15 @@ PX Panel
 
 <div class="top-actions">
 
-<button
-class="top-btn primary"
-onclick="openAutoModal()"
-><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5v14M5 12h14"/></svg>
-ساخت خودکار
+<button class="top-btn primary" onclick="openAutoModal()" title="ساخت خودکار" style="min-width:44px">
+<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="8" width="18" height="12" rx="2"/><circle cx="12" cy="14" r="2"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg>
 </button>
-
-<button
-class="top-btn"
-onclick="openManualModal()"
-><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>
-ساخت دستی
+<button class="top-btn" onclick="openManualModal()" title="ساخت دستی" style="min-width:44px">
+<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5v14M5 12h14"/></svg>
 </button>
-
+<button class="top-btn" onclick="openCategoryModal()" title="دسته‌بندی" style="min-width:44px">
+<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h16M4 12h10M4 18h14"/></svg>
+</button>
 
 <button
 class="top-btn"
@@ -6804,6 +6863,7 @@ onclick="refresh()"
 
 <tr>
 
+<th>دسته</th>
 <th>
 نـام
 </th>
@@ -7084,6 +7144,28 @@ placeholder="اسم کانفیگ"
   </select>
 </div>
 
+<div class="field">
+<label>دسته‌بندی</label>
+<select id="manualCategory" style="width:100%;background:#1f2937;color:#fff;padding:10px;border:1px solid rgba(255,255,255,.15);border-radius:8px">
+<option value="0">0 — عمومی</option>
+<option value="1">1 — VIP</option>
+</select>
+</div>
+<div class="field">
+<label>تعداد کانفیگ در ساب (۱-۴۰)</label>
+<input id="manualConfigCount" type="number" min="1" max="40" value="1" />
+</div>
+<div class="field full">
+<label>IP تمیز (اختیاری)</label>
+<textarea id="manualCleanIps" style="min-height:60px;direction:ltr" placeholder="1.2.3.4"></textarea>
+</div>
+<div class="field">
+<label style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="toggleAlarmCheck()">
+<span id="alarmToggle" style="display:inline-flex;width:20px;height:20px;border-radius:5px;border:2px solid #6b7280;background:#374151;align-items:center;justify-content:center;color:transparent;font-size:12px">✓</span>
+<input type="checkbox" id="manualAlarm" style="display:none">
+آلارم انقضا/حجم
+</label>
+</div>
 
 <div class="field">
 
@@ -7249,19 +7331,6 @@ value="http/1.1"
 
 
 <div class="field full">
-<label>IP تمیز (هر خط یا با کاما — بیش از ۱ عدد فقط ساب نمایش داده می‌شود)</label>
-<textarea id="manualCleanIps" placeholder="1.2.3.4&#10;5.6.7.8" style="min-height:70px;direction:ltr;text-align:left"></textarea>
-</div>
-
-<div class="field">
-<label style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none">
-<span id="alarmToggle" onclick="toggleAlarmCheck()" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;border:2px solid #6b7280;background:#374151;color:transparent;font-size:14px;font-weight:900;transition:all .15s">✓</span>
-<input type="checkbox" id="manualAlarm" style="display:none">
-<span style="font-size:12px;color:rgba(255,255,255,.7)">آلارم انقضا / حجم</span>
-</label>
-</div>
-
-<div class="field full">
 
 <label>
 یادداشــت
@@ -7343,7 +7412,12 @@ class="modal-backdrop"
 
 
 <div class="form-grid" style="margin-top:14px">
-
+<div class="field"><label>دسته‌بندی</label>
+<select id="autoCategory" style="width:100%;background:#1f2937;color:#fff;padding:10px;border:1px solid rgba(255,255,255,.15);border-radius:8px">
+<option value="0">0 — عمومی</option><option value="1">1 — VIP</option>
+</select></div>
+<div class="field"><label>تعداد کانفیگ (۱-۴۰)</label>
+<input id="autoConfigCount" type="number" min="1" max="40" value="1" /></div>
 <div class="field">
 
 <label>پروتکـل</label>
@@ -7360,8 +7434,6 @@ class="modal-backdrop"
   <option value="http" style="background-color: #1f2937; color: #ffffff;">HTTP Proxy</option>
   <option value="hysteria2" style="background-color: #1f2937; color: #ffffff;">Hysteria 2</option>
   <option value="tuic" style="background-color: #1f2937; color: #ffffff;">TUIC</option>
-  <option value="highspeed-demo" style="background-color: #1f2937; color: #60a5fa;">HighSpeed Upload/Download (دمو)</option>
-  <option value="gaming-lite-demo" style="background-color: #1f2937; color: #60a5fa;">Gaming Lite (دمو)</option>
 </select>
 
 </div>
@@ -7670,10 +7742,29 @@ onclick="changePassword()"
 </div>
 <!-- LOGIN NOTICE END -->
 
-<div
-id="toast"
-class="toast"
-></div>
+<div id="categoryModal" class="modal-backdrop">
+<div class="modal" style="max-width:620px">
+<div class="modal-head"><div class="modal-title">دسته‌بندی‌ها</div>
+<button class="close" onclick="closeCategoryModal()">×</button></div>
+<div id="categoryList" style="font-size:11px;margin-bottom:12px"></div>
+<div class="form-grid">
+<div class="field full"><label>نام</label><input id="catName" /></div>
+<div class="field"><label>حجم</label><input id="catVolume" type="number" min="0" /></div>
+<div class="field"><label>واحد</label><select id="catVolumeUnit"><option value="GB">GB</option><option value="MB">MB</option></select></div>
+<div class="field"><label>روز</label><input id="catDays" type="number" min="0" /></div>
+<div class="field"><label>IP Limit</label><input id="catIp" type="number" min="0" /></div>
+<div class="field"><label>اتصال</label><input id="catConn" type="number" min="0" /></div>
+<div class="field"><label>سرعت Mbit</label><input id="catSpeed" type="number" min="0" /></div>
+<div class="field full"><label>IP تمیز</label><textarea id="catClean" style="min-height:48px;direction:ltr"></textarea></div>
+<div class="field"><label><input type="checkbox" id="catRandom"> اسم تصادفی</label></div>
+<div class="field"><label><input type="checkbox" id="catSingle"> تک‌کاربره</label></div>
+</div>
+<div class="modal-actions">
+<button class="modal-btn secondary" onclick="closeCategoryModal()">بستن</button>
+<button class="modal-btn primary" onclick="createCategory()">ساخت</button>
+</div></div></div>
+
+<div id="toast" class="toast"></div>
 
 
 <script>
@@ -7903,8 +7994,13 @@ async function refresh(){
         await Promise.all([
             api("/stats"),
             api("/api/links"),
-            api("/api/activity")
+            api("/api/activity"),
+            api("/api/categories")
         ]);
+    if(results[3]&&results[3].categories){
+      var opts=results[3].categories.map(function(cat){return "<option value='"+cat.id+"'>"+cat.number+" — "+escapeHtml(cat.name)+"</option>";}).join("");
+      ["manualCategory","autoCategory"].forEach(function(id){var s=document.getElementById(id);if(s){var v=s.value;s.innerHTML=opts;if(v)s.value=v;}});
+    }
 
     const statsData =
         results[0];
@@ -7969,7 +8065,7 @@ async function refresh(){
             table.innerHTML = `
                 <tr>
                     <td
-                    colspan="8"
+                    colspan="9"
                     class="empty"
                     >
                     هنوز کانفیگی ساخته نشده است.
@@ -8023,6 +8119,7 @@ async function refresh(){
 
                 row.innerHTML = `
 
+<td style="text-align:center;font-weight:800;color:#60a5fa">${link.category_number != null ? link.category_number : 0}</td>
 <td>
 
 <div style="font-weight:700">
@@ -8054,9 +8151,8 @@ ${escapeHtml(
 
 
 <td>
-<span style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:6px;vertical-align:middle;background:${(link.status_color==='green')?'#22c55e':((link.status_color==='red')?'#ef4444':'#6b7280')}"></span>
+<span style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:5px;background:${link.status_color==='green'?'#22c55e':(link.status_color==='red'?'#ef4444':'#6b7280')}"></span>
 <span class="badge ${link.active ? 'active' : 'off'}">${link.active ? 'فعال' : 'غیرفعال'}</span>
-${link.alarm_enabled ? '<span style="font-size:9px;color:#60a5fa">🔔</span>' : ''}
 </td>
 
 
@@ -8097,13 +8193,7 @@ ${escapeHtml(link.vless)}
 
 <div class="actions">
 
-<button
-class="action primary"
-type="button"
-data-action="copy-vless"
->
-VLESS
-</button>
+${link.show_vless !== false && link.vless ? '<button class="action primary" type="button" data-action="copy-vless">VLESS</button>' : ''}
 
 <button
 class="action"
@@ -8382,12 +8472,14 @@ function closePasswordModal(){
 async function createAuto(){
     const protocol = document.getElementById("autoProtocol")?.value || "vless-ws";
     const profile = document.getElementById("autoProfile")?.value || "balanced";
+    const category_id = (document.getElementById("autoCategory")||{}).value || "0";
+    const config_count = Number((document.getElementById("autoConfigCount")||{}).value || 1);
     closeAutoModal();
     showToast("در حال ساخت کانفیگ حرفه‌ای...");
-    const result = await api("/api/links/auto", {
+    const result = await api("/api/links", {
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({protocol,profile})
+        body:JSON.stringify({protocol, profile, category_id, config_count, label:"", limit_value:0, expires_days:0})
     });
     if(!result || !result.ok) return;
     const config = result.config || result.vless || result.link || "";
@@ -8515,12 +8607,10 @@ async function createManual(){
                     "manualNote"
                 )
                 .value,
-
-        clean_ips:
-            (document.getElementById("manualCleanIps") ? document.getElementById("manualCleanIps").value : "").trim(),
-
-        alarm_enabled:
-            !!(document.getElementById("manualAlarm") && document.getElementById("manualAlarm").checked)
+        clean_ips: (document.getElementById("manualCleanIps")||{}).value || "",
+        alarm_enabled: !!(document.getElementById("manualAlarm")||{}).checked,
+        category_id: (document.getElementById("manualCategory")||{}).value || "0",
+        config_count: Number((document.getElementById("manualConfigCount")||{}).value || 1)
 
     };
 
@@ -8747,27 +8837,52 @@ async function changePassword(){
 
 
 function toggleAlarmCheck(){
-  var cb = document.getElementById("manualAlarm");
-  var box = document.getElementById("alarmToggle");
-  if(!cb || !box) return;
-  cb.checked = !cb.checked;
-  if(cb.checked){
-    box.style.background = "#22c55e";
-    box.style.borderColor = "#22c55e";
-    box.style.color = "#fff";
-  } else {
-    box.style.background = "#374151";
-    box.style.borderColor = "#6b7280";
-    box.style.color = "transparent";
-  }
+  var cb=document.getElementById("manualAlarm");
+  var box=document.getElementById("alarmToggle");
+  if(!cb||!box)return;
+  cb.checked=!cb.checked;
+  if(cb.checked){box.style.background="#22c55e";box.style.borderColor="#22c55e";box.style.color="#fff";}
+  else{box.style.background="#374151";box.style.borderColor="#6b7280";box.style.color="transparent";}
+}
+function openCategoryModal(){loadCategoriesUI();document.getElementById("categoryModal").classList.add("open");}
+function closeCategoryModal(){document.getElementById("categoryModal").classList.remove("open");}
+async function loadCategoriesUI(){
+  var data=await api("/api/categories");
+  if(!data||!data.categories)return;
+  var list=document.getElementById("categoryList");
+  var html=""; var opts="";
+  data.categories.forEach(function(cat){
+    opts+="<option value='"+cat.id+"'>"+cat.number+" — "+escapeHtml(cat.name)+"</option>";
+    html+="<div style='display:flex;justify-content:space-between;padding:8px;border-radius:10px;background:rgba(255,255,255,.03);margin-bottom:5px'><span><b style='color:#60a5fa'>"+cat.number+"</b> — "+escapeHtml(cat.name)+"</span>";
+    if(cat.id!=="0"&&cat.id!=="1") html+="<button class='action danger' onclick=\"deleteCategory('"+cat.id+"')\">حذف</button>";
+    html+="</div>";
+  });
+  if(list) list.innerHTML=html;
+  ["manualCategory","autoCategory"].forEach(function(id){var s=document.getElementById(id);if(s){var v=s.value;s.innerHTML=opts;if(v)s.value=v;}});
+}
+async function createCategory(){
+  var body={name:(document.getElementById("catName").value||"").trim()||"دسته جدید",
+    limit_value:Number(document.getElementById("catVolume").value||0),
+    limit_unit:document.getElementById("catVolumeUnit").value,
+    expires_days:Number(document.getElementById("catDays").value||0),
+    ip_limit:Number(document.getElementById("catIp").value||0),
+    connection_limit:Number(document.getElementById("catConn").value||0),
+    speed_limit_value:Number(document.getElementById("catSpeed").value||0),
+    clean_ips:(document.getElementById("catClean").value||"").trim(),
+    random_name:!!document.getElementById("catRandom").checked,
+    single_user:!!document.getElementById("catSingle").checked};
+  var res=await api("/api/categories",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(res&&res.ok){showToast("ساخته شد");document.getElementById("catName").value="";await loadCategoriesUI();}
+}
+async function deleteCategory(id){
+  if(!confirm("حذف؟"))return;
+  var res=await api("/api/categories/"+encodeURIComponent(id),{method:"DELETE"});
+  if(res&&res.ok){showToast("حذف شد");await loadCategoriesUI();}
 }
 
 refresh();
+setInterval(refresh, 3000);
 
-setInterval(
-    refresh,
-    1000
-);
 
 </script>
 
@@ -8957,6 +9072,7 @@ async def dashboard(
             "/login"
         )
 
+    await ensure_default_categories()
     await ensure_default_link()
 
     return HTMLResponse(
