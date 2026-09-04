@@ -1128,6 +1128,9 @@ async def load_state():
                 "used_bytes",
                 0,
             )
+            link.setdefault("clean_ips", [])
+            link.setdefault("alarm_enabled", False)
+            link.setdefault("usage_history", [])
 
         logger.info(
             "State loaded: %d links / %d subscriptions",
@@ -7912,7 +7915,7 @@ async function refresh(){
             table.innerHTML = `
                 <tr>
                     <td
-                    colspan="8"
+                    colspan="9"
                     class="empty"
                     >
                     هنوز کانفیگی ساخته نشده است.
@@ -7966,11 +7969,9 @@ async function refresh(){
 
                 const statusColor = link.status_color || (link.active ? (link.connected_ips > 0 ? "green" : "gray") : "red");
                 const statusDot = statusColor === "green" ? "#22c55e" : (statusColor === "red" ? "#ef4444" : "#6b7280");
-                const limit = Number(link.limit_bytes || 0);
-                const used = Number(link.used_bytes || 0);
                 const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
                 const barColor = pct > 85 ? "#ef4444" : (pct > 60 ? "#f59e0b" : "#22c55e");
-                const showVless = link.show_vless !== false && link.vless;
+                const showVless = link.show_vless !== false && !!link.vless;
 
                 row.style.cursor = "pointer";
                 row.onclick = (e) => {
@@ -8618,45 +8619,38 @@ function openConfigModal(link) {
   const barColor = pct > 85 ? "#ef4444" : (pct > 60 ? "#f59e0b" : "#22c55e");
   const statusColor = link.status_color || "gray";
   const statusLabel = statusColor === "green" ? "متصل" : (statusColor === "red" ? "منقضی / غیرفعال" : "آفلاین");
+  const statusHex = statusColor === "green" ? "#22c55e" : (statusColor === "red" ? "#ef4444" : "#6b7280");
 
   let cleanHtml = "";
   if (link.clean_ips && link.clean_ips.length) {
-    cleanHtml = `<div style="margin-top:10px"><b>IP تمیز:</b> ${link.clean_ips.map(ip => `<code style="direction:ltr;margin-left:6px">${escapeHtml(ip)}</code>`).join("")}</div>`;
+    cleanHtml = "<div style=\\"margin-top:10px\\"><b>IP تمیز:</b> " + link.clean_ips.map(function(ip){ return "<code style=\\"direction:ltr;margin-left:6px\\">" + escapeHtml(ip) + "</code>"; }).join("") + "</div>";
   }
 
-  document.getElementById("cfgModalBody").innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-      <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,.04)">
-        <div style="color:rgba(255,255,255,.4);font-size:10px">وضعیت</div>
-        <div style="font-weight:800;margin-top:4px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${statusColor==='green'?'#22c55e':(statusColor==='red'?'#ef4444':'#6b7280')};margin-left:6px"></span>${statusLabel}</div>
-      </div>
-      <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,.04)">
-        <div style="color:rgba(255,255,255,.4);font-size:10px">پروتکل</div>
-        <div style="font-weight:800;margin-top:4px">${escapeHtml(link.protocol || "")}</div>
-      </div>
-      <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,.04)">
-        <div style="color:rgba(255,255,255,.4);font-size:10px">مصرف</div>
-        <div style="font-weight:800;margin-top:4px">${formatBytes(used)} / ${limit > 0 ? formatBytes(limit) : "∞"}</div>
-        ${limit > 0 ? `<div style="height:8px;margin-top:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barColor};border-radius:99px"></div></div><div style="font-size:10px;margin-top:4px;color:rgba(255,255,255,.5)">${pct}%</div>` : ""}
-      </div>
-      <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,.04)">
-        <div style="color:rgba(255,255,255,.4);font-size:10px">انقضا</div>
-        <div style="font-weight:800;margin-top:4px">${link.expires_at ? escapeHtml(link.expires_at) : "نامحدود"}</div>
-      </div>
-    </div>
-    <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,.03);margin-bottom:10px">
-      <div><b>UUID:</b> <code style="direction:ltr">${escapeHtml(link.uuid)}</code></div>
-      <div style="margin-top:6px"><b>اتصالات فعال:</b> ${link.connected_ips || 0}</div>
-      <div style="margin-top:6px"><b>آلارم:</b> ${link.alarm_enabled ? "فعال 🔔" : "خاموش"}</div>
-      ${cleanHtml}
-      ${link.note ? `<div style="margin-top:8px;color:rgba(255,255,255,.5)">${escapeHtml(link.note)}</div>` : ""}
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      ${link.vless ? `<button class="action primary" onclick="copyText('${link.vless.replace(/'/g,"\\'")}')">کپی VLESS</button>` : ""}
-      <button class="action" onclick="copyText('${link.sub}')">کپی SUB</button>
-      <button class="action" onclick="window.open('${link.info}','_blank')">صفحه INFO</button>
-    </div>
-  `;
+  var body = "";
+  body += "<div style=\\"display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px\\">";
+  body += "<div style=\\"padding:12px;border-radius:12px;background:rgba(255,255,255,.04)\\"><div style=\\"color:rgba(255,255,255,.4);font-size:10px\\">وضعیت</div><div style=\\"font-weight:800;margin-top:4px\\"><span style=\\"display:inline-block;width:10px;height:10px;border-radius:50%;background:" + statusHex + ";margin-left:6px\\"></span>" + statusLabel + "</div></div>";
+  body += "<div style=\\"padding:12px;border-radius:12px;background:rgba(255,255,255,.04)\\"><div style=\\"color:rgba(255,255,255,.4);font-size:10px\\">پروتکل</div><div style=\\"font-weight:800;margin-top:4px\\">" + escapeHtml(link.protocol || "") + "</div></div>";
+  body += "<div style=\\"padding:12px;border-radius:12px;background:rgba(255,255,255,.04)\\"><div style=\\"color:rgba(255,255,255,.4);font-size:10px\\">مصرف</div><div style=\\"font-weight:800;margin-top:4px\\">" + formatBytes(used) + " / " + (limit > 0 ? formatBytes(limit) : "∞") + "</div>";
+  if (limit > 0) {
+    body += "<div style=\\"height:8px;margin-top:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden\\"><div style=\\"height:100%;width:" + pct + "%;background:" + barColor + ";border-radius:99px\\"></div></div><div style=\\"font-size:10px;margin-top:4px;color:rgba(255,255,255,.5)\\">" + pct + "%</div>";
+  }
+  body += "</div>";
+  body += "<div style=\\"padding:12px;border-radius:12px;background:rgba(255,255,255,.04)\\"><div style=\\"color:rgba(255,255,255,.4);font-size:10px\\">انقضا</div><div style=\\"font-weight:800;margin-top:4px\\">" + (link.expires_at ? escapeHtml(link.expires_at) : "نامحدود") + "</div></div>";
+  body += "</div>";
+  body += "<div style=\\"padding:12px;border-radius:12px;background:rgba(255,255,255,.03);margin-bottom:10px\\">";
+  body += "<div><b>UUID:</b> <code style=\\"direction:ltr\\">" + escapeHtml(link.uuid) + "</code></div>";
+  body += "<div style=\\"margin-top:6px\\"><b>اتصالات فعال:</b> " + (link.connected_ips || 0) + "</div>";
+  body += "<div style=\\"margin-top:6px\\"><b>آلارم:</b> " + (link.alarm_enabled ? "فعال 🔔" : "خاموش") + "</div>";
+  body += cleanHtml;
+  if (link.note) body += "<div style=\\"margin-top:8px;color:rgba(255,255,255,.5)\\">" + escapeHtml(link.note) + "</div>";
+  body += "</div>";
+  body += "<div style=\\"display:flex;gap:8px;flex-wrap:wrap\\">";
+  if (link.vless) body += "<button class=\\"action primary\\" type=\\"button\\" onclick=\\"copyText(currentCfg.vless)\\">کپی VLESS</button>";
+  body += "<button class=\\"action\\" type=\\"button\\" onclick=\\"copyText(currentCfg.sub)\\">کپی SUB</button>";
+  body += "<button class=\\"action\\" type=\\"button\\" onclick=\\"window.open(currentCfg.info,\\'_blank\\')\\">صفحه INFO</button>";
+  body += "</div>";
+
+  document.getElementById("cfgModalBody").innerHTML = body;
   document.getElementById("configModal").classList.add("open");
 }
 
