@@ -1,5 +1,5 @@
 # ============================================================
-# PXPanel 13.0.1 Beta
+# PXPanel 13.2.0
 # Railway Ready
 # ============================================================
 
@@ -41,7 +41,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.0.1 Beta"
+APP_VERSION = "13.2.0"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -226,6 +226,8 @@ PROTOCOLS = (
     "hysteria2",
     "tuic",
     "wireguard",
+    "highspeed-demo",
+    "gaming-lite-demo",
 )
 
 PROTOCOL_LABELS = {
@@ -241,6 +243,8 @@ PROTOCOL_LABELS = {
     "hysteria2": "Hysteria 2",
     "tuic": "TUIC",
     "wireguard": "WireGuard",
+    "highspeed-demo": "HighSpeed Upload/Download (دمو)",
+    "gaming-lite-demo": "Gaming Lite (دمو)",
 }
 
 PROTOCOL_ALIASES = {
@@ -2066,7 +2070,7 @@ PX Panel
 </div>
 
 <div class="version">
-13.0.1 Beta
+13.2.0
 </div>
 </div>
 
@@ -2114,7 +2118,7 @@ class="btn secondary"
 <div class="footer">
 
 <span>
-PX Panel · 13.0.1 Beta
+PX Panel · 13.2.0
 </span>
 
 <a
@@ -2384,7 +2388,7 @@ P
 </h1>
 
 <div class="version">
-13.0.1 Beta
+13.2.0
 </div>
 
 <div class="desc">
@@ -4924,7 +4928,7 @@ PX Panel
 </h1>
 
 <div class="version">
-13.0.1 Beta
+13.2.0
 </div>
 
 <div class="text">
@@ -5763,7 +5767,7 @@ content="width=device-width,initial-scale=1"
 />
 
 <title>
-PX Panel 13.0.1 Beta
+PX Panel 13.2.0
 </title>
 
 <link
@@ -6570,7 +6574,7 @@ PX Panel
 </div>
 
 <div class="brand-version">
-13.0.1 Beta
+13.2.0
 </div>
 
 </div>
