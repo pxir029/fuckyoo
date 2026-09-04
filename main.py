@@ -1,5 +1,5 @@
 # ============================================================
-# PXPanel 13.3.0
+# PXPanel 13.4.0
 # Railway Ready
 # ============================================================
 
@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.3.0"
+APP_VERSION = "13.4.0"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -381,10 +381,10 @@ def random_config_name(existing=None):
     existing = existing or set()
     alphabet = string.ascii_lowercase + string.digits
     for _ in range(50):
-        name = "px_" + "".join(secrets.choice(alphabet) for _ in range(10))
+        name = "cfg_" + "".join(secrets.choice(alphabet) for _ in range(10))
         if name not in existing:
             return name
-    return "px_" + secrets.token_hex(6)
+    return "cfg_" + secrets.token_hex(6)
 
 def auto_config_name() -> str:
     alphabet = (
@@ -397,7 +397,7 @@ def auto_config_name() -> str:
         for _ in range(8)
     )
 
-    return f"pxpanel_{suffix}"
+    return f"cfg_{suffix}"
 
 
 def now_ir():
@@ -955,10 +955,7 @@ def vless_link_for_link(
     return generate_vless_link(
         uid,
         host,
-        remark=(
-            f"px-"
-            f"{link.get('label', '')}"
-        ),
+        remark=str(link.get("label") or "Config"),
         protocol=link.get(
             "protocol",
             DEFAULT_PROTOCOL,
@@ -1850,12 +1847,12 @@ body{
     background:
         radial-gradient(
             circle at 15% 15%,
-            rgba(99,102,241,.22),
+            rgba(37,99,235,.22),
             transparent 30%
         ),
         radial-gradient(
             circle at 85% 85%,
-            rgba(139,92,246,.18),
+            rgba(59,130,246,.18),
             transparent 30%
         ),
         #07070a;
@@ -1903,8 +1900,8 @@ body{
     background:
         linear-gradient(
             135deg,
-            #6366f1,
-            #8b5cf6
+            #2563eb,
+            #3b82f6
         );
 }
 
@@ -1916,7 +1913,7 @@ body{
 .version{
     margin-top:4px;
     font-size:11px;
-    color:#a78bfa;
+    color:#60a5fa;
 }
 
 .status{
@@ -1956,7 +1953,7 @@ h1{
     direction:ltr;
     text-align:left;
     font-family:Consolas,monospace;
-    color:#c4b5fd;
+    color:#93c5fd;
 }
 
 .actions{
@@ -1981,8 +1978,8 @@ h1{
     background:
         linear-gradient(
             135deg,
-            #6366f1,
-            #8b5cf6
+            #2563eb,
+            #3b82f6
         );
 }
 
@@ -2005,7 +2002,7 @@ h1{
 }
 
 .support{
-    color:#a78bfa;
+    color:#60a5fa;
     text-decoration:none;
 }
 
@@ -2046,7 +2043,7 @@ PX Panel
 </div>
 
 <div class="version">
-13.3.0
+13.4.0
 </div>
 </div>
 
@@ -2094,7 +2091,7 @@ class="btn secondary"
 <div class="footer">
 
 <span>
-PX Panel · 13.3.0
+PX Panel · 13.4.0
 </span>
 
 <a
@@ -2209,7 +2206,7 @@ body{
     background:
         radial-gradient(
             circle at 15% 15%,
-            rgba(99,102,241,.20),
+            rgba(37,99,235,.20),
             transparent 32%
         ),
         #07070a;
@@ -2246,8 +2243,8 @@ body{
     background:
         linear-gradient(
             135deg,
-            #6366f1,
-            #8b5cf6
+            #2563eb,
+            #3b82f6
         );
 }
 
@@ -2258,7 +2255,7 @@ h1{
 
 .version{
     margin-top:5px;
-    color:#a78bfa;
+    color:#60a5fa;
     font-size:11px;
 }
 
@@ -2318,8 +2315,8 @@ button{
     background:
         linear-gradient(
             135deg,
-            #6366f1,
-            #8b5cf6
+            #2563eb,
+            #3b82f6
         );
 }
 
@@ -2341,7 +2338,7 @@ button{
     margin-top:18px;
     text-align:center;
 
-    color:#a78bfa;
+    color:#60a5fa;
     text-decoration:none;
 
     font-size:11px;
@@ -2364,7 +2361,7 @@ P
 </h1>
 
 <div class="version">
-13.3.0
+13.4.0
 </div>
 
 <div class="desc">
@@ -3715,7 +3712,51 @@ async def subscription_single(
     host = get_host(request)
     clean_ips = link.get("clean_ips") or []
 
-    lines = []
+    used = int(link.get("used_bytes", 0) or 0)
+    limit = int(link.get("limit_bytes", 0) or 0)
+    remaining = max(0, limit - used) if limit > 0 else 0
+    if limit > 0:
+        volume_text = f"{fmt_bytes(used)}/{fmt_bytes(limit)} (باقی {fmt_bytes(remaining)})"
+    else:
+        volume_text = f"{fmt_bytes(used)}/∞"
+
+    expires_at = link.get("expires_at")
+    if expires_at:
+        try:
+            exp_dt = datetime.fromisoformat(str(expires_at))
+            now_dt = datetime.now(exp_dt.tzinfo) if getattr(exp_dt, "tzinfo", None) else datetime.now()
+            secs = int((exp_dt - now_dt).total_seconds())
+            if secs <= 0:
+                time_text = "منقضی"
+            else:
+                days, rem = divmod(secs, 86400)
+                hours, rem = divmod(rem, 3600)
+                mins = rem // 60
+                if days > 0:
+                    time_text = f"{days}د {hours}س"
+                elif hours > 0:
+                    time_text = f"{hours}س {mins}د"
+                else:
+                    time_text = f"{mins}د"
+        except Exception:
+            time_text = str(expires_at)[:16]
+    else:
+        time_text = "∞"
+
+    label = str(link.get("label") or "Config")
+    # First entry: always a 0.0.0.0 remark with stats (name - volume - time)
+    stats_remark = f"0.0.0.0 | {label} | {volume_text} | {time_text}"
+    stats_line = generate_vless_link(
+        uuid,
+        "0.0.0.0",
+        remark=stats_remark,
+        protocol=link.get("protocol", DEFAULT_PROTOCOL),
+        fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
+        alpn=link.get("alpn"),
+        port=link.get("port", DEFAULT_PORT),
+    )
+
+    lines = [stats_line]
     used_names = set()
 
     if clean_ips:
@@ -3733,15 +3774,11 @@ async def subscription_single(
             )
             lines.append(vless)
     else:
-        lines.append(vless_link_for_link(link, uuid, host))
+        real = vless_link_for_link(link, uuid, host)
+        lines.append(real)
 
     content = base64.b64encode("\n".join(lines).encode()).decode()
-
-    used = int(link.get("used_bytes", 0) or 0)
-    limit = int(link.get("limit_bytes", 0) or 0)
-    volume_text = f"{fmt_bytes(used)}/{fmt_bytes(limit)}" if limit > 0 else f"{fmt_bytes(used)}/∞"
-    expiry_text = str(link.get("expires_at") or "∞")
-    profile_title = f"0.0.0.0 | {volume_text} | {expiry_text} | {link.get('label','PX')} | کانال تلگرام: logic_sec"
+    profile_title = stats_remark
     headers = subscription_metadata_headers(
         used,
         limit,
@@ -3854,6 +3891,44 @@ async def info_page(
 
     status_text = "فعال" if is_link_allowed(snapshot) else "غیرفعال"
     status_class = "good" if status_text == "فعال" else "bad"
+
+    # Alarm banner when alarm_enabled and time/volume expired or near end
+    alarm_banner = ""
+    if snapshot.get("alarm_enabled"):
+        alarm_msgs = []
+        if not is_link_allowed(snapshot):
+            if is_link_expired(snapshot):
+                alarm_msgs.append("زمان کانفیگ به پایان رسیده است")
+            lim = int(snapshot.get("limit_bytes", 0) or 0)
+            usd = int(snapshot.get("used_bytes", 0) or 0)
+            if lim > 0 and usd >= lim:
+                alarm_msgs.append("حجم کانفیگ به پایان رسیده است")
+            if not alarm_msgs:
+                alarm_msgs.append("کانفیگ غیرفعال است")
+        else:
+            # near expiry warnings
+            lim = int(snapshot.get("limit_bytes", 0) or 0)
+            usd = int(snapshot.get("used_bytes", 0) or 0)
+            if lim > 0 and usd >= lim * 0.9:
+                alarm_msgs.append(f"بیش از ۹۰٪ حجم مصرف شده ({fmt_bytes(usd)} از {fmt_bytes(lim)})")
+            exp = snapshot.get("expires_at")
+            if exp:
+                try:
+                    exp_dt = datetime.fromisoformat(str(exp))
+                    now_dt = datetime.now(exp_dt.tzinfo) if getattr(exp_dt, "tzinfo", None) else datetime.now()
+                    secs = int((exp_dt - now_dt).total_seconds())
+                    if 0 < secs <= 86400:
+                        alarm_msgs.append("کمتر از ۲۴ ساعت تا پایان زمان باقی مانده")
+                except Exception:
+                    pass
+        if alarm_msgs:
+            alarm_banner = (
+                '<div style="margin-bottom:16px;padding:14px 16px;border-radius:16px;'
+                'border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);'
+                'color:#fecaca;font-size:13px;font-weight:700;text-align:center">'
+                '🔔 هشدار: ' + " — ".join(alarm_msgs) +
+                '</div>'
+            )
     ip_limit = "نامحدود" if not snapshot.get("ip_limit", 0) else str(snapshot.get("ip_limit"))
     connection_limit = "نامحدود" if not snapshot.get("connection_limit", 0) else str(snapshot.get("connection_limit"))
     speed_limit = "نامحدود" if not snapshot.get("speed_limit_bytes", 0) else fmt_bytes(snapshot.get("speed_limit_bytes", 0)) + "/s"
@@ -3920,7 +3995,7 @@ async def info_page(
     --text-muted: rgba(255, 255, 255, 0.4);
     --bg-sub-card: rgba(0, 0, 0, 0.2);
     --grad-1: rgba(96,165,250,.16);
-    --grad-2: rgba(167,139,250,.13);
+    --grad-2: rgba(96,165,250,.13);
     --grad-3: rgba(52,211,153,.08);
   }}
 
@@ -3933,7 +4008,7 @@ async def info_page(
     --text-muted: rgba(255, 255, 255, 0.6);
     --bg-sub-card: rgba(0, 0, 0, 0.35);
     --grad-1: rgba(96,165,250,.24);
-    --grad-2: rgba(167,139,250,.20);
+    --grad-2: rgba(96,165,250,.20);
     --grad-3: rgba(52,211,153,.13);
   }}
 
@@ -3975,6 +4050,8 @@ async def info_page(
       تغییر تم
     </button>
   </div>
+
+  {alarm_banner}
 
   <!-- Hero -->
   <section class="rounded-[26px] sm:rounded-[28px] border dynamic-card backdrop-blur-2xl p-5 sm:p-6 md:p-8">
@@ -4262,7 +4339,7 @@ async def info_page(
 
   <!-- Footer -->
   <div class="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.05] p-4 text-center text-xs text-white/45">
-    پشتیبانی و اطلاعیه‌ها &nbsp;·&nbsp; <b class="text-emerald-300">کانال تلگرام: logic_sec</b>
+    پشتیبانی و اطلاعیه‌ها &nbsp;·&nbsp; <b class="text-emerald-300">LogicSec</b>
   </div>
 
 </div>
@@ -4787,8 +4864,7 @@ async def sub_group_subscription(
     )
     group_expiry_text = group_expiry or "∞"
     group_title = (
-        f"0.0.0.0 | {group_volume_text} | {group_expiry_text} | "
-        f"{sub['name']} | کانال تلگرام: logic_sec"
+        f"0.0.0.0 | {sub['name']} | {group_volume_text} | {group_expiry_text}"
     )
     headers = subscription_metadata_headers(
         total_used,
@@ -4849,7 +4925,7 @@ body{
     background:
         radial-gradient(
             circle at top right,
-            rgba(99,102,241,.17),
+            rgba(37,99,235,.17),
             transparent 30%
         ),
         #07070a;
@@ -4889,7 +4965,7 @@ h1{
 
     background:rgba(0,0,0,.22);
 
-    color:#c4b5fd;
+    color:#93c5fd;
 
     direction:ltr;
     word-break:break-all;
@@ -4901,12 +4977,12 @@ h1{
     display:inline-block;
     margin-top:18px;
 
-    color:#a78bfa;
+    color:#60a5fa;
     text-decoration:none;
 }
 
 .version{
-    color:#a78bfa;
+    color:#60a5fa;
     font-size:11px;
 }
 
@@ -4922,7 +4998,7 @@ PX Panel
 </h1>
 
 <div class="version">
-13.3.0
+13.4.0
 </div>
 
 <div class="text">
@@ -5761,7 +5837,7 @@ content="width=device-width,initial-scale=1"
 />
 
 <title>
-PX Panel 13.3.0
+PX Panel 13.4.0
 </title>
 
 <link
@@ -5802,12 +5878,12 @@ body{
     background:
         radial-gradient(
             circle at 10% 0%,
-            rgba(99,102,241,.13),
+            rgba(37,99,235,.13),
             transparent 25%
         ),
         radial-gradient(
             circle at 100% 100%,
-            rgba(139,92,246,.10),
+            rgba(59,130,246,.10),
             transparent 25%
         ),
         #07070a;
@@ -5853,8 +5929,8 @@ body{
     background:
         linear-gradient(
             135deg,
-            #6366f1,
-            #8b5cf6
+            #2563eb,
+            #3b82f6
         );
 }
 
@@ -5870,7 +5946,7 @@ body{
 }
 
 .brand-version{
-    color:#a78bfa;
+    color:#60a5fa;
     font-size:9px;
     margin-top:2px;
 }
@@ -5902,8 +5978,8 @@ body{
     background:
         linear-gradient(
             135deg,
-            #6366f1,
-            #8b5cf6
+            #2563eb,
+            #3b82f6
         );
 }
 
@@ -5944,8 +6020,8 @@ body{
     font-size:19px;
     font-weight:900;
 }
-.stat::after{content:"";position:absolute;right:0;bottom:0;left:0;height:2px;background:var(--stat-color,#818cf8);opacity:.8}
-.stat:nth-child(1){--stat-color:#60a5fa}.stat:nth-child(2){--stat-color:#4ade80}.stat:nth-child(3){--stat-color:#f59e0b}.stat:nth-child(4){--stat-color:#a78bfa}.stat:nth-child(5){--stat-color:#fb7185}.stat:nth-child(6){--stat-color:#22d3ee}.stat-value{color:var(--stat-color,#fff)}
+.stat::after{content:"";position:absolute;right:0;bottom:0;left:0;height:2px;background:var(--stat-color,#60a5fa);opacity:.8}
+.stat:nth-child(1){--stat-color:#60a5fa}.stat:nth-child(2){--stat-color:#4ade80}.stat:nth-child(3){--stat-color:#f59e0b}.stat:nth-child(4){--stat-color:#60a5fa}.stat:nth-child(5){--stat-color:#fb7185}.stat:nth-child(6){--stat-color:#22d3ee}.stat-value{color:var(--stat-color,#fff)}
 
 
 .panel{
@@ -6065,7 +6141,7 @@ th{
 
 .action.primary{
     background:
-        rgba(99,102,241,.18);
+        rgba(37,99,235,.18);
 }
 
 .action.danger{
@@ -6082,7 +6158,7 @@ th{
     overflow:hidden;
     text-overflow:ellipsis;
 
-    color:#c4b5fd;
+    color:#93c5fd;
 
     font-family:Consolas,monospace;
 
@@ -6156,11 +6232,11 @@ th{
     border-radius:13px;
 
     background:
-        rgba(99,102,241,.06);
+        rgba(37,99,235,.06);
 
     border:
         1px solid
-        rgba(99,102,241,.13);
+        rgba(37,99,235,.13);
 
     color:rgba(255,255,255,.62);
 
@@ -6170,7 +6246,7 @@ th{
 }
 
 .notice strong{
-    color:#c4b5fd;
+    color:#93c5fd;
 }
 
 .empty{
@@ -6318,7 +6394,7 @@ th{
 .field select:focus,
 .field textarea:focus{
     border-color:
-        rgba(99,102,241,.55);
+        rgba(37,99,235,.55);
 }
 
 .modal-actions{
@@ -6349,8 +6425,8 @@ th{
     background:
         linear-gradient(
             135deg,
-            #6366f1,
-            #8b5cf6
+            #2563eb,
+            #3b82f6
         );
 }
 
@@ -6404,7 +6480,7 @@ th{
 /* LOGIN NOTICE START — DELETE THIS WHOLE BLOCK TO DISABLE THE LOGIN NOTICE */
 .login-notice-backdrop{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.72);backdrop-filter:blur(14px)}
 .login-notice{width:min(620px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:22px;border:1px solid rgba(255,255,255,.10);border-radius:24px;background:linear-gradient(180deg,rgba(24,24,34,.98),rgba(12,12,17,.98));box-shadow:0 30px 100px rgba(0,0,0,.60);animation:noticeIn .28s ease both}
-.login-notice-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}.login-notice-icon{width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:rgba(99,102,241,.14);border:1px solid rgba(129,140,248,.22);color:#a5b4fc;font-size:18px}.login-notice h3{margin:0;font-size:15px}.login-notice p{margin:5px 0 0;color:rgba(255,255,255,.42);font-size:9px;line-height:1.9}.notice-downloads{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}.notice-download{display:block;padding:12px;border-radius:14px;text-decoration:none;color:#fff;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);transition:.2s ease}.notice-download:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.30);background:rgba(129,140,248,.07)}.notice-download strong{display:block;font-size:10px}.notice-download span{display:block;margin-top:3px;color:rgba(255,255,255,.36);font-size:8px}.login-notice-body{margin-top:14px;padding:14px;border-radius:14px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);color:rgba(255,255,255,.62);font-size:10px;line-height:2}.login-notice-body b{color:#fff}.login-notice-actions{margin-top:14px;display:flex;gap:8px}.login-notice-actions button{flex:1;padding:11px;border:0;border-radius:12px;color:#fff;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-family:inherit;cursor:pointer}@keyframes noticeIn{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+.login-notice-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}.login-notice-icon{width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:rgba(37,99,235,.14);border:1px solid rgba(129,140,248,.22);color:#93c5fd;font-size:18px}.login-notice h3{margin:0;font-size:15px}.login-notice p{margin:5px 0 0;color:rgba(255,255,255,.42);font-size:9px;line-height:1.9}.notice-downloads{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}.notice-download{display:block;padding:12px;border-radius:14px;text-decoration:none;color:#fff;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);transition:.2s ease}.notice-download:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.30);background:rgba(129,140,248,.07)}.notice-download strong{display:block;font-size:10px}.notice-download span{display:block;margin-top:3px;color:rgba(255,255,255,.36);font-size:8px}.login-notice-body{margin-top:14px;padding:14px;border-radius:14px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);color:rgba(255,255,255,.62);font-size:10px;line-height:2}.login-notice-body b{color:#fff}.login-notice-actions{margin-top:14px;display:flex;gap:8px}.login-notice-actions button{flex:1;padding:11px;border:0;border-radius:12px;color:#fff;background:linear-gradient(135deg,#2563eb,#3b82f6);font-family:inherit;cursor:pointer}@keyframes noticeIn{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 /* LOGIN NOTICE END */
 
 /* REGION NOTICE + RESPONSIVE UI OVERRIDES */
@@ -6418,9 +6494,9 @@ th{
     max-height:min(760px,calc(100vh - 24px));
     padding:clamp(16px,3vw,24px);
     border-radius:24px;
-    border:1px solid rgba(167,139,250,.18);
+    border:1px solid rgba(96,165,250,.18);
     background:
-        radial-gradient(circle at 90% 0%,rgba(99,102,241,.13),transparent 32%),
+        radial-gradient(circle at 90% 0%,rgba(37,99,235,.13),transparent 32%),
         linear-gradient(180deg,rgba(25,25,37,.98),rgba(11,11,16,.99));
     box-shadow:0 35px 110px rgba(0,0,0,.62),inset 0 1px rgba(255,255,255,.04);
 }
@@ -6428,9 +6504,9 @@ th{
 .login-notice-icon{
     width:46px;height:46px;min-width:46px;border-radius:15px;
     display:flex;align-items:center;justify-content:center;
-    background:rgba(99,102,241,.12);
-    border:1px solid rgba(167,139,250,.22);
-    color:#c4b5fd;
+    background:rgba(37,99,235,.12);
+    border:1px solid rgba(96,165,250,.22);
+    color:#93c5fd;
 }
 .login-notice-icon svg{width:24px;height:24px;display:block}
 .login-notice h3{font-size:15px;letter-spacing:-.2px}
@@ -6439,7 +6515,7 @@ th{
     margin-top:12px;
     padding:15px;
     border-radius:16px;
-    background:rgba(99,102,241,.065);
+    background:rgba(37,99,235,.065);
     border:1px solid rgba(129,140,248,.14);
     color:rgba(255,255,255,.66);
     font-size:10px;
@@ -6568,7 +6644,11 @@ PX Panel
 </div>
 
 <div class="brand-version">
-13.3.0
+13.4.0
+</div>
+
+<div style="margin-top:4px;font-size:10px">
+<a href="https://www.youtube.com/@LogicSec_YT" target="_blank" rel="noopener" style="color:#60a5fa;text-decoration:none">کانال یوتیوب: LogicSec_YT</a>
 </div>
 
 </div>
@@ -6591,12 +6671,6 @@ onclick="openManualModal()"
 ساخت دستی
 </button>
 
-<button
-class="top-btn"
-style="background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;color:#fff;font-weight:800"
-onclick="openManualModal()"
->IP تمیز
-</button>
 
 <button
 class="top-btn"
@@ -7005,8 +7079,8 @@ placeholder="اسم کانفیگ"
     <option value="http" style="background-color: #1f2937; color: #ffffff;">HTTP Proxy</option>
     <option value="hysteria2" style="background-color: #1f2937; color: #ffffff;">Hysteria 2</option>
     <option value="tuic" style="background-color: #1f2937; color: #ffffff;">TUIC</option>
-    <option value="highspeed-demo" style="background-color: #1f2937; color: #a78bfa;">HighSpeed Upload/Download (دمو)</option>
-    <option value="gaming-lite-demo" style="background-color: #1f2937; color: #a78bfa;">Gaming Lite (دمو)</option>
+    <option value="highspeed-demo" style="background-color: #1f2937; color: #60a5fa;">HighSpeed Upload/Download (دمو)</option>
+    <option value="gaming-lite-demo" style="background-color: #1f2937; color: #60a5fa;">Gaming Lite (دمو)</option>
   </select>
 </div>
 
@@ -7180,9 +7254,10 @@ value="http/1.1"
 </div>
 
 <div class="field">
-<label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-<input type="checkbox" id="manualAlarm" style="width:16px;height:16px">
-آلارم انقضا / حجم فعال باشد
+<label style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none">
+<span id="alarmToggle" onclick="toggleAlarmCheck()" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;border:2px solid #6b7280;background:#374151;color:transparent;font-size:14px;font-weight:900;transition:all .15s">✓</span>
+<input type="checkbox" id="manualAlarm" style="display:none">
+<span style="font-size:12px;color:rgba(255,255,255,.7)">آلارم انقضا / حجم</span>
 </label>
 </div>
 
@@ -7285,8 +7360,8 @@ class="modal-backdrop"
   <option value="http" style="background-color: #1f2937; color: #ffffff;">HTTP Proxy</option>
   <option value="hysteria2" style="background-color: #1f2937; color: #ffffff;">Hysteria 2</option>
   <option value="tuic" style="background-color: #1f2937; color: #ffffff;">TUIC</option>
-  <option value="highspeed-demo" style="background-color: #1f2937; color: #a78bfa;">HighSpeed Upload/Download (دمو)</option>
-  <option value="gaming-lite-demo" style="background-color: #1f2937; color: #a78bfa;">Gaming Lite (دمو)</option>
+  <option value="highspeed-demo" style="background-color: #1f2937; color: #60a5fa;">HighSpeed Upload/Download (دمو)</option>
+  <option value="gaming-lite-demo" style="background-color: #1f2937; color: #60a5fa;">Gaming Lite (دمو)</option>
 </select>
 
 </div>
@@ -7981,7 +8056,7 @@ ${escapeHtml(
 <td>
 <span style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:6px;vertical-align:middle;background:${(link.status_color==='green')?'#22c55e':((link.status_color==='red')?'#ef4444':'#6b7280')}"></span>
 <span class="badge ${link.active ? 'active' : 'off'}">${link.active ? 'فعال' : 'غیرفعال'}</span>
-${link.alarm_enabled ? '<span style="font-size:9px;color:#a78bfa">🔔</span>' : ''}
+${link.alarm_enabled ? '<span style="font-size:9px;color:#60a5fa">🔔</span>' : ''}
 </td>
 
 
@@ -8670,6 +8745,22 @@ async function changePassword(){
 
 }
 
+
+function toggleAlarmCheck(){
+  var cb = document.getElementById("manualAlarm");
+  var box = document.getElementById("alarmToggle");
+  if(!cb || !box) return;
+  cb.checked = !cb.checked;
+  if(cb.checked){
+    box.style.background = "#22c55e";
+    box.style.borderColor = "#22c55e";
+    box.style.color = "#fff";
+  } else {
+    box.style.background = "#374151";
+    box.style.borderColor = "#6b7280";
+    box.style.color = "transparent";
+  }
+}
 
 refresh();
 
