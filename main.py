@@ -1,5 +1,5 @@
 # ============================================================
-# PXPanel 13.2.1
+# PXPanel 13.3.0
 # Railway Ready
 # ============================================================
 
@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.2.1"
+APP_VERSION = "13.3.0"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -377,8 +377,7 @@ def generate_uuid():
 
 
 
-def random_config_name(existing: set | None = None) -> str:
-    """Generate unique random config name that never collides."""
+def random_config_name(existing=None):
     existing = existing or set()
     alphabet = string.ascii_lowercase + string.digits
     for _ in range(50):
@@ -386,7 +385,6 @@ def random_config_name(existing: set | None = None) -> str:
         if name not in existing:
             return name
     return "px_" + secrets.token_hex(6)
-
 
 def auto_config_name() -> str:
     alphabet = (
@@ -943,11 +941,9 @@ def generate_vless_link(
     if protocol == "tuic": return f"tuic://{uuid}:{uuid}@{host}:{port_value}?sni={quote(host)}&alpn=h3#{label}"
     if protocol == "wireguard": return f"wireguard://{uuid}@{host}:{port_value}?publicKey={uuid}#{label}"
     if protocol == "highspeed-demo":
-        # Demo high-speed protocol (uses XHTTP stream under the hood for higher throughput)
         q = {"encryption":"none","security":"tls","type":"xhttp","mode":"stream-up","host":host,"path":f"/xhttp-siz10/stream-up/{uuid}","sni":host,"fp":fp,"alpn":"h2,http/1.1"}
-        return "vless://" + uuid + "@" + host + ":" + str(port_value) + "?" + "&".join(f"{k}={quote(str(v), safe=',/') }" for k,v in q.items()) + "#" + label
+        return "vless://" + uuid + "@" + host + ":" + str(port_value) + "?" + "&".join(f"{k}={quote(str(v), safe=',/')}" for k,v in q.items()) + "#" + label
     if protocol == "gaming-lite-demo":
-        # Demo lightweight gaming protocol (UDP oriented, lower overhead)
         return f"hysteria2://{uuid}@{host}:{port_value}/?sni={quote(host)}&insecure=0&obfs=salamander#{label}"
     return f"vless://{uuid}@{host}:{port_value}"
 
@@ -988,28 +984,25 @@ def get_link_info(
 ):
     connected_count = len(unique_ips_for_uuid(uid))
     is_active = is_link_allowed(link)
-    is_expired = is_link_expired(link) or (
-        int(link.get("limit_bytes", 0) or 0) > 0
-        and int(link.get("used_bytes", 0) or 0) >= int(link.get("limit_bytes", 0) or 0)
-    )
+    limit_b = int(link.get("limit_bytes", 0) or 0)
+    used_b = int(link.get("used_bytes", 0) or 0)
+    is_expired = is_link_expired(link) or (limit_b > 0 and used_b >= limit_b)
     if not is_active or is_expired:
         status_color = "red"
     elif connected_count > 0:
         status_color = "green"
     else:
         status_color = "gray"
-
     clean_ips = link.get("clean_ips") or []
     show_vless = len(clean_ips) <= 1
-
     return {
         "uuid": uid,
         "name": link.get("label", ""),
         "label": link.get("label", ""),
         "protocol": link.get("protocol", DEFAULT_PROTOCOL),
         "active": is_active,
-        "used_bytes": int(link.get("used_bytes", 0) or 0),
-        "limit_bytes": int(link.get("limit_bytes", 0) or 0),
+        "used_bytes": used_b,
+        "limit_bytes": limit_b,
         "expires_at": link.get("expires_at"),
         "ip_limit": int(link.get("ip_limit", 0) or 0),
         "speed_limit_bytes": int(link.get("speed_limit_bytes", 0) or 0),
@@ -1319,7 +1312,7 @@ async def make_link(
     speed_limit_bytes: int = 0,
     connection_limit: int = 0,
     fragment: str = "off",
-    clean_ips: list | None = None,
+    clean_ips=None,
     alarm_enabled: bool = False,
 ):
 
@@ -2053,7 +2046,7 @@ PX Panel
 </div>
 
 <div class="version">
-13.2.1
+13.3.0
 </div>
 </div>
 
@@ -2101,7 +2094,7 @@ class="btn secondary"
 <div class="footer">
 
 <span>
-PX Panel · 13.2.1
+PX Panel · 13.3.0
 </span>
 
 <a
@@ -2371,7 +2364,7 @@ P
 </h1>
 
 <div class="version">
-13.2.1
+13.3.0
 </div>
 
 <div class="desc">
@@ -3001,13 +2994,11 @@ async def create_link_api(
     if fragment not in allowed_fragments:
         fragment = "off"
 
-    # Clean IPs support
     raw_clean = body.get("clean_ips") or body.get("clean_ip") or ""
     if isinstance(raw_clean, list):
         clean_ips = [str(x).strip() for x in raw_clean if str(x).strip()]
     else:
         clean_ips = [x.strip() for x in str(raw_clean).replace(",", "\n").splitlines() if x.strip()]
-
     alarm_enabled = bool(body.get("alarm_enabled", False))
 
     uid, link = await make_link(
@@ -3727,16 +3718,13 @@ async def subscription_single(
     lines = []
     used_names = set()
 
-    if clean_ips and len(clean_ips) > 0:
-        # One config per clean IP with unique random names
-        for idx, cip in enumerate(clean_ips):
+    if clean_ips:
+        for cip in clean_ips:
             name = random_config_name(used_names)
             used_names.add(name)
-            # Temporarily override host for link generation
-            temp_link = dict(link)
             vless = generate_vless_link(
                 uuid,
-                cip,  # use clean IP as host
+                cip,
                 remark=name,
                 protocol=link.get("protocol", DEFAULT_PROTOCOL),
                 fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
@@ -3745,9 +3733,7 @@ async def subscription_single(
             )
             lines.append(vless)
     else:
-        # Normal single config
-        vless = vless_link_for_link(link, uuid, host)
-        lines.append(vless)
+        lines.append(vless_link_for_link(link, uuid, host))
 
     content = base64.b64encode("\n".join(lines).encode()).decode()
 
@@ -4936,7 +4922,7 @@ PX Panel
 </h1>
 
 <div class="version">
-13.2.1
+13.3.0
 </div>
 
 <div class="text">
@@ -5775,7 +5761,7 @@ content="width=device-width,initial-scale=1"
 />
 
 <title>
-PX Panel 13.2.1
+PX Panel 13.3.0
 </title>
 
 <link
@@ -6582,7 +6568,7 @@ PX Panel
 </div>
 
 <div class="brand-version">
-13.2.1
+13.3.0
 </div>
 
 </div>
@@ -6608,9 +6594,8 @@ onclick="openManualModal()"
 <button
 class="top-btn"
 style="background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;color:#fff;font-weight:800"
-onclick="openCleanIpQuick()"
-><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/></svg>
-IP تمیز سریع
+onclick="openManualModal()"
+>IP تمیز
 </button>
 
 <button
@@ -6745,15 +6730,37 @@ onclick="refresh()"
 
 <tr>
 
-<th style="width:28px"></th>
-<th>نـام</th>
-<th>پروتـکل</th>
-<th>وضعیـت</th>
-<th style="min-width:140px">مصـرف</th>
-<th>زمـان</th>
-<th>اتصـال</th>
-<th>VLESS / SUB</th>
-<th>عملیـات</th>
+<th>
+نـام
+</th>
+
+<th>
+پروتـکل
+</th>
+
+<th>
+وضعیـت
+</th>
+
+<th>
+مصـرف
+</th>
+
+<th>
+زمـان
+</th>
+
+<th>
+اتصـال
+</th>
+
+<th>
+VLESS
+</th>
+
+<th>
+عملیـات
+</th>
 
 </tr>
 
@@ -7169,7 +7176,7 @@ value="http/1.1"
 
 <div class="field full">
 <label>IP تمیز (هر خط یا با کاما — بیش از ۱ عدد فقط ساب نمایش داده می‌شود)</label>
-<textarea id="manualCleanIps" placeholder="مثال:&#10;1.2.3.4&#10;5.6.7.8&#10;یا 1.2.3.4, 5.6.7.8" style="min-height:80px;direction:ltr;text-align:left"></textarea>
+<textarea id="manualCleanIps" placeholder="1.2.3.4&#10;5.6.7.8" style="min-height:70px;direction:ltr;text-align:left"></textarea>
 </div>
 
 <div class="field">
@@ -7588,38 +7595,10 @@ onclick="changePassword()"
 </div>
 <!-- LOGIN NOTICE END -->
 
-
-<!-- PROFESSIONAL CONFIG MODAL -->
-<div id="configModal" class="modal-backdrop">
-  <div class="modal" style="max-width:820px">
-    <div class="modal-head">
-      <div class="modal-title" id="cfgModalTitle">جزئیات کانفیگ</div>
-      <button class="close" onclick="closeConfigModal()">×</button>
-    </div>
-    <div id="cfgModalBody" style="font-size:12px;line-height:1.9"></div>
-    <div class="modal-actions" style="margin-top:18px;flex-wrap:wrap">
-      <button class="modal-btn secondary" onclick="cfgToggle()">فعال / غیرفعال</button>
-      <button class="modal-btn secondary" onclick="cfgResetAsk()">ریست</button>
-      <button class="modal-btn secondary" style="background:rgba(239,68,68,.15);color:#fca5a5" onclick="cfgDelete()">حذف</button>
-      <button class="modal-btn primary" onclick="closeConfigModal()">بستن</button>
-    </div>
-  </div>
-</div>
-
-<div id="resetAskModal" class="modal-backdrop">
-  <div class="modal" style="max-width:380px">
-    <div class="modal-head"><div class="modal-title">نوع ریست</div><button class="close" onclick="document.getElementById('resetAskModal').classList.remove('open')">×</button></div>
-    <p style="color:rgba(255,255,255,.6);font-size:12px;margin:12px 0">کدام مورد ریست شود؟</p>
-    <div class="modal-actions">
-      <button class="modal-btn secondary" onclick="cfgReset('volume')">فقط حجم</button>
-      <button class="modal-btn secondary" onclick="cfgReset('time')">فقط تایم</button>
-      <button class="modal-btn primary" onclick="cfgReset('both')">هر دو</button>
-    </div>
-  </div>
-</div>
-
-<div id="toast" class="toast"></div>
-
+<div
+id="toast"
+class="toast"
+></div>
 
 
 <script>
@@ -7915,7 +7894,7 @@ async function refresh(){
             table.innerHTML = `
                 <tr>
                     <td
-                    colspan="9"
+                    colspan="8"
                     class="empty"
                     >
                     هنوز کانفیگی ساخته نشده است.
@@ -7967,46 +7946,139 @@ async function refresh(){
                 }
 
 
-                const statusColor = link.status_color || (link.active ? (link.connected_ips > 0 ? "green" : "gray") : "red");
-                const statusDot = statusColor === "green" ? "#22c55e" : (statusColor === "red" ? "#ef4444" : "#6b7280");
-                const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-                const barColor = pct > 85 ? "#ef4444" : (pct > 60 ? "#f59e0b" : "#22c55e");
-                const showVless = link.show_vless !== false && !!link.vless;
+                row.innerHTML = `
 
-                row.style.cursor = "pointer";
-                row.onclick = function(e) {
-                    if (e.target.closest("button")) return;
-                    openConfigModal(link);
-                };
+<td>
 
-                var rowHtml = "";
-                rowHtml += "<td style='text-align:center'><span style='display:inline-block;width:12px;height:12px;border-radius:50%;background:" + statusDot + ";box-shadow:0 0 8px " + statusDot + "55'></span></td>";
-                rowHtml += "<td><div style='font-weight:700'>" + escapeHtml(link.label) + "</div><div style='margin-top:3px;color:rgba(255,255,255,.25);font-size:8px'>" + escapeHtml(link.uuid) + "</div></td>";
-                rowHtml += "<td>" + escapeHtml(link.protocol || "") + "</td>";
-                rowHtml += "<td><span class='badge " + (link.active ? "active" : "off") + "'>" + (link.active ? "فعال" : "غیرفعال") + "</span>";
-                if (link.alarm_enabled) rowHtml += " <span style='margin-right:4px;font-size:9px;color:#a78bfa'>🔔</span>";
-                rowHtml += "</td>";
-                rowHtml += "<td><div style='font-size:9px;margin-bottom:3px'>" + usageText + "</div>";
-                if (limit > 0) {
-                    rowHtml += "<div style='height:6px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden'><div style='height:100%;width:" + pct + "%;background:" + barColor + ";border-radius:99px;transition:width .3s'></div></div>";
-                }
-                rowHtml += "</td>";
-                rowHtml += "<td>" + (link.expires_at ? escapeHtml(link.expires_at) : "∞") + "</td>";
-                rowHtml += "<td>" + (link.connected_ips || 0) + "</td>";
-                rowHtml += "<td>";
-                if (showVless) {
-                    rowHtml += "<div class='url-box' title='" + escapeHtml(link.vless) + "'>" + escapeHtml(link.vless) + "</div>";
-                } else {
-                    rowHtml += "<span style='color:#a78bfa;font-size:9px'>فقط ساب (چند IP تمیز)</span>";
-                }
-                rowHtml += "</td>";
-                rowHtml += "<td><div class='actions'>";
-                if (showVless) rowHtml += "<button class='action primary' type='button' data-action='copy-vless'>VLESS</button> ";
-                rowHtml += "<button class='action' type='button' data-action='copy-sub'>SUB</button> ";
-                rowHtml += "<button class='action' type='button' data-action='open-info'>INFO</button> ";
-                rowHtml += "<button class='action' type='button' data-action='open-modal'>جزئیات</button>";
-                rowHtml += "</div></td>";
-                row.innerHTML = rowHtml;
+<div style="font-weight:700">
+${escapeHtml(
+    link.label
+)}
+</div>
+
+<div
+style="
+margin-top:3px;
+color:rgba(255,255,255,.25);
+font-size:8px;
+"
+>
+${escapeHtml(
+    link.uuid
+)}
+</div>
+
+</td>
+
+
+<td>
+${escapeHtml(
+    link.protocol
+)}
+</td>
+
+
+<td>
+<span style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:6px;vertical-align:middle;background:${(link.status_color==='green')?'#22c55e':((link.status_color==='red')?'#ef4444':'#6b7280')}"></span>
+<span class="badge ${link.active ? 'active' : 'off'}">${link.active ? 'فعال' : 'غیرفعال'}</span>
+${link.alarm_enabled ? '<span style="font-size:9px;color:#a78bfa">🔔</span>' : ''}
+</td>
+
+
+<td>
+${usageText}
+</td>
+
+
+<td>
+${
+    link.expires_at
+    ? escapeHtml(
+        link.expires_at
+      )
+    : "∞"
+}
+</td>
+
+
+<td>
+${link.connected_ips || 0}
+</td>
+
+
+<td>
+
+<div
+class="url-box"
+title="${escapeHtml(link.vless)}"
+>
+${escapeHtml(link.vless)}
+</div>
+
+</td>
+
+
+<td>
+
+<div class="actions">
+
+<button
+class="action primary"
+type="button"
+data-action="copy-vless"
+>
+VLESS
+</button>
+
+<button
+class="action"
+type="button"
+data-action="copy-sub"
+>
+SUB
+</button>
+
+<button
+class="action"
+type="button"
+data-action="open-info"
+>
+INFO
+</button>
+
+<button
+class="action"
+type="button"
+data-action="toggle"
+>
+${
+    link.active
+    ? "خاموش"
+    : "فعال"
+}
+</button>
+
+<button
+class="action"
+type="button"
+data-action="reset"
+>
+ریست
+</button>
+
+<button
+class="action danger"
+type="button"
+data-action="delete"
+>
+حذف
+</button>
+
+</div>
+
+</td>
+
+`;
 
                 const actionButtons =
                     row.querySelectorAll(
@@ -8041,11 +8113,6 @@ async function refresh(){
                                         "_blank",
                                         "noopener,noreferrer"
                                     );
-                                    return;
-                                }
-
-                                if (action === "open-modal") {
-                                    openConfigModal(link);
                                     return;
                                 }
 
@@ -8375,10 +8442,10 @@ async function createManual(){
                 .value,
 
         clean_ips:
-            (document.getElementById("manualCleanIps")?.value || "").trim(),
+            (document.getElementById("manualCleanIps") ? document.getElementById("manualCleanIps").value : "").trim(),
 
         alarm_enabled:
-            !!(document.getElementById("manualAlarm")?.checked)
+            !!(document.getElementById("manualAlarm") && document.getElementById("manualAlarm").checked)
 
     };
 
@@ -8604,115 +8671,12 @@ async function changePassword(){
 }
 
 
-
-let currentCfg = null;
-
-function openConfigModal(link) {
-  currentCfg = link;
-  document.getElementById("cfgModalTitle").textContent = link.label || "کانفیگ";
-  var used = Number(link.used_bytes || 0);
-  var limit = Number(link.limit_bytes || 0);
-  var pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-  var barColor = pct > 85 ? "#ef4444" : (pct > 60 ? "#f59e0b" : "#22c55e");
-  var statusColor = link.status_color || "gray";
-  var statusLabel = statusColor === "green" ? "متصل" : (statusColor === "red" ? "منقضی / غیرفعال" : "آفلاین");
-  var statusHex = statusColor === "green" ? "#22c55e" : (statusColor === "red" ? "#ef4444" : "#6b7280");
-
-  var cleanHtml = "";
-  if (link.clean_ips && link.clean_ips.length) {
-    cleanHtml = "<div style='margin-top:10px'><b>IP تمیز:</b> ";
-    for (var i = 0; i < link.clean_ips.length; i++) {
-      cleanHtml += "<code style='direction:ltr;margin-left:6px'>" + escapeHtml(link.clean_ips[i]) + "</code>";
-    }
-    cleanHtml += "</div>";
-  }
-
-  var body = "";
-  body += "<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px'>";
-  body += "<div style='padding:12px;border-radius:12px;background:rgba(255,255,255,.04)'><div style='color:rgba(255,255,255,.4);font-size:10px'>وضعیت</div><div style='font-weight:800;margin-top:4px'><span style='display:inline-block;width:10px;height:10px;border-radius:50%;background:" + statusHex + ";margin-left:6px'></span>" + statusLabel + "</div></div>";
-  body += "<div style='padding:12px;border-radius:12px;background:rgba(255,255,255,.04)'><div style='color:rgba(255,255,255,.4);font-size:10px'>پروتکل</div><div style='font-weight:800;margin-top:4px'>" + escapeHtml(link.protocol || "") + "</div></div>";
-  body += "<div style='padding:12px;border-radius:12px;background:rgba(255,255,255,.04)'><div style='color:rgba(255,255,255,.4);font-size:10px'>مصرف</div><div style='font-weight:800;margin-top:4px'>" + formatBytes(used) + " / " + (limit > 0 ? formatBytes(limit) : "∞") + "</div>";
-  if (limit > 0) {
-    body += "<div style='height:8px;margin-top:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden'><div style='height:100%;width:" + pct + "%;background:" + barColor + ";border-radius:99px'></div></div><div style='font-size:10px;margin-top:4px;color:rgba(255,255,255,.5)'>" + pct + "%</div>";
-  }
-  body += "</div>";
-  body += "<div style='padding:12px;border-radius:12px;background:rgba(255,255,255,.04)'><div style='color:rgba(255,255,255,.4);font-size:10px'>انقضا</div><div style='font-weight:800;margin-top:4px'>" + (link.expires_at ? escapeHtml(link.expires_at) : "نامحدود") + "</div></div>";
-  body += "</div>";
-  body += "<div style='padding:12px;border-radius:12px;background:rgba(255,255,255,.03);margin-bottom:10px'>";
-  body += "<div><b>UUID:</b> <code style='direction:ltr'>" + escapeHtml(link.uuid) + "</code></div>";
-  body += "<div style='margin-top:6px'><b>اتصالات فعال:</b> " + (link.connected_ips || 0) + "</div>";
-  body += "<div style='margin-top:6px'><b>آلارم:</b> " + (link.alarm_enabled ? "فعال 🔔" : "خاموش") + "</div>";
-  body += cleanHtml;
-  if (link.note) body += "<div style='margin-top:8px;color:rgba(255,255,255,.5)'>" + escapeHtml(link.note) + "</div>";
-  body += "</div>";
-  body += "<div style='display:flex;gap:8px;flex-wrap:wrap'>";
-  if (link.vless) body += "<button class='action primary' type='button' onclick='copyText(currentCfg.vless)'>کپی VLESS</button>";
-  body += "<button class='action' type='button' onclick='copyText(currentCfg.sub)'>کپی SUB</button>";
-  body += "<button class='action' type='button' onclick='window.open(currentCfg.info,"_blank")'>صفحه INFO</button>";
-  body += "</div>";
-
-  document.getElementById("cfgModalBody").innerHTML = body;
-  document.getElementById("configModal").classList.add("open");
-}
-
-function closeConfigModal() {
-  document.getElementById("configModal").classList.remove("open");
-  currentCfg = null;
-}
-
-async function cfgToggle() {
-  if (!currentCfg) return;
-  await toggleLink(currentCfg.uuid, !currentCfg.active);
-  closeConfigModal();
-}
-
-function cfgResetAsk() {
-  document.getElementById("resetAskModal").classList.add("open");
-}
-
-async function cfgReset(kind) {
-  document.getElementById("resetAskModal").classList.remove("open");
-  if (!currentCfg) return;
-  if (kind === "volume" || kind === "both") {
-    await resetUsage(currentCfg.uuid);
-  }
-  if (kind === "time" || kind === "both") {
-    await api("/api/links/" + encodeURIComponent(currentCfg.uuid), {
-      method: "PATCH",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({expires_days: 0})
-    });
-  }
-  showToast("ریست انجام شد");
-  closeConfigModal();
-  await refresh();
-}
-
-async function cfgDelete() {
-  if (!currentCfg) return;
-  await deleteLink(currentCfg.uuid);
-  closeConfigModal();
-}
-
-function openCleanIpQuick() {
-  openManualModal();
-  setTimeout(() => {
-    const el = document.getElementById("manualCleanIps");
-    if (el) { el.focus(); el.scrollIntoView({behavior:"smooth",block:"center"}); }
-  }, 200);
-}
-
-// Handle data-action open-modal
-document.addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-action='open-modal']");
-  if (btn) {
-    // find the link data from the row – we already set current via openConfigModal
-  }
-});
-
 refresh();
-setInterval(refresh, 4000);
 
+setInterval(
+    refresh,
+    1000
+);
 
 </script>
 
