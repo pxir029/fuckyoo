@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import secrets
+import string
 import time
 
 from collections import defaultdict, deque
@@ -373,6 +374,18 @@ def generate_uuid():
         f"{value[16:20]}-"
         f"{value[20:32]}"
     )
+
+
+
+def random_config_name(existing: set | None = None) -> str:
+    """Generate unique random config name that never collides."""
+    existing = existing or set()
+    alphabet = string.ascii_lowercase + string.digits
+    for _ in range(50):
+        name = "px_" + "".join(secrets.choice(alphabet) for _ in range(10))
+        if name not in existing:
+            return name
+    return "px_" + secrets.token_hex(6)
 
 
 def auto_config_name() -> str:
@@ -929,6 +942,13 @@ def generate_vless_link(
     if protocol == "hysteria2": return f"hysteria2://{uuid}@{host}:{port_value}/?sni={quote(host)}&insecure=0#{label}"
     if protocol == "tuic": return f"tuic://{uuid}:{uuid}@{host}:{port_value}?sni={quote(host)}&alpn=h3#{label}"
     if protocol == "wireguard": return f"wireguard://{uuid}@{host}:{port_value}?publicKey={uuid}#{label}"
+    if protocol == "highspeed-demo":
+        # Demo high-speed protocol (uses XHTTP stream under the hood for higher throughput)
+        q = {"encryption":"none","security":"tls","type":"xhttp","mode":"stream-up","host":host,"path":f"/xhttp-siz10/stream-up/{uuid}","sni":host,"fp":fp,"alpn":"h2,http/1.1"}
+        return "vless://" + uuid + "@" + host + ":" + str(port_value) + "?" + "&".join(f"{k}={quote(str(v), safe=',/') }" for k,v in q.items()) + "#" + label
+    if protocol == "gaming-lite-demo":
+        # Demo lightweight gaming protocol (UDP oriented, lower overhead)
+        return f"hysteria2://{uuid}@{host}:{port_value}/?sni={quote(host)}&insecure=0&obfs=salamander#{label}"
     return f"vless://{uuid}@{host}:{port_value}"
 
 def vless_link_for_link(
@@ -966,92 +986,47 @@ def get_link_info(
     uid: str,
     host: str,
 ):
+    connected_count = len(unique_ips_for_uuid(uid))
+    is_active = is_link_allowed(link)
+    is_expired = is_link_expired(link) or (
+        int(link.get("limit_bytes", 0) or 0) > 0
+        and int(link.get("used_bytes", 0) or 0) >= int(link.get("limit_bytes", 0) or 0)
+    )
+    if not is_active or is_expired:
+        status_color = "red"
+    elif connected_count > 0:
+        status_color = "green"
+    else:
+        status_color = "gray"
+
+    clean_ips = link.get("clean_ips") or []
+    show_vless = len(clean_ips) <= 1
+
     return {
         "uuid": uid,
-        "name": link.get(
-            "label",
-            "",
-        ),
-        "label": link.get(
-            "label",
-            "",
-        ),
-        "protocol": link.get(
-            "protocol",
-            DEFAULT_PROTOCOL,
-        ),
-        "active": is_link_allowed(link),
-        "used_bytes": int(
-            link.get(
-                "used_bytes",
-                0,
-            )
-            or 0
-        ),
-        "limit_bytes": int(
-            link.get(
-                "limit_bytes",
-                0,
-            )
-            or 0
-        ),
-        "expires_at": link.get(
-            "expires_at"
-        ),
-        "ip_limit": int(
-            link.get(
-                "ip_limit",
-                0,
-            )
-            or 0
-        ),
-        "speed_limit_bytes": int(
-            link.get(
-                "speed_limit_bytes",
-                0,
-            )
-            or 0
-        ),
-        "connection_limit": int(
-            link.get(
-                "connection_limit",
-                0,
-            )
-            or 0
-        ),
-        "fragment": link.get(
-            "fragment",
-            "off",
-        ),
-        "fingerprint": link.get(
-            "fingerprint",
-            DEFAULT_FINGERPRINT,
-        ),
-        "alpn": link.get(
-            "alpn",
-            "",
-        ),
-        "port": link.get(
-            "port",
-            DEFAULT_PORT,
-        ),
-        "note": link.get(
-            "note",
-            "",
-        ),
-        "vless": vless_link_for_link(
-            link,
-            uid,
-            host,
-        ),
-        "sub": (
-            f"https://{host}"
-            f"/sub/{uid}"
-        ),
-        "info": (
-            f"https://{host}"
-            f"/info/{uid}"
-        ),
+        "name": link.get("label", ""),
+        "label": link.get("label", ""),
+        "protocol": link.get("protocol", DEFAULT_PROTOCOL),
+        "active": is_active,
+        "used_bytes": int(link.get("used_bytes", 0) or 0),
+        "limit_bytes": int(link.get("limit_bytes", 0) or 0),
+        "expires_at": link.get("expires_at"),
+        "ip_limit": int(link.get("ip_limit", 0) or 0),
+        "speed_limit_bytes": int(link.get("speed_limit_bytes", 0) or 0),
+        "connection_limit": int(link.get("connection_limit", 0) or 0),
+        "fragment": link.get("fragment", "off"),
+        "fingerprint": link.get("fingerprint", DEFAULT_FINGERPRINT),
+        "alpn": link.get("alpn", ""),
+        "port": link.get("port", DEFAULT_PORT),
+        "note": link.get("note", ""),
+        "clean_ips": clean_ips,
+        "alarm_enabled": bool(link.get("alarm_enabled", False)),
+        "status_color": status_color,
+        "connected_ips": connected_count,
+        "show_vless": show_vless,
+        "vless": vless_link_for_link(link, uid, host) if show_vless else "",
+        "sub": f"https://{host}/sub/{uid}",
+        "info": f"https://{host}/info/{uid}",
         "support": SUPPORT_USERNAME,
     }
 
@@ -1341,6 +1316,8 @@ async def make_link(
     speed_limit_bytes: int = 0,
     connection_limit: int = 0,
     fragment: str = "off",
+    clean_ips: list | None = None,
+    alarm_enabled: bool = False,
 ):
 
     protocol = normalize_protocol(protocol)
@@ -1441,6 +1418,9 @@ async def make_link(
         "security_profile": "balanced",
         "multi_login": False,
         "protocol_label": PROTOCOL_LABELS.get(protocol, protocol),
+        "clean_ips": list(clean_ips or []),
+        "alarm_enabled": bool(alarm_enabled),
+        "usage_history": [],
     }
 
     async with LINKS_LOCK:
@@ -3018,6 +2998,15 @@ async def create_link_api(
     if fragment not in allowed_fragments:
         fragment = "off"
 
+    # Clean IPs support
+    raw_clean = body.get("clean_ips") or body.get("clean_ip") or ""
+    if isinstance(raw_clean, list):
+        clean_ips = [str(x).strip() for x in raw_clean if str(x).strip()]
+    else:
+        clean_ips = [x.strip() for x in str(raw_clean).replace(",", "\n").splitlines() if x.strip()]
+
+    alarm_enabled = bool(body.get("alarm_enabled", False))
+
     uid, link = await make_link(
         label=body.get(
             "label",
@@ -3046,6 +3035,8 @@ async def create_link_api(
         speed_limit_bytes=speed_bytes,
         connection_limit=connection_limit,
         fragment=fragment,
+        clean_ips=clean_ips,
+        alarm_enabled=alarm_enabled,
     )
 
     host = get_host(request)
@@ -3728,20 +3719,34 @@ async def subscription_single(
         )
 
     host = get_host(request)
+    clean_ips = link.get("clean_ips") or []
 
-    vless = vless_link_for_link(
-        link,
-        uuid,
-        host,
-    )
+    lines = []
+    used_names = set()
 
-    content = (
-        base64
-        .b64encode(
-            vless.encode()
-        )
-        .decode()
-    )
+    if clean_ips and len(clean_ips) > 0:
+        # One config per clean IP with unique random names
+        for idx, cip in enumerate(clean_ips):
+            name = random_config_name(used_names)
+            used_names.add(name)
+            # Temporarily override host for link generation
+            temp_link = dict(link)
+            vless = generate_vless_link(
+                uuid,
+                cip,  # use clean IP as host
+                remark=name,
+                protocol=link.get("protocol", DEFAULT_PROTOCOL),
+                fingerprint=link.get("fingerprint", DEFAULT_FINGERPRINT),
+                alpn=link.get("alpn"),
+                port=link.get("port", DEFAULT_PORT),
+            )
+            lines.append(vless)
+    else:
+        # Normal single config
+        vless = vless_link_for_link(link, uuid, host)
+        lines.append(vless)
+
+    content = base64.b64encode("\n".join(lines).encode()).decode()
 
     used = int(link.get("used_bytes", 0) or 0)
     limit = int(link.get("limit_bytes", 0) or 0)
@@ -6599,6 +6604,14 @@ onclick="openManualModal()"
 
 <button
 class="top-btn"
+style="background:linear-gradient(135deg,#7c3aed,#a855f7);border:none;color:#fff;font-weight:800"
+onclick="openCleanIpQuick()"
+><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="15" height="15"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/></svg>
+IP تمیز سریع
+</button>
+
+<button
+class="top-btn"
 onclick="openPasswordModal()"
 ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
 تغییر رمز
@@ -6729,37 +6742,15 @@ onclick="refresh()"
 
 <tr>
 
-<th>
-نـام
-</th>
-
-<th>
-پروتـکل
-</th>
-
-<th>
-وضعیـت
-</th>
-
-<th>
-مصـرف
-</th>
-
-<th>
-زمـان
-</th>
-
-<th>
-اتصـال
-</th>
-
-<th>
-VLESS
-</th>
-
-<th>
-عملیـات
-</th>
+<th style="width:28px"></th>
+<th>نـام</th>
+<th>پروتـکل</th>
+<th>وضعیـت</th>
+<th style="min-width:140px">مصـرف</th>
+<th>زمـان</th>
+<th>اتصـال</th>
+<th>VLESS / SUB</th>
+<th>عملیـات</th>
 
 </tr>
 
@@ -7004,6 +6995,8 @@ placeholder="اسم کانفیگ"
     <option value="http" style="background-color: #1f2937; color: #ffffff;">HTTP Proxy</option>
     <option value="hysteria2" style="background-color: #1f2937; color: #ffffff;">Hysteria 2</option>
     <option value="tuic" style="background-color: #1f2937; color: #ffffff;">TUIC</option>
+    <option value="highspeed-demo" style="background-color: #1f2937; color: #a78bfa;">HighSpeed Upload/Download (دمو)</option>
+    <option value="gaming-lite-demo" style="background-color: #1f2937; color: #a78bfa;">Gaming Lite (دمو)</option>
   </select>
 </div>
 
@@ -7172,6 +7165,18 @@ value="http/1.1"
 
 
 <div class="field full">
+<label>IP تمیز (هر خط یا با کاما — بیش از ۱ عدد فقط ساب نمایش داده می‌شود)</label>
+<textarea id="manualCleanIps" placeholder="مثال:&#10;1.2.3.4&#10;5.6.7.8&#10;یا 1.2.3.4, 5.6.7.8" style="min-height:80px;direction:ltr;text-align:left"></textarea>
+</div>
+
+<div class="field">
+<label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+<input type="checkbox" id="manualAlarm" style="width:16px;height:16px">
+آلارم انقضا / حجم فعال باشد
+</label>
+</div>
+
+<div class="field full">
 
 <label>
 یادداشــت
@@ -7270,6 +7275,8 @@ class="modal-backdrop"
   <option value="http" style="background-color: #1f2937; color: #ffffff;">HTTP Proxy</option>
   <option value="hysteria2" style="background-color: #1f2937; color: #ffffff;">Hysteria 2</option>
   <option value="tuic" style="background-color: #1f2937; color: #ffffff;">TUIC</option>
+  <option value="highspeed-demo" style="background-color: #1f2937; color: #a78bfa;">HighSpeed Upload/Download (دمو)</option>
+  <option value="gaming-lite-demo" style="background-color: #1f2937; color: #a78bfa;">Gaming Lite (دمو)</option>
 </select>
 
 </div>
@@ -7578,10 +7585,38 @@ onclick="changePassword()"
 </div>
 <!-- LOGIN NOTICE END -->
 
-<div
-id="toast"
-class="toast"
-></div>
+
+<!-- PROFESSIONAL CONFIG MODAL -->
+<div id="configModal" class="modal-backdrop">
+  <div class="modal" style="max-width:820px">
+    <div class="modal-head">
+      <div class="modal-title" id="cfgModalTitle">جزئیات کانفیگ</div>
+      <button class="close" onclick="closeConfigModal()">×</button>
+    </div>
+    <div id="cfgModalBody" style="font-size:12px;line-height:1.9"></div>
+    <div class="modal-actions" style="margin-top:18px;flex-wrap:wrap">
+      <button class="modal-btn secondary" onclick="cfgToggle()">فعال / غیرفعال</button>
+      <button class="modal-btn secondary" onclick="cfgResetAsk()">ریست</button>
+      <button class="modal-btn secondary" style="background:rgba(239,68,68,.15);color:#fca5a5" onclick="cfgDelete()">حذف</button>
+      <button class="modal-btn primary" onclick="closeConfigModal()">بستن</button>
+    </div>
+  </div>
+</div>
+
+<div id="resetAskModal" class="modal-backdrop">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-head"><div class="modal-title">نوع ریست</div><button class="close" onclick="document.getElementById('resetAskModal').classList.remove('open')">×</button></div>
+    <p style="color:rgba(255,255,255,.6);font-size:12px;margin:12px 0">کدام مورد ریست شود؟</p>
+    <div class="modal-actions">
+      <button class="modal-btn secondary" onclick="cfgReset('volume')">فقط حجم</button>
+      <button class="modal-btn secondary" onclick="cfgReset('time')">فقط تایم</button>
+      <button class="modal-btn primary" onclick="cfgReset('both')">هر دو</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
 
 
 <script>
@@ -7929,153 +7964,50 @@ async function refresh(){
                 }
 
 
+                const statusColor = link.status_color || (link.active ? (link.connected_ips > 0 ? "green" : "gray") : "red");
+                const statusDot = statusColor === "green" ? "#22c55e" : (statusColor === "red" ? "#ef4444" : "#6b7280");
+                const limit = Number(link.limit_bytes || 0);
+                const used = Number(link.used_bytes || 0);
+                const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+                const barColor = pct > 85 ? "#ef4444" : (pct > 60 ? "#f59e0b" : "#22c55e");
+                const showVless = link.show_vless !== false && link.vless;
+
+                row.style.cursor = "pointer";
+                row.onclick = (e) => {
+                    if (e.target.closest("button")) return;
+                    openConfigModal(link);
+                };
+
                 row.innerHTML = `
-
-<td>
-
-<div style="font-weight:700">
-${escapeHtml(
-    link.label
-)}
-</div>
-
-<div
-style="
-margin-top:3px;
-color:rgba(255,255,255,.25);
-font-size:8px;
-"
->
-${escapeHtml(
-    link.uuid
-)}
-</div>
-
+<td style="text-align:center">
+  <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${statusDot};box-shadow:0 0 8px ${statusDot}55"></span>
 </td>
-
-
 <td>
-${escapeHtml(
-    link.protocol
-)}
+  <div style="font-weight:700">${escapeHtml(link.label)}</div>
+  <div style="margin-top:3px;color:rgba(255,255,255,.25);font-size:8px">${escapeHtml(link.uuid)}</div>
 </td>
-
-
+<td>${escapeHtml(link.protocol || "")}</td>
 <td>
-
-<span class="
-    badge
-    ${
-        link.active
-        ? "active"
-        : "off"
-    }
-">
-
-${
-    link.active
-    ? "فعال"
-    : "غیرفعال"
-}
-
-</span>
-
+  <span class="badge ${link.active ? "active" : "off"}">${link.active ? "فعال" : "غیرفعال"}</span>
+  ${link.alarm_enabled ? '<span style="margin-right:4px;font-size:9px;color:#a78bfa">🔔</span>' : ''}
 </td>
-
-
 <td>
-${usageText}
+  <div style="font-size:9px;margin-bottom:3px">${usageText}</div>
+  ${limit > 0 ? `<div style="height:6px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barColor};border-radius:99px;transition:width .3s"></div></div>` : ''}
 </td>
-
-
+<td>${link.expires_at ? escapeHtml(link.expires_at) : "∞"}</td>
+<td>${link.connected_ips || 0}</td>
 <td>
-${
-    link.expires_at
-    ? escapeHtml(
-        link.expires_at
-      )
-    : "∞"
-}
+  ${showVless ? `<div class="url-box" title="${escapeHtml(link.vless)}">${escapeHtml(link.vless)}</div>` : '<span style="color:#a78bfa;font-size:9px">فقط ساب (چند IP تمیز)</span>'}
 </td>
-
-
 <td>
-${link.connected_ips || 0}
-</td>
-
-
-<td>
-
-<div
-class="url-box"
-title="${escapeHtml(link.vless)}"
->
-${escapeHtml(link.vless)}
-</div>
-
-</td>
-
-
-<td>
-
 <div class="actions">
-
-<button
-class="action primary"
-type="button"
-data-action="copy-vless"
->
-VLESS
-</button>
-
-<button
-class="action"
-type="button"
-data-action="copy-sub"
->
-SUB
-</button>
-
-<button
-class="action"
-type="button"
-data-action="open-info"
->
-INFO
-</button>
-
-<button
-class="action"
-type="button"
-data-action="toggle"
->
-${
-    link.active
-    ? "خاموش"
-    : "فعال"
-}
-</button>
-
-<button
-class="action"
-type="button"
-data-action="reset"
->
-ریست
-</button>
-
-<button
-class="action danger"
-type="button"
-data-action="delete"
->
-حذف
-</button>
-
+  ${showVless ? `<button class="action primary" type="button" data-action="copy-vless">VLESS</button>` : ''}
+  <button class="action" type="button" data-action="copy-sub">SUB</button>
+  <button class="action" type="button" data-action="open-info">INFO</button>
+  <button class="action" type="button" data-action="open-modal">جزئیات</button>
 </div>
-
 </td>
-
 `;
 
                 const actionButtons =
@@ -8111,6 +8043,11 @@ data-action="delete"
                                         "_blank",
                                         "noopener,noreferrer"
                                     );
+                                    return;
+                                }
+
+                                if (action === "open-modal") {
+                                    openConfigModal(link);
                                     return;
                                 }
 
@@ -8437,7 +8374,13 @@ async function createManual(){
                 .getElementById(
                     "manualNote"
                 )
-                .value
+                .value,
+
+        clean_ips:
+            (document.getElementById("manualCleanIps")?.value || "").trim(),
+
+        alarm_enabled:
+            !!(document.getElementById("manualAlarm")?.checked)
 
     };
 
@@ -8663,12 +8606,118 @@ async function changePassword(){
 }
 
 
-refresh();
 
-setInterval(
-    refresh,
-    1000
-);
+let currentCfg = null;
+
+function openConfigModal(link) {
+  currentCfg = link;
+  document.getElementById("cfgModalTitle").textContent = link.label || "کانفیگ";
+  const used = Number(link.used_bytes || 0);
+  const limit = Number(link.limit_bytes || 0);
+  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const barColor = pct > 85 ? "#ef4444" : (pct > 60 ? "#f59e0b" : "#22c55e");
+  const statusColor = link.status_color || "gray";
+  const statusLabel = statusColor === "green" ? "متصل" : (statusColor === "red" ? "منقضی / غیرفعال" : "آفلاین");
+
+  let cleanHtml = "";
+  if (link.clean_ips && link.clean_ips.length) {
+    cleanHtml = `<div style="margin-top:10px"><b>IP تمیز:</b> ${link.clean_ips.map(ip => `<code style="direction:ltr;margin-left:6px">${escapeHtml(ip)}</code>`).join("")}</div>`;
+  }
+
+  document.getElementById("cfgModalBody").innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,.04)">
+        <div style="color:rgba(255,255,255,.4);font-size:10px">وضعیت</div>
+        <div style="font-weight:800;margin-top:4px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${statusColor==='green'?'#22c55e':(statusColor==='red'?'#ef4444':'#6b7280')};margin-left:6px"></span>${statusLabel}</div>
+      </div>
+      <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,.04)">
+        <div style="color:rgba(255,255,255,.4);font-size:10px">پروتکل</div>
+        <div style="font-weight:800;margin-top:4px">${escapeHtml(link.protocol || "")}</div>
+      </div>
+      <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,.04)">
+        <div style="color:rgba(255,255,255,.4);font-size:10px">مصرف</div>
+        <div style="font-weight:800;margin-top:4px">${formatBytes(used)} / ${limit > 0 ? formatBytes(limit) : "∞"}</div>
+        ${limit > 0 ? `<div style="height:8px;margin-top:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barColor};border-radius:99px"></div></div><div style="font-size:10px;margin-top:4px;color:rgba(255,255,255,.5)">${pct}%</div>` : ""}
+      </div>
+      <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,.04)">
+        <div style="color:rgba(255,255,255,.4);font-size:10px">انقضا</div>
+        <div style="font-weight:800;margin-top:4px">${link.expires_at ? escapeHtml(link.expires_at) : "نامحدود"}</div>
+      </div>
+    </div>
+    <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,.03);margin-bottom:10px">
+      <div><b>UUID:</b> <code style="direction:ltr">${escapeHtml(link.uuid)}</code></div>
+      <div style="margin-top:6px"><b>اتصالات فعال:</b> ${link.connected_ips || 0}</div>
+      <div style="margin-top:6px"><b>آلارم:</b> ${link.alarm_enabled ? "فعال 🔔" : "خاموش"}</div>
+      ${cleanHtml}
+      ${link.note ? `<div style="margin-top:8px;color:rgba(255,255,255,.5)">${escapeHtml(link.note)}</div>` : ""}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${link.vless ? `<button class="action primary" onclick="copyText('${link.vless.replace(/'/g,"\\'")}')">کپی VLESS</button>` : ""}
+      <button class="action" onclick="copyText('${link.sub}')">کپی SUB</button>
+      <button class="action" onclick="window.open('${link.info}','_blank')">صفحه INFO</button>
+    </div>
+  `;
+  document.getElementById("configModal").classList.add("open");
+}
+
+function closeConfigModal() {
+  document.getElementById("configModal").classList.remove("open");
+  currentCfg = null;
+}
+
+async function cfgToggle() {
+  if (!currentCfg) return;
+  await toggleLink(currentCfg.uuid, !currentCfg.active);
+  closeConfigModal();
+}
+
+function cfgResetAsk() {
+  document.getElementById("resetAskModal").classList.add("open");
+}
+
+async function cfgReset(kind) {
+  document.getElementById("resetAskModal").classList.remove("open");
+  if (!currentCfg) return;
+  if (kind === "volume" || kind === "both") {
+    await resetUsage(currentCfg.uuid);
+  }
+  if (kind === "time" || kind === "both") {
+    await api("/api/links/" + encodeURIComponent(currentCfg.uuid), {
+      method: "PATCH",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({expires_days: 0})
+    });
+  }
+  showToast("ریست انجام شد");
+  closeConfigModal();
+  await refresh();
+}
+
+async function cfgDelete() {
+  if (!currentCfg) return;
+  await deleteLink(currentCfg.uuid);
+  closeConfigModal();
+}
+
+function openCleanIpQuick() {
+  openManualModal();
+  setTimeout(() => {
+    const el = document.getElementById("manualCleanIps");
+    if (el) { el.focus(); el.scrollIntoView({behavior:"smooth",block:"center"}); }
+  }, 200);
+}
+
+// Handle data-action open-modal
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-action='open-modal']");
+  if (btn) {
+    // find the link data from the row – we already set current via openConfigModal
+  }
+});
+
+refresh();
+setInterval(refresh, 4000);
+
 
 </script>
 
