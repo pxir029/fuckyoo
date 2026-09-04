@@ -1,5 +1,5 @@
 # ============================================================
-# PXPanel 13.2.0
+# PXPanel 13.2.1
 # Railway Ready
 # ============================================================
 
@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.2.0"
+APP_VERSION = "13.2.1"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -2053,7 +2053,7 @@ PX Panel
 </div>
 
 <div class="version">
-13.2.0
+13.2.1
 </div>
 </div>
 
@@ -2101,7 +2101,7 @@ class="btn secondary"
 <div class="footer">
 
 <span>
-PX Panel · 13.2.0
+PX Panel · 13.2.1
 </span>
 
 <a
@@ -2371,7 +2371,7 @@ P
 </h1>
 
 <div class="version">
-13.2.0
+13.2.1
 </div>
 
 <div class="desc">
@@ -4936,7 +4936,7 @@ PX Panel
 </h1>
 
 <div class="version">
-13.2.0
+13.2.1
 </div>
 
 <div class="text">
@@ -5775,7 +5775,7 @@ content="width=device-width,initial-scale=1"
 />
 
 <title>
-PX Panel 13.2.0
+PX Panel 13.2.1
 </title>
 
 <link
@@ -6582,7 +6582,7 @@ PX Panel
 </div>
 
 <div class="brand-version">
-13.2.0
+13.2.1
 </div>
 
 </div>
@@ -7974,42 +7974,39 @@ async function refresh(){
                 const showVless = link.show_vless !== false && !!link.vless;
 
                 row.style.cursor = "pointer";
-                row.onclick = (e) => {
+                row.onclick = function(e) {
                     if (e.target.closest("button")) return;
                     openConfigModal(link);
                 };
 
-                row.innerHTML = `
-<td style="text-align:center">
-  <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${statusDot};box-shadow:0 0 8px ${statusDot}55"></span>
-</td>
-<td>
-  <div style="font-weight:700">${escapeHtml(link.label)}</div>
-  <div style="margin-top:3px;color:rgba(255,255,255,.25);font-size:8px">${escapeHtml(link.uuid)}</div>
-</td>
-<td>${escapeHtml(link.protocol || "")}</td>
-<td>
-  <span class="badge ${link.active ? "active" : "off"}">${link.active ? "فعال" : "غیرفعال"}</span>
-  ${link.alarm_enabled ? '<span style="margin-right:4px;font-size:9px;color:#a78bfa">🔔</span>' : ''}
-</td>
-<td>
-  <div style="font-size:9px;margin-bottom:3px">${usageText}</div>
-  ${limit > 0 ? `<div style="height:6px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${barColor};border-radius:99px;transition:width .3s"></div></div>` : ''}
-</td>
-<td>${link.expires_at ? escapeHtml(link.expires_at) : "∞"}</td>
-<td>${link.connected_ips || 0}</td>
-<td>
-  ${showVless ? `<div class="url-box" title="${escapeHtml(link.vless)}">${escapeHtml(link.vless)}</div>` : '<span style="color:#a78bfa;font-size:9px">فقط ساب (چند IP تمیز)</span>'}
-</td>
-<td>
-<div class="actions">
-  ${showVless ? `<button class="action primary" type="button" data-action="copy-vless">VLESS</button>` : ''}
-  <button class="action" type="button" data-action="copy-sub">SUB</button>
-  <button class="action" type="button" data-action="open-info">INFO</button>
-  <button class="action" type="button" data-action="open-modal">جزئیات</button>
-</div>
-</td>
-`;
+                var rowHtml = "";
+                rowHtml += "<td style='text-align:center'><span style='display:inline-block;width:12px;height:12px;border-radius:50%;background:" + statusDot + ";box-shadow:0 0 8px " + statusDot + "55'></span></td>";
+                rowHtml += "<td><div style='font-weight:700'>" + escapeHtml(link.label) + "</div><div style='margin-top:3px;color:rgba(255,255,255,.25);font-size:8px'>" + escapeHtml(link.uuid) + "</div></td>";
+                rowHtml += "<td>" + escapeHtml(link.protocol || "") + "</td>";
+                rowHtml += "<td><span class='badge " + (link.active ? "active" : "off") + "'>" + (link.active ? "فعال" : "غیرفعال") + "</span>";
+                if (link.alarm_enabled) rowHtml += " <span style='margin-right:4px;font-size:9px;color:#a78bfa'>🔔</span>";
+                rowHtml += "</td>";
+                rowHtml += "<td><div style='font-size:9px;margin-bottom:3px'>" + usageText + "</div>";
+                if (limit > 0) {
+                    rowHtml += "<div style='height:6px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden'><div style='height:100%;width:" + pct + "%;background:" + barColor + ";border-radius:99px;transition:width .3s'></div></div>";
+                }
+                rowHtml += "</td>";
+                rowHtml += "<td>" + (link.expires_at ? escapeHtml(link.expires_at) : "∞") + "</td>";
+                rowHtml += "<td>" + (link.connected_ips || 0) + "</td>";
+                rowHtml += "<td>";
+                if (showVless) {
+                    rowHtml += "<div class='url-box' title='" + escapeHtml(link.vless) + "'>" + escapeHtml(link.vless) + "</div>";
+                } else {
+                    rowHtml += "<span style='color:#a78bfa;font-size:9px'>فقط ساب (چند IP تمیز)</span>";
+                }
+                rowHtml += "</td>";
+                rowHtml += "<td><div class='actions'>";
+                if (showVless) rowHtml += "<button class='action primary' type='button' data-action='copy-vless'>VLESS</button> ";
+                rowHtml += "<button class='action' type='button' data-action='copy-sub'>SUB</button> ";
+                rowHtml += "<button class='action' type='button' data-action='open-info'>INFO</button> ";
+                rowHtml += "<button class='action' type='button' data-action='open-modal'>جزئیات</button>";
+                rowHtml += "</div></td>";
+                row.innerHTML = rowHtml;
 
                 const actionButtons =
                     row.querySelectorAll(
@@ -8613,41 +8610,45 @@ let currentCfg = null;
 function openConfigModal(link) {
   currentCfg = link;
   document.getElementById("cfgModalTitle").textContent = link.label || "کانفیگ";
-  const used = Number(link.used_bytes || 0);
-  const limit = Number(link.limit_bytes || 0);
-  const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-  const barColor = pct > 85 ? "#ef4444" : (pct > 60 ? "#f59e0b" : "#22c55e");
-  const statusColor = link.status_color || "gray";
-  const statusLabel = statusColor === "green" ? "متصل" : (statusColor === "red" ? "منقضی / غیرفعال" : "آفلاین");
-  const statusHex = statusColor === "green" ? "#22c55e" : (statusColor === "red" ? "#ef4444" : "#6b7280");
+  var used = Number(link.used_bytes || 0);
+  var limit = Number(link.limit_bytes || 0);
+  var pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  var barColor = pct > 85 ? "#ef4444" : (pct > 60 ? "#f59e0b" : "#22c55e");
+  var statusColor = link.status_color || "gray";
+  var statusLabel = statusColor === "green" ? "متصل" : (statusColor === "red" ? "منقضی / غیرفعال" : "آفلاین");
+  var statusHex = statusColor === "green" ? "#22c55e" : (statusColor === "red" ? "#ef4444" : "#6b7280");
 
-  let cleanHtml = "";
+  var cleanHtml = "";
   if (link.clean_ips && link.clean_ips.length) {
-    cleanHtml = "<div style=\\"margin-top:10px\\"><b>IP تمیز:</b> " + link.clean_ips.map(function(ip){ return "<code style=\\"direction:ltr;margin-left:6px\\">" + escapeHtml(ip) + "</code>"; }).join("") + "</div>";
+    cleanHtml = "<div style='margin-top:10px'><b>IP تمیز:</b> ";
+    for (var i = 0; i < link.clean_ips.length; i++) {
+      cleanHtml += "<code style='direction:ltr;margin-left:6px'>" + escapeHtml(link.clean_ips[i]) + "</code>";
+    }
+    cleanHtml += "</div>";
   }
 
   var body = "";
-  body += "<div style=\\"display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px\\">";
-  body += "<div style=\\"padding:12px;border-radius:12px;background:rgba(255,255,255,.04)\\"><div style=\\"color:rgba(255,255,255,.4);font-size:10px\\">وضعیت</div><div style=\\"font-weight:800;margin-top:4px\\"><span style=\\"display:inline-block;width:10px;height:10px;border-radius:50%;background:" + statusHex + ";margin-left:6px\\"></span>" + statusLabel + "</div></div>";
-  body += "<div style=\\"padding:12px;border-radius:12px;background:rgba(255,255,255,.04)\\"><div style=\\"color:rgba(255,255,255,.4);font-size:10px\\">پروتکل</div><div style=\\"font-weight:800;margin-top:4px\\">" + escapeHtml(link.protocol || "") + "</div></div>";
-  body += "<div style=\\"padding:12px;border-radius:12px;background:rgba(255,255,255,.04)\\"><div style=\\"color:rgba(255,255,255,.4);font-size:10px\\">مصرف</div><div style=\\"font-weight:800;margin-top:4px\\">" + formatBytes(used) + " / " + (limit > 0 ? formatBytes(limit) : "∞") + "</div>";
+  body += "<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px'>";
+  body += "<div style='padding:12px;border-radius:12px;background:rgba(255,255,255,.04)'><div style='color:rgba(255,255,255,.4);font-size:10px'>وضعیت</div><div style='font-weight:800;margin-top:4px'><span style='display:inline-block;width:10px;height:10px;border-radius:50%;background:" + statusHex + ";margin-left:6px'></span>" + statusLabel + "</div></div>";
+  body += "<div style='padding:12px;border-radius:12px;background:rgba(255,255,255,.04)'><div style='color:rgba(255,255,255,.4);font-size:10px'>پروتکل</div><div style='font-weight:800;margin-top:4px'>" + escapeHtml(link.protocol || "") + "</div></div>";
+  body += "<div style='padding:12px;border-radius:12px;background:rgba(255,255,255,.04)'><div style='color:rgba(255,255,255,.4);font-size:10px'>مصرف</div><div style='font-weight:800;margin-top:4px'>" + formatBytes(used) + " / " + (limit > 0 ? formatBytes(limit) : "∞") + "</div>";
   if (limit > 0) {
-    body += "<div style=\\"height:8px;margin-top:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden\\"><div style=\\"height:100%;width:" + pct + "%;background:" + barColor + ";border-radius:99px\\"></div></div><div style=\\"font-size:10px;margin-top:4px;color:rgba(255,255,255,.5)\\">" + pct + "%</div>";
+    body += "<div style='height:8px;margin-top:8px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden'><div style='height:100%;width:" + pct + "%;background:" + barColor + ";border-radius:99px'></div></div><div style='font-size:10px;margin-top:4px;color:rgba(255,255,255,.5)'>" + pct + "%</div>";
   }
   body += "</div>";
-  body += "<div style=\\"padding:12px;border-radius:12px;background:rgba(255,255,255,.04)\\"><div style=\\"color:rgba(255,255,255,.4);font-size:10px\\">انقضا</div><div style=\\"font-weight:800;margin-top:4px\\">" + (link.expires_at ? escapeHtml(link.expires_at) : "نامحدود") + "</div></div>";
+  body += "<div style='padding:12px;border-radius:12px;background:rgba(255,255,255,.04)'><div style='color:rgba(255,255,255,.4);font-size:10px'>انقضا</div><div style='font-weight:800;margin-top:4px'>" + (link.expires_at ? escapeHtml(link.expires_at) : "نامحدود") + "</div></div>";
   body += "</div>";
-  body += "<div style=\\"padding:12px;border-radius:12px;background:rgba(255,255,255,.03);margin-bottom:10px\\">";
-  body += "<div><b>UUID:</b> <code style=\\"direction:ltr\\">" + escapeHtml(link.uuid) + "</code></div>";
-  body += "<div style=\\"margin-top:6px\\"><b>اتصالات فعال:</b> " + (link.connected_ips || 0) + "</div>";
-  body += "<div style=\\"margin-top:6px\\"><b>آلارم:</b> " + (link.alarm_enabled ? "فعال 🔔" : "خاموش") + "</div>";
+  body += "<div style='padding:12px;border-radius:12px;background:rgba(255,255,255,.03);margin-bottom:10px'>";
+  body += "<div><b>UUID:</b> <code style='direction:ltr'>" + escapeHtml(link.uuid) + "</code></div>";
+  body += "<div style='margin-top:6px'><b>اتصالات فعال:</b> " + (link.connected_ips || 0) + "</div>";
+  body += "<div style='margin-top:6px'><b>آلارم:</b> " + (link.alarm_enabled ? "فعال 🔔" : "خاموش") + "</div>";
   body += cleanHtml;
-  if (link.note) body += "<div style=\\"margin-top:8px;color:rgba(255,255,255,.5)\\">" + escapeHtml(link.note) + "</div>";
+  if (link.note) body += "<div style='margin-top:8px;color:rgba(255,255,255,.5)'>" + escapeHtml(link.note) + "</div>";
   body += "</div>";
-  body += "<div style=\\"display:flex;gap:8px;flex-wrap:wrap\\">";
-  if (link.vless) body += "<button class=\\"action primary\\" type=\\"button\\" onclick=\\"copyText(currentCfg.vless)\\">کپی VLESS</button>";
-  body += "<button class=\\"action\\" type=\\"button\\" onclick=\\"copyText(currentCfg.sub)\\">کپی SUB</button>";
-  body += "<button class=\\"action\\" type=\\"button\\" onclick=\\"window.open(currentCfg.info,\\'_blank\\')\\">صفحه INFO</button>";
+  body += "<div style='display:flex;gap:8px;flex-wrap:wrap'>";
+  if (link.vless) body += "<button class='action primary' type='button' onclick='copyText(currentCfg.vless)'>کپی VLESS</button>";
+  body += "<button class='action' type='button' onclick='copyText(currentCfg.sub)'>کپی SUB</button>";
+  body += "<button class='action' type='button' onclick='window.open(currentCfg.info,"_blank")'>صفحه INFO</button>";
   body += "</div>";
 
   document.getElementById("cfgModalBody").innerHTML = body;
