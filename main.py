@@ -5981,3282 +5981,681 @@ async def http_proxy(
 
 DASHBOARD_HTML = r"""
 <!DOCTYPE html>
-
-<html lang="fa" dir="rtl">
-
+<html lang="fa" dir="rtl" id="htmlRoot">
 <head>
-
 <meta charset="UTF-8">
-
-<meta
-name="viewport"
-content="width=device-width,initial-scale=1"
-/>
-
-<title>
-PX Panel 13.6.1
-</title>
-
-<link
-rel="preconnect"
-href="https://fonts.googleapis.com"
->
-
-<link
-rel="preconnect"
-href="https://fonts.gstatic.com"
-crossorigin
->
-
-<link
-href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap"
-rel="stylesheet"
->
-
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PXPanel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-
-*{
-    box-sizing:border-box;
-}
-
-html,
-body{
-    margin:0;
-    min-height:100%;
-}
-*::-webkit-scrollbar{width:6px;height:6px}
-*::-webkit-scrollbar-track{background:transparent}
-*::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:99px}
-*::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.2)}
-*{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.12) transparent}
-
-
-body{
-    min-height:100vh;
-
-    color:#fff;
-
-    font-family:"Vazirmatn",sans-serif;
-
-    background:
-        radial-gradient(
-            circle at 10% 0%,
-            rgba(37,99,235,.13),
-            transparent 25%
-        ),
-        radial-gradient(
-            circle at 100% 100%,
-            rgba(59,130,246,.10),
-            transparent 25%
-        ),
-        #07070a;
-}
-
-.wrapper{
-    width:min(
-        1280px,
-        calc(100% - 24px)
-    );
-
-    margin:auto;
-    padding:18px 0 50px;
-}
-
-.topbar{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-
-    margin-bottom:15px;
-}
-
-.brand{
-    display:flex;
-    align-items:center;
-    gap:11px;
-}
-
-.logo{
-    width:44px;
-    height:44px;
-
-    display:flex;
-    align-items:center;
-    justify-content:center;
-
-    border-radius:14px;
-
-    font-weight:900;
-
-    background:
-        linear-gradient(
-            135deg,
-            #2563eb,
-            #3b82f6
-        );
-}
-
-.brand-name{
-    font-size:16px;
-    font-weight:900;
-}
-
-.brand-desc{
-    margin-top:2px;
-    color:rgba(255,255,255,.37);
-    font-size:10px;
-}
-
-.brand-version{
-    color:#60a5fa;
-    font-size:9px;
-    margin-top:2px;
-}
-
-.top-actions{
-    display:flex;
-    gap:7px;
-    flex-wrap:wrap;
-}
-
-.top-btn{
-    border:1px solid rgba(255,255,255,.08);
-
-    padding:9px 12px;
-
-    border-radius:11px;
-
-    color:#fff;
-    background:rgba(255,255,255,.035);
-
-    font-family:"Vazirmatn",sans-serif;
-
-    font-size:10px;
-    cursor:pointer;
-    text-decoration:none;
-}
-
-.top-btn.primary{
-    background:
-        linear-gradient(
-            135deg,
-            #2563eb,
-            #3b82f6
-        );
-}
-
-.top-btn.danger{
-    color:#fca5a5;
-}
-
-.stats-grid{
-    display:grid;
-    grid-template-columns:
-        repeat(6,1fr);
-
-    gap:9px;
-}
-
-.stat{
-    position:relative;
-    overflow:hidden;
-    padding:14px;
-    border-radius:16px;
-
-    border:
-        1px solid
-        rgba(255,255,255,.07);
-
-    background:
-        rgba(255,255,255,.03);
-}
-
-.stat-label{
-    color:rgba(255,255,255,.35);
-    font-size:9px;
-}
-
-.stat-value{
-    margin-top:6px;
-
-    font-size:19px;
-    font-weight:900;
-}
-.stat::after{content:"";position:absolute;right:0;bottom:0;left:0;height:2px;background:var(--stat-color,#60a5fa);opacity:.8}
-.stat:nth-child(1){--stat-color:#60a5fa}.stat:nth-child(2){--stat-color:#4ade80}.stat:nth-child(3){--stat-color:#f59e0b}.stat:nth-child(4){--stat-color:#60a5fa}.stat:nth-child(5){--stat-color:#fb7185}.stat:nth-child(6){--stat-color:#22d3ee}.stat-value{color:var(--stat-color,#fff)}
-
-
-.panel{
-    margin-top:11px;
-
-    overflow:hidden;
-
-    border-radius:19px;
-
-    border:
-        1px solid
-        rgba(255,255,255,.07);
-
-    background:
-        rgba(255,255,255,.03);
-}
-
-.panel-head{
-    padding:14px 16px;
-
-    display:flex;
-
-    justify-content:space-between;
-    align-items:center;
-
-    gap:10px;
-
-    border-bottom:
-        1px solid
-        rgba(255,255,255,.06);
-}
-
-.panel-title{
-    font-size:12px;
-    font-weight:800;
-}
-
-.panel-sub{
-    color:rgba(255,255,255,.32);
-    font-size:9px;
-    margin-top:3px;
-}
-
-.table-wrap{
-    overflow:auto;
-}
-
-table{
-    width:100%;
-
-    min-width:1120px;
-
-    border-collapse:collapse;
-}
-
-th,
-td{
-    text-align:right;
-
-    padding:12px 13px;
-
-    border-bottom:
-        1px solid
-        rgba(255,255,255,.045);
-
-    font-size:10px;
-}
-
-th{
-    color:rgba(255,255,255,.32);
-    font-weight:500;
-}
-
-.badge{
-    display:inline-flex;
-
-    padding:4px 8px;
-
-    border-radius:999px;
-
-    font-size:8px;
-}
-
-.badge.active{
-    color:#86efac;
-    background:rgba(34,197,94,.08);
-}
-
-.badge.off{
-    color:#fca5a5;
-    background:rgba(239,68,68,.08);
-}
-
-.actions{
-    display:flex;
-    flex-wrap:wrap;
-    gap:4px;
-}
-
-.action{
-    border:0;
-
-    padding:6px 8px;
-
-    border-radius:8px;
-
-    color:rgba(255,255,255,.82);
-
-    background:rgba(255,255,255,.05);
-
-    font-family:"Vazirmatn",sans-serif;
-
-    font-size:8px;
-
-    cursor:pointer;
-}
-
-.action.primary{
-    background:
-        rgba(37,99,235,.18);
-}
-
-.action.danger{
-    color:#fca5a5;
-}
-
-.url-box{
-    max-width:280px;
-
-    direction:ltr;
-    text-align:left;
-
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-
-    color:#93c5fd;
-
-    font-family:Consolas,monospace;
-
-    font-size:8px;
-}
-
-.pre{
-    margin:0;
-
-    padding:15px;
-
-    max-height:280px;
-
-    overflow:auto;
-
-    color:rgba(255,255,255,.45);
-
-    font-family:Consolas,monospace;
-
-    font-size:9px;
-
-    white-space:pre-wrap;
-}
-
-.download-grid{
-    display:grid;
-
-    grid-template-columns:
-        repeat(3,1fr);
-
-    gap:8px;
-
-    padding:14px;
-}
-
-.download{
-    display:block;
-
-    padding:11px;
-
-    border-radius:12px;
-
-    color:#fff;
-    text-decoration:none;
-
-    border:
-        1px solid
-        rgba(255,255,255,.06);
-
-    background:
-        rgba(255,255,255,.025);
-
-    font-size:10px;
-}
-
-.download span{
-    display:block;
-
-    margin-top:3px;
-
-    color:rgba(255,255,255,.34);
-
-    font-size:8px;
-}
-
-.notice{
-    margin:0 14px 14px;
-
-    padding:14px;
-
-    border-radius:13px;
-
-    background:
-        rgba(37,99,235,.06);
-
-    border:
-        1px solid
-        rgba(37,99,235,.13);
-
-    color:rgba(255,255,255,.62);
-
-    line-height:1.9;
-
-    font-size:10px;
-}
-
-.notice strong{
-    color:#93c5fd;
-}
-
-.empty{
-    padding:25px;
-
-    text-align:center;
-
-    color:rgba(255,255,255,.30);
-
-    font-size:11px;
-}
-
-.modal-backdrop{
-    position:fixed;
-
-    inset:0;
-
-    z-index:100;
-
-    display:none;
-
-    align-items:center;
-    justify-content:center;
-
-    padding:15px;
-
-    background:
-        rgba(0,0,0,.62);
-
-    backdrop-filter:blur(12px);
-}
-
-.modal-backdrop.open{
-    display:flex;
-}
-
-.modal{
-    width:100%;
-    max-width:720px;
-
-    max-height:
-        calc(100vh - 30px);
-
-    overflow:auto;
-
-    padding:20px;
-
-    border-radius:22px;
-
-    background:#0d0d12;
-
-    border:
-        1px solid
-        rgba(255,255,255,.08);
-
-    box-shadow:
-        0 30px 100px
-        rgba(0,0,0,.55);
-}
-
-.modal-head{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-
-    margin-bottom:15px;
-}
-
-.modal-title{
-    font-size:14px;
-    font-weight:800;
-}
-
-.close{
-    width:34px;
-    height:34px;
-
-    border:0;
-    border-radius:10px;
-
-    color:#fff;
-    background:rgba(255,255,255,.05);
-
-    cursor:pointer;
-}
-
-.form-grid{
-    display:grid;
-
-    grid-template-columns:
-        repeat(2,1fr);
-
-    gap:9px;
-}
-
-.field{
-    display:flex;
-    flex-direction:column;
-    gap:6px;
-}
-
-.field.full{
-    grid-column:
-        1 / -1;
-}
-
-.field label{
-    color:rgba(255,255,255,.4);
-    font-size:9px;
-}
-
-.field input,
-.field select,
-.field textarea{
-    width:100%;
-
-    padding:11px;
-
-    border-radius:11px;
-
-    border:
-        1px solid
-        rgba(255,255,255,.07);
-
-    background:
-        rgba(255,255,255,.035);
-
-    color:#fff;
-
-    outline:none;
-
-    font-family:
-        "Vazirmatn",
-        sans-serif;
-
-    font-size:10px;
-}
-
-.field textarea{
-    min-height:90px;
-    resize:vertical;
-}
-
-.field input:focus,
-.field select:focus,
-.field textarea:focus{
-    border-color:
-        rgba(37,99,235,.55);
-}
-
-.modal-actions{
-    margin-top:15px;
-
-    display:flex;
-
-    gap:8px;
-}
-
-.modal-btn{
-    flex:1;
-
-    padding:11px;
-
-    border:0;
-    border-radius:11px;
-
-    cursor:pointer;
-
-    font-family:
-        "Vazirmatn",sans-serif;
-
-    color:#fff;
-}
-
-.modal-btn.primary{
-    background:
-        linear-gradient(
-            135deg,
-            #2563eb,
-            #3b82f6
-        );
-}
-
-.modal-btn.secondary{
-    background:
-        rgba(255,255,255,.05);
-}
-
-.toast{
-    position:fixed;
-
-    left:50%;
-    top:18px;
-    bottom:auto;
-
-    z-index:200;
-
-    padding:11px 14px;
-
-    border-radius:12px;
-
-    background:rgba(20,20,27,.97);
-
-    border:
-        1px solid
-        rgba(255,255,255,.08);
-
-    color:#fff;
-
-    font-size:11px;
-    font-weight:700;
-
-    opacity:0;
-
-    transform:
-        translate(-50%,-140%);
-
-    pointer-events:none;
-
-    transition:
-        .2s ease;
-}
-
-.toast.show{
-    opacity:1;
-
-    transform:
-        translate(-50%,0);
-}
-
-/* LOGIN NOTICE START — DELETE THIS WHOLE BLOCK TO DISABLE THE LOGIN NOTICE */
-.login-notice-backdrop{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.72);backdrop-filter:blur(14px)}
-.login-notice{width:min(620px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:22px;border:1px solid rgba(255,255,255,.10);border-radius:24px;background:linear-gradient(180deg,rgba(24,24,34,.98),rgba(12,12,17,.98));box-shadow:0 30px 100px rgba(0,0,0,.60);animation:noticeIn .28s ease both}
-.login-notice-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}.login-notice-icon{width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:rgba(37,99,235,.14);border:1px solid rgba(129,140,248,.22);color:#93c5fd;font-size:18px}.login-notice h3{margin:0;font-size:15px}.login-notice p{margin:5px 0 0;color:rgba(255,255,255,.42);font-size:9px;line-height:1.9}.notice-downloads{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}.notice-download{display:block;padding:12px;border-radius:14px;text-decoration:none;color:#fff;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);transition:.2s ease}.notice-download:hover{transform:translateY(-2px);border-color:rgba(129,140,248,.30);background:rgba(129,140,248,.07)}.notice-download strong{display:block;font-size:10px}.notice-download span{display:block;margin-top:3px;color:rgba(255,255,255,.36);font-size:8px}.login-notice-body{margin-top:14px;padding:14px;border-radius:14px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);color:rgba(255,255,255,.62);font-size:10px;line-height:2}.login-notice-body b{color:#fff}.login-notice-actions{margin-top:14px;display:flex;gap:8px}.login-notice-actions button{flex:1;padding:11px;border:0;border-radius:12px;color:#fff;background:linear-gradient(135deg,#2563eb,#3b82f6);font-family:inherit;cursor:pointer}@keyframes noticeIn{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
-/* LOGIN NOTICE END */
-
-/* REGION NOTICE + RESPONSIVE UI OVERRIDES */
-.login-notice-backdrop{
-    padding:clamp(10px,3vw,24px);
-    background:rgba(3,4,9,.76);
-    backdrop-filter:blur(18px) saturate(135%);
-}
-.login-notice{
-    width:min(680px,100%);
-    max-height:min(760px,calc(100vh - 24px));
-    padding:clamp(16px,3vw,24px);
-    border-radius:24px;
-    border:1px solid rgba(96,165,250,.18);
-    background:
-        radial-gradient(circle at 90% 0%,rgba(37,99,235,.13),transparent 32%),
-        linear-gradient(180deg,rgba(25,25,37,.98),rgba(11,11,16,.99));
-    box-shadow:0 35px 110px rgba(0,0,0,.62),inset 0 1px rgba(255,255,255,.04);
-}
-.login-notice-head{align-items:flex-start}
-.login-notice-icon{
-    width:46px;height:46px;min-width:46px;border-radius:15px;
-    display:flex;align-items:center;justify-content:center;
-    background:rgba(37,99,235,.12);
-    border:1px solid rgba(96,165,250,.22);
-    color:#93c5fd;
-}
-.login-notice-icon svg{width:24px;height:24px;display:block}
-.login-notice h3{font-size:15px;letter-spacing:-.2px}
-.login-notice p{font-size:10px;line-height:2;color:rgba(255,255,255,.46)}
-.login-notice-body{
-    margin-top:12px;
-    padding:15px;
-    border-radius:16px;
-    background:rgba(37,99,235,.065);
-    border:1px solid rgba(129,140,248,.14);
-    color:rgba(255,255,255,.66);
-    font-size:10px;
-    line-height:2.15;
-}
-.login-notice-body b{color:#fff}
-.region-warning{
-    margin-top:10px;
-    padding:13px 14px;
-    border-radius:15px;
-    border:1px solid rgba(251,191,36,.17);
-    background:rgba(251,191,36,.055);
-    color:rgba(255,255,255,.72);
-    line-height:2.1;
-}
-.region-warning .warning-title{
-    display:flex;align-items:center;gap:8px;
-    color:#fcd34d;font-weight:800;margin-bottom:3px;
-}
-.region-warning svg{width:17px;height:17px;flex:none}
-.notice-downloads{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
-.notice-download{min-width:0}
-.notice-download strong{font-size:10px}
-.login-notice-actions button{min-height:42px;display:flex;align-items:center;justify-content:center;gap:7px}.login-notice-actions button svg{width:16px;height:16px}
-
-.top-actions{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex-wrap:wrap}
-.top-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
-.top-btn svg{width:15px;height:15px;flex:none}
-.wrapper{width:min(1180px,calc(100% - 28px));margin-inline:auto}
-.footer{margin-top:22px;padding:12px 2px 4px;opacity:.72}
-
-@media(max-width:760px){
-    .wrapper{width:calc(100% - 20px)}
-    .topbar{gap:12px}
-    .top-actions{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
-    .top-btn{width:100%;min-height:40px;padding:9px 10px}
-    .top-btn.danger{grid-column:1 / -1}
-    .notice-downloads{grid-template-columns:1fr}
-    .login-notice{border-radius:20px}
+:root{
+  --bg:#07070a;--bg2:#0d0d14;--bg3:#14141f;--card:#12121c;--card-b:rgba(255,255,255,.06);
+  --accent:#3b82f6;--accent2:#60a5fa;--purple:#8b5cf6;--green:#34d399;--red:#f87171;--amber:#fbbf24;
+  --t1:#f1f5f9;--t2:rgba(255,255,255,.65);--t3:rgba(255,255,255,.4);
+  --sb:240px;--sb-c:68px;--radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;}
+body{font-family:'Vazirmatn',sans-serif;background:var(--bg);color:var(--t1);display:flex;min-height:100vh;overflow-x:hidden}
+body.en{font-family:'Inter',system-ui,sans-serif}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:99px}
+
+/* Sidebar */
+.sidebar{position:fixed;right:0;top:0;bottom:0;width:var(--sb);background:var(--bg2);border-left:1px solid var(--card-b);display:flex;flex-direction:column;z-index:300;transition:width .28s cubic-bezier(.4,0,.2,1),transform .28s}
+.sidebar.collapsed{width:var(--sb-c)}
+.sb-toggle{position:absolute;left:-13px;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:50%;background:var(--accent);border:2px solid var(--bg);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:310;box-shadow:0 2px 12px rgba(59,130,246,.45)}
+.sb-toggle svg{width:12px;height:12px;transition:transform .28s}
+.sidebar.collapsed .sb-toggle svg{transform:rotate(180deg)}
+.sb-logo{display:flex;align-items:center;gap:10px;padding:18px 14px;border-bottom:1px solid var(--card-b)}
+.sb-logo-icon{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0}
+.sb-logo-text{overflow:hidden;white-space:nowrap}
+.sb-logo-name{font-size:14px;font-weight:700}
+.sb-logo-ver{font-size:10px;color:var(--t3)}
+.sidebar.collapsed .sb-logo-text,.sidebar.collapsed .nav-label,.sidebar.collapsed .nav-sec,.sidebar.collapsed .sb-foot span{display:none}
+.nav{flex:1;overflow-y:auto;padding:8px 0}
+.nav-sec{padding:12px 16px 4px;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--t3);font-weight:700}
+.nav-item{display:flex;align-items:center;gap:10px;padding:11px 16px;margin:2px 8px;border-radius:10px;color:var(--t3);cursor:pointer;transition:.15s;border:none;background:transparent;width:calc(100% - 16px);font-family:inherit;font-size:13px}
+.nav-item svg{width:18px;height:18px;flex-shrink:0}
+.nav-item:hover{background:rgba(59,130,246,.08);color:var(--t2)}
+.nav-item.on{background:rgba(59,130,246,.15);color:var(--t1);font-weight:600}
+.sidebar.collapsed .nav-item{justify-content:center;padding:12px 0;margin:2px 10px}
+.sb-foot{padding:12px;border-top:1px solid var(--card-b);display:flex;flex-direction:column;gap:6px}
+.sb-foot button{display:flex;align-items:center;justify-content:center;gap:8px;padding:9px;border-radius:10px;border:1px solid var(--card-b);background:rgba(255,255,255,.03);color:var(--t2);cursor:pointer;font-family:inherit;font-size:12px;width:100%}
+.sb-foot button.danger{background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.2);color:var(--red)}
+
+/* Main */
+.main{margin-right:var(--sb);flex:1;min-width:0;padding:24px 20px 50px;transition:margin .28s}
+.main.expanded{margin-right:var(--sb-c)}
+.page{display:none}
+.page.on{display:block}
+.page-head{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+.page-title{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+.page-title svg{width:20px;height:20px;color:var(--accent2)}
+.page-sub{font-size:12px;color:var(--t3);margin-top:4px}
+
+/* Cards & metrics */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.metric{background:var(--card);border:1px solid var(--card-b);border-radius:var(--radius);padding:16px}
+.metric-label{font-size:11px;color:var(--t3);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.metric-val{font-size:22px;font-weight:800}
+.metric-sub{font-size:10px;color:var(--t3);margin-top:4px}
+.card{background:var(--card);border:1px solid var(--card-b);border-radius:var(--radius);padding:18px;margin-bottom:14px}
+.card-title{font-size:13px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:7px}
+.card-title svg{width:16px;height:16px;color:var(--accent2)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.action-card{cursor:pointer;transition:.15s;border:1px solid var(--card-b)}
+.action-card:hover{border-color:rgba(59,130,246,.35);background:rgba(59,130,246,.06)}
+.action-card.purple:hover{border-color:rgba(139,92,246,.4);background:rgba(139,92,246,.08)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 14px;border-radius:10px;border:1px solid var(--card-b);background:rgba(255,255,255,.04);color:var(--t2);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;transition:.15s}
+.btn:hover{background:rgba(255,255,255,.08);color:var(--t1)}
+.btn-p{background:linear-gradient(135deg,#3b82f6,#6366f1);border:none;color:#fff}
+.btn-p:hover{filter:brightness(1.1);color:#fff}
+.btn-d{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.25);color:var(--red)}
+.btn-sm{padding:6px 10px;font-size:11px;border-radius:8px}
+.btn svg{width:15px;height:15px}
+
+/* Table */
+.table-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--card-b)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:right;padding:10px 12px;background:rgba(255,255,255,.03);color:var(--t3);font-weight:600;white-space:nowrap}
+td{padding:10px 12px;border-top:1px solid var(--card-b);vertical-align:middle}
+tr:hover td{background:rgba(255,255,255,.02)}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.badge-on{background:rgba(52,211,153,.12);color:var(--green)}
+.badge-off{background:rgba(248,113,113,.12);color:var(--red)}
+.ops{display:flex;gap:4px;flex-wrap:wrap}
+
+/* Filters */
+.range-tabs{display:flex;gap:4px;background:rgba(255,255,255,.03);padding:3px;border-radius:10px;border:1px solid var(--card-b)}
+.range-tab{padding:6px 12px;border-radius:8px;font-size:11px;font-weight:700;color:var(--t3);cursor:pointer;border:none;background:transparent;font-family:inherit}
+.range-tab.on{background:var(--accent);color:#fff}
+
+/* Forms */
+.field{margin-bottom:12px}
+.field label{display:block;font-size:11px;color:var(--t3);margin-bottom:5px;font-weight:600}
+.field input,.field select,.field textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--card-b);background:rgba(0,0,0,.3);color:var(--t1);font-family:inherit;font-size:13px;outline:none}
+.field input:focus,.field select:focus{border-color:var(--accent)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+/* Support tiles */
+.support-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.support-tile{display:flex;align-items:center;gap:14px;padding:18px;background:var(--card);border:1px solid var(--card-b);border-radius:var(--radius);text-decoration:none;color:inherit;transition:.15s}
+.support-tile:hover{border-color:rgba(59,130,246,.35);transform:translateY(-2px)}
+.support-icon{width:44px;height:44px;border-radius:12px;background:rgba(59,130,246,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.support-icon svg{width:22px;height:22px;color:var(--accent2)}
+.support-label{font-size:11px;color:var(--t3)}
+.support-val{font-size:13px;font-weight:700;margin-top:2px}
+
+/* Logs */
+.log-item{padding:10px 0;border-bottom:1px solid var(--card-b);font-size:12px;display:flex;gap:10px;align-items:flex-start}
+.log-time{color:var(--t3);font-size:10px;white-space:nowrap;min-width:70px}
+.log-msg{color:var(--t2);flex:1}
+
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:500;display:none;align-items:center;justify-content:center;padding:16px}
+.modal-bg.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--card-b);border-radius:18px;width:min(480px,100%);max-height:90vh;overflow-y:auto;padding:22px}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:16px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:#1e1e2e;border:1px solid var(--card-b);color:#fff;padding:12px 20px;border-radius:12px;font-size:13px;z-index:999;opacity:0;transition:.3s;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Mobile */
+.mob-bar{display:none;position:fixed;top:0;left:0;right:0;height:52px;background:var(--bg2);border-bottom:1px solid var(--card-b);z-index:250;align-items:center;justify-content:space-between;padding:0 14px}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:290;display:none}
+.overlay.show{display:block}
+
+@media(max-width:900px){
+  .sidebar{transform:translateX(100%)}
+  .sidebar.open{transform:translateX(0);box-shadow:-12px 0 40px rgba(0,0,0,.5)}
+  .sb-toggle{display:none!important}
+  .main,.main.expanded{margin-right:0;padding-top:68px}
+  .mob-bar{display:flex}
+  .metrics{grid-template-columns:1fr 1fr}
+  .g2,.form-row{grid-template-columns:1fr}
+}
+@media(max-width:480px){
+  .metrics{grid-template-columns:1fr}
 }
-@media(max-width:430px){
-    .top-actions{grid-template-columns:1fr 1fr}
-    .brand-name{font-size:15px}
-    .brand-desc{font-size:9px}
-    .stats-grid{grid-template-columns:1fr 1fr!important}
-    .login-notice-head{gap:9px}
-    .login-notice-icon{width:40px;height:40px;min-width:40px}
-    .login-notice h3{font-size:14px}
-}
-
-@media(prefers-reduced-motion:reduce){
-    .login-notice{animation:none}
-    .notice-download{transition:none}
-}
-
-@media(max-width:1100px){
-
-    .stats-grid{
-        grid-template-columns:
-            repeat(3,1fr);
-    }
-
-    .download-grid{
-        grid-template-columns:
-            repeat(2,1fr);
-    }
-}
-
-@media(max-width:700px){
-
-    .wrapper{
-        width:
-            calc(100% - 14px);
-    }
-
-    .topbar{
-        align-items:
-            flex-start;
-
-        flex-direction:
-            column;
-    }
-
-    .stats-grid{
-        grid-template-columns:
-            repeat(2,1fr);
-    }
-
-    .form-grid{
-        grid-template-columns:1fr;
-    }
-
-    .field.full{
-        grid-column:auto;
-    }
-
-    .download-grid{
-        grid-template-columns:1fr;
-    }
-}
-
 </style>
-
 </head>
-
 <body>
 
-<div class="wrapper">
-
-<div class="topbar">
-
-<div class="brand">
-
-<div class="logo">
-P
-</div>
-
-<div>
-
-<div class="brand-name">
-PX Panel
-</div>
-
-<div class="brand-desc">
-داشبورد مدیریت سرویس
-</div>
-<div class="brand-version">13.6.1</div>
-<div style="margin-top:5px;font-size:10px;display:flex;align-items:center;gap:6px">
-<svg width="14" height="14" viewBox="0 0 24 24" fill="#ff0000"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.75 15.5v-7l6.5 3.5-6.5 3.5z"/></svg>
-<a href="https://www.youtube.com/@LogicSec_YT" target="_blank" rel="noopener" style="color:#93c5fd;text-decoration:none">LogicSec_YT</a>
-</div>
-
-</div>
-
-</div>
-
-<div class="top-actions">
-
-<button class="top-btn primary" onclick="openAutoModal()" title="ساخت خودکار" style="min-width:44px">
-<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="8" width="18" height="12" rx="2"/><circle cx="12" cy="14" r="2"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg>
-</button>
-<button class="top-btn" onclick="openManualModal()" title="ساخت دستی" style="min-width:44px">
-<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 5v14M5 12h14"/></svg>
-</button>
-<button class="top-btn" onclick="openCategoryModal()" title="دسته‌بندی" style="min-width:44px">
-<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6h16M4 12h10M4 18h14"/></svg>
-</button>
-<button class="top-btn" onclick="openMixModal()" title="مخلوط‌سازی کانفیگ‌ها" style="min-width:44px;background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.35);color:#fca5a5">
-<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
-</button>
-
-<button
-class="top-btn"
-onclick="openPasswordModal()"
-><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-تغییر رمز
-</button>
-
-<a
-href="/logout"
-class="top-btn danger"
-><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 5H5v14h5"/><path d="m14 8 4 4-4 4"/><path d="M18 12H9"/></svg>
-خروج
-</a>
-
-</div>
-
-</div>
-
-
-<div class="stats-grid">
-
-<div class="stat">
-<div class="stat-label">
-کل کانفیگ‌ها
-</div>
-<div
-id="totalLinks"
-class="stat-value"
->
--
-</div>
-</div>
-
-<div class="stat">
-<div class="stat-label">
-فعال
-</div>
-<div
-id="activeLinks"
-class="stat-value"
->
--
-</div>
-</div>
-
-<div class="stat">
-<div class="stat-label">
-اتصالات
-</div>
-<div
-id="connections"
-class="stat-value"
->
--
-</div>
-</div>
-
-<div class="stat">
-<div class="stat-label">
-ترافیک مصرفی
-</div>
-<div
-id="traffic"
-class="stat-value"
->
--
-</div>
-</div>
-
-<div class="stat">
-<div class="stat-label">
-ریکویست
-</div>
-<div
-id="requests"
-class="stat-value"
->
--
-</div>
-</div>
-
-<div class="stat">
-<div class="stat-label">
-تایم فعال بودن
-</div>
-<div
-id="uptime"
-class="stat-value"
->
--
-</div>
-</div>
-
-</div>
-
-
-<div class="panel">
-
-<div class="panel-head">
-
-<div>
-
-<div class="panel-title">
-مدیریت کانفیگ‌هـا
-</div>
-
-<div class="panel-sub" style="display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.75rem; color: rgba(255, 255, 255, 0.6); padding: 12px; text-align: center; direction: rtl;">
-  <span style="opacity: 0.8;">پشتیبانــی:</span>
-  <a href="https://t.me/logictop12" target="_blank" rel="noopener noreferrer" style="font-weight: 500; color: #34d399; text-decoration: none; transition: color 0.2s ease;" onmouseover="this.style.color='#6ee7b7'; this.style.textDecoration='underline';" onmouseout="this.style.color='#34d399'; this.style.textDecoration='none';">
-    @logictop12
-  </a>
-</div>
-
-</div>
-
-<button
-class="top-btn primary"
-onclick="refresh()"
->
-↻ بروزرسانـی
-</button>
-
-</div>
-
-<div class="table-wrap">
-
-<table>
-
-<thead>
-
-<tr>
-
-<th>دسته</th>
-<th>
-نـام
-</th>
-
-<th>
-پروتـکل
-</th>
-
-<th>
-وضعیـت
-</th>
-
-<th>
-مصـرف
-</th>
-
-<th>
-زمـان
-</th>
-
-<th>
-اتصـال
-</th>
-
-<th>
-VLESS
-</th>
-
-<th>
-عملیـات
-</th>
-
-</tr>
-
-</thead>
-
-<tbody id="linksTable">
-
-</tbody>
-
-</table>
-
-</div>
-
-</div>
-
-
-<div class="panel">
-
-<div class="panel-head">
-
-<div>
-<div class="panel-title">آخرین فعالیت‌ها</div>
-<div class="panel-sub">لاگ زنده سیستم · حداکثر ۱۵۰ رویداد</div>
-</div>
-
-<button class="top-btn" onclick="refresh()" style="font-size:10px">↻ بروزرسانی</button>
-
-</div>
-
-<div id="logs" style="padding:10px 12px;max-height:340px;overflow:auto">
-<div style="text-align:center;color:rgba(255,255,255,.3);padding:24px;font-size:11px">در حال بارگذاری...</div>
-</div>
-
-</div>
-
-
-<div class="panel">
-
-<div class="panel-head">
-
-<div>
-<div class="panel-title">
-دانلود برنامه اتصــال
-</div>
-
-<div class="panel-sub">
-Android / iPhone / iPad / Windows
-</div>
-
-</div>
-
-</div>
-
-<div class="download-grid">
-
-<a
-class="download"
-href="https://play.google.com/store/apps/details?id=com.happproxy"
-target="_blank"
-rel="noopener"
->
-Happ Android
-<span>
-Google Play
-</span>
-</a>
-
-<a
-class="download"
-href="https://dl.v2rayng.org/releases/latest/v2rayNG_2.2.6_arm64-v8a.apk"
-target="_blank"
-rel="noopener"
->
-v2rayNG
-<span>
-Android APK
-</span>
-</a>
-
-<a
-class="download"
-href="https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box"
-target="_blank"
-rel="noopener"
->
-V2Box Android
-<span>
-Google Play
-</span>
-</a>
-
-<a
-class="download"
-href="https://apps.apple.com/app/happ-proxy-utility/id6504287215"
-target="_blank"
-rel="noopener"
->
-Happ
-<span>
-iPhone / iPad
-</span>
-</a>
-
-<a
-class="download"
-href="https://apps.apple.com/app/v2box-v2ray-client/id6446814690"
-target="_blank"
-rel="noopener"
->
-V2Box
-<span>
-iPhone / iPad
-</span>
-</a>
-
-<a
-class="download"
-href="https://apps.apple.com/app/streisand/id6450534064"
-target="_blank"
-rel="noopener"
->
-Streisand
-<span>
-iPhone / iPad
-</span>
-</a>
-
-<a
-class="download"
-href="https://apps.apple.com/app/foxray/id6448898396"
-target="_blank"
-rel="noopener"
->
-FoXray
-<span>
-iPhone / iPad
-</span>
-</a>
-
-<a
-class="download"
-href="https://github.com/2dust/v2rayN/releases/latest"
-target="_blank"
-rel="noopener"
->
-v2rayN
-<span>
-Windows
-</span>
-</a>
-
-<a
-class="download"
-href="https://happ-proxy.com/"
-target="_blank"
-rel="noopener"
->
-Happ
-<span>
-Windows
-</span>
-</a>
-
-</div>
-
-<div class="notice">
-
-<strong>
- مهـم | آپدیـت برنامـه اتصـال
-</strong>
-
-<br>
-
-دوستان عزیـز ❤️
-برای اینکـه کانفیگ‌هـای جدیـد بهتریـن
-سازگـــاری، پایداری و عملکرد رو داشته باشن،
-لطفـاً برنامـه‌ای کــــــــه بـرای اتصـال استفـاده می‌کنیـد
-رو بــه آخرین نسخـــه آپدیــت کنیــد. 🔄⚡️
-
-</div>
-
-</div>
-
-</div>
-
-
-<!-- ===================================================== -->
-<!-- MANUAL MODAL -->
-<!-- ===================================================== -->
-
-<div
-id="manualModal"
-class="modal-backdrop"
->
-
-<div class="modal">
-
-<div class="modal-head">
-
-<div class="modal-title">
-ساخـت کانفیـگ دستــی
-</div>
-
-<button class="close" onclick="closeManualModal()" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 50%; color: rgba(255, 255, 255, 0.7); font-size: 1.25rem; line-height: 1; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255, 255, 255, 0.1)'; this.style.color='#ffffff';" onmouseout="this.style.background='rgba(255, 255, 255, 0.05)'; this.style.color='rgba(255, 255, 255, 0.7)';">
-  ×
-</button>
-
-</div>
-
-<div class="form-grid">
-
-<div class="field">
-
-<label>
-اسـم کانفیـگ
-</label>
-
-<input
-id="manualName"
-placeholder="اسم کانفیگ"
-/>
-
-</div>
-
-
-<div class="field" style="margin-bottom: 16px;">
-  <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.875rem; color: #ffffff; margin-bottom: 6px;">
-    <span>پروتکــل (بتا)</span>
-    <span style="font-size: 0.75rem; color: #34d399; background-color: rgba(52, 211, 153, 0.1); padding: 2px 8px; border-radius: 9999px;">پیشنهادی: XHTTP Packet Up</span>
-  </label>
-  <select id="manualProtocol" style="width: 100%; background-color: #1f2937; color: #ffffff; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; font-size: 0.875rem; outline: none; cursor: pointer;">
-    <option value="vless-ws" style="background-color: #1f2937; color: #ffffff;">VLESS WebSocket</option>
-    <option value="xhttp-packet-up" style="background-color: #1f2937; color: #ffffff;">XHTTP Packet Up (پیشنهادی)</option>
-    <option value="xhttp-stream-up" style="background-color: #1f2937; color: #ffffff;">XHTTP Stream Up</option>
-    <option value="xhttp-stream-one" style="background-color: #1f2937; color: #ffffff;">XHTTP Stream One</option>
-    <option value="vmess-ws" style="background-color: #1f2937; color: #ffffff;">VMess WebSocket</option>
-    <option value="trojan-ws" style="background-color: #1f2937; color: #ffffff;">Trojan WebSocket</option>
-    <option value="shadowsocks" style="background-color: #1f2937; color: #ffffff;">Shadowsocks</option>
-    <option value="socks5" style="background-color: #1f2937; color: #ffffff;">SOCKS5</option>
-    <option value="http" style="background-color: #1f2937; color: #ffffff;">HTTP Proxy</option>
-    <option value="hysteria2" style="background-color: #1f2937; color: #ffffff;">Hysteria 2</option>
-    <option value="tuic" style="background-color: #1f2937; color: #ffffff;">TUIC</option>
-    <option value="highspeed-demo" style="background-color: #1f2937; color: #60a5fa;">HighSpeed Upload/Download (دمو)</option>
-    <option value="gaming-lite-demo" style="background-color: #1f2937; color: #60a5fa;">Gaming Lite (دمو)</option>
-  </select>
-</div>
-
-<div class="field">
-<label>دسته‌بندی</label>
-<select id="manualCategory" style="width:100%;background:#1f2937;color:#fff;padding:10px;border:1px solid rgba(255,255,255,.15);border-radius:8px">
-<option value="0">0 — عمومی</option>
-<option value="1">1 — VIP</option>
-</select>
-</div>
-<div class="field">
-<label>تعداد کانفیگ در ساب (۱-۴۰)</label>
-<input id="manualConfigCount" type="number" min="1" max="40" value="1" />
-</div>
-<div class="field full">
-<label>IP تمیز (اختیاری)</label>
-<textarea id="manualCleanIps" style="min-height:60px;direction:ltr" placeholder="1.2.3.4"></textarea>
-</div>
-<div class="field">
-<label style="display:flex;align-items:center;gap:8px;cursor:pointer" onclick="toggleAlarmCheck()">
-<span id="alarmToggle" style="display:inline-flex;width:20px;height:20px;border-radius:5px;border:2px solid #6b7280;background:#374151;align-items:center;justify-content:center;color:transparent;font-size:12px">✓</span>
-<input type="checkbox" id="manualAlarm" style="display:none">
-آلارم انقضا/حجم
-</label>
-</div>
-
-<div class="field">
-
-<label>
-حجـم
-</label>
-
-<input
-id="manualVolume"
-type="number"
-min="0"
-placeholder="0 = نامحدود"
-/>
-
-</div>
-
-
-<div class="field" style="margin-bottom: 16px;">
-  <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.875rem; color: #ffffff; margin-bottom: 6px;">
-    <span>واحد حجـم</span>
-    <span style="font-size: 0.75rem; color: #34d399; background-color: rgba(52, 211, 153, 0.1); padding: 2px 8px; border-radius: 9999px;">پیشنهادی: GB</span>
-  </label>
-  <select id="manualVolumeUnit" style="width: 100%; background-color: #1f2937; color: #ffffff; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; font-size: 0.875rem; outline: none; cursor: pointer;">
-    <option value="GB" style="background-color: #1f2937; color: #ffffff;">GB</option>
-    <option value="MB" style="background-color: #1f2937; color: #ffffff;">MB</option>
-    <option value="TB" style="background-color: #1f2937; color: #ffffff;">TB</option>
-  </select>
-</div>
-
-
-<div class="field">
-
-<label>
-تعـداد روز
-</label>
-
-<input
-id="manualDays"
-type="number"
-min="0"
-placeholder="0 = نامحدود"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-محدودیـت IP
-</label>
-
-<input
-id="manualIpLimit"
-type="number"
-min="0"
-placeholder="0 = نامحدود"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-محدودیـت اتصـال
-</label>
-
-<input
-id="manualConnections"
-type="number"
-min="0"
-placeholder="0 = نامحدود"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-محدودیـت سرعـت
-</label>
-
-<input
-id="manualSpeed"
-type="number"
-min="0"
-placeholder="0 = نامحدود"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-Fingerprint
-</label>
-
-<select id="manualFingerprint" style="width: 100%; background-color: #1f2937; color: #ffffff; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; font-size: 0.875rem; outline: none; cursor: pointer;">
-  <option value="chrome" style="background-color: #1f2937; color: #ffffff;">Chrome</option>
-  <option value="firefox" style="background-color: #1f2937; color: #ffffff;">Firefox</option>
-  <option value="safari" style="background-color: #1f2937; color: #ffffff;">Safari</option>
-  <option value="ios" style="background-color: #1f2937; color: #ffffff;">iOS</option>
-  <option value="android" style="background-color: #1f2937; color: #ffffff;">Android</option>
-  <option value="edge" style="background-color: #1f2937; color: #ffffff;">Edge</option>
-  <option value="360" style="background-color: #1f2937; color: #ffffff;">360</option>
-  <option value="qq" style="background-color: #1f2937; color: #ffffff;">QQ</option>
-  <option value="random" style="background-color: #1f2937; color: #ffffff;">Random</option>
-  <option value="randomized" style="background-color: #1f2937; color: #ffffff;">Randomized</option>
-</select>
-
-</div>
-
-
-<div class="field">
-
-<label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.875rem; color: #ffffff; margin-bottom: 6px;">
-  <span>Fragment</span>
-  <span style="font-size: 0.75rem; color: #34d399; background-color: rgba(52, 211, 153, 0.1); padding: 2px 8px; border-radius: 9999px;">پیشنهادی: خاموش</span>
-</label>
-
-<select id="manualFragment" style="background-color: #1f2937; color: #ffffff; padding: 8px 12px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; font-size: 0.875rem; outline: none; cursor: pointer;">
-  <option value="off" style="background-color: #1f2937; color: #ffffff;">خاموش</option>
-  <option value="safe" style="background-color: #1f2937; color: #ffffff;">Safe</option>
-  <option value="balanced" style="background-color: #1f2937; color: #ffffff;">Balanced</option>
-  <option value="aggressive" style="background-color: #1f2937; color: #ffffff;">Aggressive</option>
-</select>
-
-</div>
-
-
-<div class="field">
-
-<label>
-Port
-</label>
-
-<input
-id="manualPort"
-type="number"
-min="1"
-max="65535"
-value="443"
-/>
-
-</div>
-
-
-<div class="field">
-
-<label>
-ALPN
-</label>
-
-<input
-id="manualAlpn"
-value="http/1.1"
-/>
-
-</div>
-
-
-<div class="field full">
-
-<label>
-یادداشــت
-</label>
-
-<textarea
-id="manualNote"
-placeholder="یادداشت اختیاری"
-></textarea>
-
-</div>
-
-</div>
-
-<div class="modal-actions">
-
-<button
-class="modal-btn secondary"
-onclick="closeManualModal()"
->
-انصراف
-</button>
-
-<button
-class="modal-btn primary"
-onclick="createManual()"
->
-ساخت کانفیگ
-</button>
-
-</div>
-
-</div>
-
-</div>
-
-<!-- ===================================================== -->
-
-<!-- AUTO MODAL -->
-
-<!-- ===================================================== -->
-
-
-
-<div
-
-id="autoModal"
-
-class="modal-backdrop"
-
->
-
-
-
-<div class="modal">
-
-
-
-<div class="modal-head">
-
-
-
-<div class="modal-title">
-
-ساخـت خودکــار
-
-</div>
-
-
-
-<button class="close" onclick="closeAutoModal()" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 50%; color: rgba(255, 255, 255, 0.7); font-size: 1.25rem; line-height: 1; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255, 255, 255, 0.1)'; this.style.color='#ffffff';" onmouseout="this.style.background='rgba(255, 255, 255, 0.05)'; this.style.color='rgba(255, 255, 255, 0.7)';">
-  ×
-</button>
-
-
-
-</div>
-
-
-
-<div class="form-grid" style="margin-top:14px">
-<div class="field"><label>دسته‌بندی</label>
-<select id="autoCategory" style="width:100%;background:#1f2937;color:#fff;padding:10px;border:1px solid rgba(255,255,255,.15);border-radius:8px">
-<option value="0">0 — عمومی</option><option value="1">1 — VIP</option>
-</select></div>
-<div class="field"><label>تعداد کانفیگ (۱-۴۰)</label>
-<input id="autoConfigCount" type="number" min="1" max="40" value="1" /></div>
-<div class="field">
-
-<label>پروتکـل</label>
-
-<select id="autoProtocol" style="width: 100%; background-color: #1f2937; color: #ffffff; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; font-size: 0.875rem; outline: none; cursor: pointer;">
-  <option value="vless-ws" style="background-color: #1f2937; color: #ffffff;">VLESS WebSocket</option>
-  <option value="xhttp-packet-up" style="background-color: #1f2937; color: #ffffff;">XHTTP Packet Up</option>
-  <option value="xhttp-stream-up" style="background-color: #1f2937; color: #ffffff;">XHTTP Stream Up</option>
-  <option value="xhttp-stream-one" style="background-color: #1f2937; color: #ffffff;">XHTTP Stream One</option>
-  <option value="vmess-ws" style="background-color: #1f2937; color: #ffffff;">VMess WebSocket</option>
-  <option value="trojan-ws" style="background-color: #1f2937; color: #ffffff;">Trojan WebSocket</option>
-  <option value="shadowsocks" style="background-color: #1f2937; color: #ffffff;">Shadowsocks</option>
-  <option value="socks5" style="background-color: #1f2937; color: #ffffff;">SOCKS5</option>
-  <option value="http" style="background-color: #1f2937; color: #ffffff;">HTTP Proxy</option>
-  <option value="hysteria2" style="background-color: #1f2937; color: #ffffff;">Hysteria 2</option>
-  <option value="tuic" style="background-color: #1f2937; color: #ffffff;">TUIC</option>
-  <option value="highspeed-demo" style="background-color: #1f2937; color: #60a5fa;">HighSpeed Upload/Download (دمو)</option>
-  <option value="gaming-lite-demo" style="background-color: #1f2937; color: #60a5fa;">Gaming Lite (دمو)</option>
-  <option value="xhttp-packet-up" style="background-color: #1f2937; color: #60a5fa;">XHTTP Packet Up</option>
-  <option value="xhttp-stream-up" style="background-color: #1f2937; color: #60a5fa;">XHTTP Stream Up</option>
-</select>
-
-</div>
-
-<div class="field" style="margin-bottom: 16px;">
-
-  <label style="display: flex; align-items: center; justify-content: space-between; font-size: 0.875rem; color: #ffffff; margin-bottom: 6px;">
-
-    <span>پروفایـل امنیتـی</span>
-
-    <span style="font-size: 0.75rem; color: #34d399; background-color: rgba(52, 211, 153, 0.1); padding: 2px 8px; border-radius: 9999px;">پیشنهادی: Maximum</span>
-
-  </label>
-
-  <select id="autoProfile" style="width: 100%; background-color: #1f2937; color: #ffffff; padding: 10px 12px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; font-size: 0.875rem; outline: none; cursor: pointer;">
-
-    <option value="balanced" style="background-color: #1f2937; color: #ffffff;">Balanced</option>
-
-    <option value="gaming" style="background-color: #1f2937; color: #ffffff;">Gaming</option>
-
-    <option value="maximum" style="background-color: #1f2937; color: #ffffff;">Maximum</option>
-
-    <option value="normal" style="background-color: #1f2937; color: #ffffff;">Normal</option>
-
-  </select>
-
-</div>
-
-</div>
-
-
-
-<div
-
-style="
-
-color:rgba(255,255,255,.55);
-
-font-size:11px;
-
-line-height:2;
-
-">
-
-
-
-اسم کانفیگ ها کاملا رندوم
-
-<code>pxpanel_********</code>
-
-ساخته می‌شود.
-
-
-
-<br>
-
-
-
-حجـم: <b>نامحدود</b>
-
-
-
-<br>
-
-
-
-زمـان: <b>نامحدود</b>
-
-
-
-<br>
-
-
-
-محدودیـت ایپـی: <b>نامحدود</b>
-
-
-
-<br>
-
-
-
-محدودیـت سرعـت: <b>نامحدود</b>
-
-
-
-<br>
-
-
-
-محدودیـت اتصال همزمـان: <b>نامحدود</b>
-
-
-
-<br>
-
-
-
-پروتکـل:
-
-<b>VLESS WebSocket</b>
-
-
-
-<br>
-
-
-
-پورت:
-
-<b>443</b>
-
-
-
-</div>
-
-
-
-<div class="modal-actions">
-
-
-
-<button
-
-class="modal-btn secondary"
-
-onclick="closeAutoModal()"
-
->
-
-لغو
-
-</button>
-
-
-
-<button
-
-class="modal-btn primary"
-
-onclick="createAuto()"
-
->
-
-ساخت
-
-</button>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-<!-- ===================================================== -->
-<!-- PASSWORD MODAL -->
-<!-- ===================================================== -->
-
-<div
-id="passwordModal"
-class="modal-backdrop"
->
-
-<div class="modal">
-
-<div class="modal-head">
-
-<div class="modal-title">
-تغییر رمز پنـل
-</div>
-
-<button class="close" onclick="closePasswordModal()" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 50%; color: rgba(255, 255, 255, 0.7); font-size: 1.25rem; line-height: 1; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(255, 255, 255, 0.1)'; this.style.color='#ffffff';" onmouseout="this.style.background='rgba(255, 255, 255, 0.05)'; this.style.color='rgba(255, 255, 255, 0.7)';">
-  ×
-</button>
-
-</div>
-
-<div class="form-grid">
-
-<div class="field full">
-
-<label>
-رمز فعلـی
-</label>
-
-<input
-id="currentPassword"
-type="password"
-/>
-
-</div>
-
-<div class="field">
-
-<label>
-رمز جدیـد
-</label>
-
-<input
-id="newPassword"
-type="password"
-/>
-
-</div>
-
-<div class="field">
-
-<label>
-تکرار رمز جدیـد
-</label>
-
-<input
-id="repeatPassword"
-type="password"
-/>
-
-</div>
-
-</div>
-
-<div class="modal-actions">
-
-<button
-class="modal-btn secondary"
-onclick="closePasswordModal()"
->
-لغو
-</button>
-
-<button
-class="modal-btn primary"
-onclick="changePassword()"
->
-ذخیره رمـز عبور
-</button>
-
-</div>
-
-</div>
-
-</div>
-
-
-    <!-- LOGIN NOTICE START -->
-<div id="loginNoticeModal" class="login-notice-backdrop" role="dialog" aria-modal="true" aria-labelledby="regionNoticeTitle">
-  <div class="login-notice">
-    <div class="login-notice-head">
-      <div class="login-notice-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-          <path d="M12 3a9 9 0 1 0 9 9"/>
-          <path d="M12 7v5l3 2"/>
-          <path d="M16.5 3.5h4v4"/>
-          <path d="m20.5 3.5-5 5"/>
-        </svg>
-      </div>
-      <div>
-        <h3 id="regionNoticeTitle">راهنمای اتصال سرویس</h3>
-        <p>اطلاعیه مهم منطقه‌ای پیش از اتصال کانفیگ‌ها</p>
-      </div>
+<div class="mob-bar">
+  <div style="font-weight:700;font-size:14px">PXPanel</div>
+  <button class="btn btn-sm" id="mobMenuBtn" aria-label="menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+</div>
+<div class="overlay" id="overlay"></div>
+
+<aside class="sidebar" id="sidebar">
+  <button class="sb-toggle" id="sbToggle" title="Toggle">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </button>
+  <div class="sb-logo">
+    <div class="sb-logo-icon">PX</div>
+    <div class="sb-logo-text">
+      <div class="sb-logo-name">PXPanel</div>
+      <div class="sb-logo-ver">v13.6.1</div>
     </div>
-    <div class="login-notice-body">
-      <p><b>نکته:</b> برای استفاده، لینک اشتراک (SUB) را در برنامه وارد (Import / Subscription) کرده یا از لینک مستقیم VLESS استفاده کنید.</p>
-      <div class="region-warning" role="alert">
-        <div class="warning-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
-            <path d="m12 3 9 17H3L12 3Z"/>
-            <path d="M12 9v5"/>
-            <path d="M12 17h.01"/>
-          </svg>
-          هشدار منطقه‌ای اتصال
-        </div>
-        <p>در صورتی که پنل با موفقیت نصب شد اما کانفیگ‌ها پینگ نداشتند، دامنه مسدود شده است؛ لطفاً دامنه جدیدی بسازید.</p>
+  </div>
+  <nav class="nav">
+    <div class="nav-sec" data-i18n="sec_panel">پنل</div>
+    <button class="nav-item on" data-page="dash" title="Dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      <span class="nav-label" data-i18n="nav_dash">داشبورد</span>
+    </button>
+    <button class="nav-item" data-page="configs" title="Configs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+      <span class="nav-label" data-i18n="nav_configs">کانفیگ‌ها</span>
+    </button>
+    <button class="nav-item" data-page="create" title="Create">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
+      <span class="nav-label" data-i18n="nav_create">ساخت کانفیگ</span>
+    </button>
+    <button class="nav-item" data-page="stats" title="Stats">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-6"/></svg>
+      <span class="nav-label" data-i18n="nav_stats">آمار</span>
+    </button>
+    <button class="nav-item" data-page="logs" title="Logs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+      <span class="nav-label" data-i18n="nav_logs">لاگ فعالیت</span>
+    </button>
+    <div class="nav-sec" data-i18n="sec_sys">سیستم</div>
+    <button class="nav-item" data-page="settings" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      <span class="nav-label" data-i18n="nav_settings">تنظیمات</span>
+    </button>
+    <button class="nav-item" data-page="support" title="Support">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+      <span class="nav-label" data-i18n="nav_support">پشتیبانی</span>
+    </button>
+  </nav>
+  <div class="sb-foot">
+    <button onclick="refreshAll()" title="Refresh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.1-3.4L23 10M1 14l5.4 4.4A9 9 0 0 0 20.5 15"/></svg>
+      <span data-i18n="refresh">بروزرسانی</span>
+    </button>
+    <a href="/logout" class="btn danger" style="text-decoration:none;width:100%">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M10 5H5v14h5"/><path d="m14 8 4 4-4 4"/><path d="M18 12H9"/></svg>
+      <span data-i18n="logout">خروج</span>
+    </a>
+  </div>
+</aside>
+
+<main class="main" id="main">
+
+<!-- DASHBOARD -->
+<section class="page on" id="page-dash">
+  <div class="page-head">
+    <div>
+      <div class="page-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        <span data-i18n="nav_dash">داشبورد</span>
       </div>
+      <div class="page-sub" id="lastUpd" data-i18n="loading">در حال بارگذاری...</div>
     </div>
-    <div class="notice-downloads">
-      <a class="notice-download" href="https://github.com/2dust/v2rayNG/releases/latest" target="_blank" rel="noopener noreferrer">
-        <strong>v2rayNG</strong>
-        <span>اندروید</span>
-      </a>
-      <a class="notice-download" href="https://github.com/2dust/v2rayN/releases/latest" target="_blank" rel="noopener noreferrer">
-        <strong>v2rayN</strong>
-        <span>ویندوز / مک / لینوکس</span>
-      </a>
-      <a class="notice-download" href="https://github.com/hiddify/hiddify-app/releases/latest" target="_blank" rel="noopener noreferrer">
-        <strong>Hiddify</strong>
-        <span>چندپلتفرمی</span>
-      </a>
+  </div>
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-label"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> <span data-i18n="m_conns">اتصالات فعال</span></div>
+      <div class="metric-val" id="mConns">—</div>
     </div>
-    <div class="login-notice-actions">
-      <button type="button" onclick="closeLoginNotice()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <path d="m5 12 4 4L19 6"/>
-        </svg>
-        متوجه شدم
+    <div class="metric">
+      <div class="metric-label"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-6"/></svg> <span data-i18n="m_traffic">ترافیک کل</span></div>
+      <div class="metric-val" id="mTraffic">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> <span data-i18n="m_links">کانفیگ‌ها</span></div>
+      <div class="metric-val" id="mLinks">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> <span data-i18n="m_uptime">آپتایم</span></div>
+      <div class="metric-val" id="mUptime" style="font-size:16px">—</div>
+    </div>
+  </div>
+  <div class="g2">
+    <div class="card action-card" onclick="goPage('create')">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
+        <span data-i18n="quick_create">ساخت کانفیگ</span>
+      </div>
+      <p style="color:var(--t2);font-size:12px" data-i18n="quick_create_desc">ساخت دستی با محدودیت ترافیک، سرعت و انقضا</p>
+    </div>
+    <div class="card action-card purple" onclick="doAutoCreate()">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8 19 13M17.8 6.2 19 5M12.2 11.8 11 13M12.2 6.2 11 5"/><circle cx="15" cy="9" r="5"/><path d="M4 18a5 5 0 0 1 8-4"/></svg>
+        <span data-i18n="auto_create">ساخت خودکار (پیشنهادی)</span>
+      </div>
+      <p style="color:var(--t2);font-size:12px" data-i18n="auto_create_desc">ساخت سریع با تنظیمات بهینه</p>
+    </div>
+  </div>
+</section>
+
+<!-- CONFIGS -->
+<section class="page" id="page-configs">
+  <div class="page-head">
+    <div>
+      <div class="page-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <span data-i18n="nav_configs">کانفیگ‌ها</span>
+      </div>
+      <div class="page-sub" data-i18n="configs_sub">مدیریت لینک‌ها · بدون برچسب متنی اضافی</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-p btn-sm" onclick="goPage('create')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="btn btn-sm" onclick="refreshAll()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.1-3.4L23 10M1 14l5.4 4.4A9 9 0 0 0 20.5 15"/></svg>
       </button>
     </div>
   </div>
-</div>
-<!-- LOGIN NOTICE END -->
-
-<div id="mixModal" class="modal-backdrop">
-<div class="modal" style="max-width:640px">
-<div class="modal-head"><div class="modal-title">مخلوط‌سازی کانفیگ‌ها</div>
-<button class="close" onclick="closeMixModal()">×</button></div>
-<p style="color:rgba(255,255,255,.55);font-size:11px;line-height:1.9;margin:0 0 12px">
-چند کانفیگ از لیست «مدیریت کانفیگ‌ها» را انتخاب کنید تا داخل یک ساب واحد ترکیب شوند.
-حداقل ۲ و حداکثر ۴۰ کانفیگ. بعد از ساخت، لینک ساب مخلوط در اختیار شماست.
-</p>
-<div id="mixList" style="max-height:280px;overflow:auto;margin-bottom:12px"></div>
-<div class="modal-actions">
-<button class="modal-btn secondary" onclick="closeMixModal()">بستن</button>
-<button class="modal-btn primary" style="background:linear-gradient(135deg,#dc2626,#ef4444)" onclick="doMixConfigs()">ساخت ساب مخلوط</button>
-</div></div></div>
-
-<div id="categoryModal" class="modal-backdrop">
-<div class="modal" style="max-width:620px">
-<div class="modal-head"><div class="modal-title">دسته‌بندی‌ها</div>
-<button class="close" onclick="closeCategoryModal()">×</button></div>
-<div id="categoryList" style="font-size:11px;margin-bottom:12px"></div>
-<div class="form-grid">
-<div class="field full"><label>نام</label><input id="catName" placeholder="نام دسته‌بندی" /></div>
-<div class="field"><label>حجم</label><input id="catVolume" type="number" min="0" placeholder="0 = نامحدود" /></div>
-<div class="field"><label>واحد</label><select id="catVolumeUnit"><option value="GB">GB</option><option value="MB">MB</option><option value="TB">TB</option></select></div>
-<div class="field"><label>روز</label><input id="catDays" type="number" min="0" placeholder="0 = نامحدود" /></div>
-<div class="field"><label>IP Limit</label><input id="catIp" type="number" min="0" placeholder="0 = نامحدود" /></div>
-<div class="field"><label>اتصال</label><input id="catConn" type="number" min="0" placeholder="0 = نامحدود" /></div>
-<div class="field"><label>سرعت Mbit</label><input id="catSpeed" type="number" min="0" placeholder="0 = نامحدود" /></div>
-<div class="field full"><label>IP تمیز</label><textarea id="catClean" style="min-height:48px;direction:ltr" placeholder="اختیاری"></textarea></div>
-<div class="field"><label><input type="checkbox" id="catRandom"> اسم تصادفی</label></div>
-<div class="field"><label><input type="checkbox" id="catSingle"> تک‌کاربره</label></div>
-<input type="hidden" id="catEditId" value="" />
-</div>
-<div class="modal-actions">
-<button class="modal-btn secondary" onclick="closeCategoryModal()">بستن</button>
-<button class="modal-btn primary" onclick="createCategory()">ساخت</button>
-</div></div></div>
-
-<div id="toast" class="toast"></div>
-
-
-<script>
-
-let editingLink = null;
-
-
-/* LOGIN NOTICE START — DELETE THIS WHOLE BLOCK TO DISABLE THE LOGIN NOTICE */
-function closeLoginNotice(){const modal=document.getElementById("loginNoticeModal");if(modal)modal.remove();try{history.replaceState({},document.title,location.pathname)}catch(e){}}
-(function(){
-    const modal=document.getElementById("loginNoticeModal");
-    if(modal && new URLSearchParams(location.search).get("login") !== "1") modal.remove();
-})();
-window.addEventListener("keydown",event=>{if(event.key==="Escape")closeLoginNotice()});
-/* LOGIN NOTICE END */
-
-function escapeHtml(value){
-
-    return String(
-        value ?? ""
-    )
-
-    .replaceAll(
-        "&",
-        "&amp;"
-    )
-
-    .replaceAll(
-        "<",
-        "&lt;"
-    )
-
-    .replaceAll(
-        ">",
-        "&gt;"
-    )
-
-    .replaceAll(
-        '"',
-        "&quot;"
-    )
-
-    .replaceAll(
-        "'",
-        "&#039;"
-    );
-
-}
-
-
-function formatBytes(value){
-
-    value =
-        Number(
-            value || 0
-        );
-
-    if(
-        value < 1024
-    ){
-        return (
-            value +
-            " B"
-        );
-    }
-
-    if(
-        value < 1024 ** 2
-    ){
-        return (
-            (
-                value /
-                1024
-            ).toFixed(1)
-            +
-            " KB"
-        );
-    }
-
-    if(
-        value < 1024 ** 3
-    ){
-        return (
-            (
-                value /
-                1024 ** 2
-            ).toFixed(2)
-            +
-            " MB"
-        );
-    }
-
-    return (
-        (
-            value /
-            1024 ** 3
-        ).toFixed(2)
-        +
-        " GB"
-    );
-
-}
-
-
-function showToast(message){
-
-    const toast =
-        document.getElementById(
-            "toast"
-        );
-
-    toast.textContent =
-        message;
-
-    toast.classList.add(
-        "show"
-    );
-
-    clearTimeout(
-        window.__toastTimer
-    );
-
-    window.__toastTimer =
-        setTimeout(
-            () => {
-                toast.classList.remove(
-                    "show"
-                );
-            },
-            2200
-        );
-
-}
-
-
-async function api(
-    url,
-    options = {}
-){
-
-    try{
-
-        const response =
-            await fetch(
-                url,
-                {
-                    cache:"no-store",
-                    credentials:"same-origin",
-                    ...options
-                }
-            );
-
-        if(
-            response.status === 401
-        ){
-
-            location.href =
-                "/login";
-
-            return null;
-
-        }
-
-        let data = null;
-
-        try{
-
-            data =
-                await response.json();
-
-        }catch{
-
-            data = {
-                ok:false,
-                error:
-                    "پاسخ سرور قابل خواندن نیست"
-            };
-
-        }
-
-        if(
-            !response.ok
-        ){
-
-            const message =
-                data.detail ||
-                data.error ||
-                "خطای سرور";
-
-            showToast(
-                message
-            );
-
-            console.error(
-                "API error:",
-                url,
-                data
-            );
-
-            return null;
-        }
-
-        return data;
-
-    }catch(error){
-
-        console.error(
-            "Request failed:",
-            url,
-            error
-        );
-
-        showToast(
-            "ارتباط با سرور برقرار نشد"
-        );
-
-        return null;
-
-    }
-
-}
-
-
-async function refresh(){
-
-    const results =
-        await Promise.all([
-            api("/stats"),
-            api("/api/links"),
-            api("/api/activity"),
-            api("/api/categories")
-        ]);
-    if(results[3]&&results[3].categories){
-      var opts=results[3].categories.map(function(cat){return "<option value='"+cat.id+"'>"+cat.number+" — "+escapeHtml(cat.name)+"</option>";}).join("");
-      ["manualCategory","autoCategory"].forEach(function(id){var s=document.getElementById(id);if(s){var v=s.value;s.innerHTML=opts;if(v)s.value=v;}});
-    }
-
-    const statsData =
-        results[0];
-
-    const linksData =
-        results[1];
-
-    const activity =
-        results[2];
-
-    if(statsData){
-
-        document.getElementById(
-            "totalLinks"
-        ).textContent =
-            statsData.links_count;
-
-        document.getElementById(
-            "activeLinks"
-        ).textContent =
-            statsData.active_links;
-
-        document.getElementById(
-            "connections"
-        ).textContent =
-            statsData.active_connections;
-
-        document.getElementById(
-            "traffic"
-        ).textContent =
-            formatBytes(
-                statsData.total_traffic_bytes
-            );
-
-        document.getElementById(
-            "requests"
-        ).textContent =
-            statsData.total_requests;
-
-        document.getElementById(
-            "uptime"
-        ).textContent =
-            statsData.uptime;
-    }
-
-
-    if(linksData){
-
-        const table =
-            document.getElementById(
-                "linksTable"
-            );
-
-        table.innerHTML = "";
-
-
-        if(
-            !linksData.links ||
-            !linksData.links.length
-        ){
-
-            table.innerHTML = `
-                <tr>
-                    <td
-                    colspan="9"
-                    class="empty"
-                    >
-                    هنوز کانفیگی ساخته نشده است.
-                    </td>
-                </tr>
-            `;
-
-        }else{
-
-            for(
-                const link
-                of linksData.links
-            ){
-
-                const row =
-                    document.createElement(
-                        "tr"
-                    );
-
-                const limit =
-                    Number(
-                        link.limit_bytes ||
-                        0
-                    );
-
-                const used =
-                    Number(
-                        link.used_bytes ||
-                        0
-                    );
-
-                let usageText =
-                    formatBytes(
-                        used
-                    );
-
-                if(limit > 0){
-
-                    usageText +=
-                        " / " +
-                        formatBytes(
-                            limit
-                        );
-
-                }else{
-
-                    usageText +=
-                        " / ∞";
-                }
-
-
-                row.innerHTML = `
-
-<td style="text-align:center;font-weight:800;color:#60a5fa">${link.category_number != null ? link.category_number : 0}</td>
-<td>
-
-<div style="font-weight:700">
-${escapeHtml(
-    link.label
-)}
-</div>
-
-<div
-style="
-margin-top:3px;
-color:rgba(255,255,255,.25);
-font-size:8px;
-"
->
-${escapeHtml(
-    link.uuid
-)}
-</div>
-
-</td>
-
-
-<td>
-${escapeHtml(
-    link.protocol
-)}
-</td>
-
-
-<td>
-<span style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:5px;background:${link.status_color==='green'?'#22c55e':(link.status_color==='red'?'#ef4444':'#6b7280')}"></span>
-<span class="badge ${link.active ? 'active' : 'off'}">${link.active ? 'فعال' : 'غیرفعال'}</span>
-</td>
-
-
-<td>
-${usageText}
-</td>
-
-
-<td>
-${
-    link.expires_at
-    ? escapeHtml(
-        link.expires_at
-      )
-    : "∞"
-}
-</td>
-
-
-<td>
-${link.connected_ips || 0}
-</td>
-
-
-<td>
-
-<div
-class="url-box"
-title="${escapeHtml(link.vless)}"
->
-${escapeHtml(link.vless)}
-</div>
-
-</td>
-
-
-<td>
-
-<div class="actions">
-
-${link.show_vless !== false && link.vless ? '<button class="action primary" type="button" data-action="copy-vless">VLESS</button>' : ''}
-
-<button
-class="action"
-type="button"
-data-action="copy-sub"
->
-SUB
-</button>
-
-<button
-class="action"
-type="button"
-data-action="open-info"
->
-INFO
-</button>
-
-<button
-class="action"
-type="button"
-data-action="toggle"
->
-${
-    link.active
-    ? "خاموش"
-    : "فعال"
-}
-</button>
-
-<button
-class="action"
-type="button"
-data-action="reset"
->
-ریست
-</button>
-
-<button
-class="action danger"
-type="button"
-data-action="delete"
->
-حذف
-</button>
-
-</div>
-
-</td>
-
-`;
-
-                const actionButtons =
-                    row.querySelectorAll(
-                        "button[data-action]"
-                    );
-
-                actionButtons.forEach(
-                    (button) => {
-                        button.addEventListener(
-                            "click",
-                            async () => {
-                                const action =
-                                    button.dataset.action;
-
-                                if (action === "copy-vless") {
-                                    await copyText(link.vless);
-                                    return;
-                                }
-
-                                if (action === "copy-sub") {
-                                    await copyText(link.sub);
-                                    return;
-                                }
-
-                                if (action === "open-info") {
-                                    if (!link.info) {
-                                        showToast("لینک INFO موجود نیست");
-                                        return;
-                                    }
-                                    window.open(
-                                        String(link.info),
-                                        "_blank",
-                                        "noopener,noreferrer"
-                                    );
-                                    return;
-                                }
-
-                                button.disabled = true;
-                                try {
-                                    if (action === "toggle") {
-                                        await toggleLink(
-                                            link.uuid,
-                                            !Boolean(link.active)
-                                        );
-                                    } else if (action === "reset") {
-                                        await resetUsage(link.uuid);
-                                    } else if (action === "delete") {
-                                        await deleteLink(link.uuid);
-                                    }
-                                } finally {
-                                    button.disabled = false;
-                                }
-                            }
-                        );
-                    }
-                );
-
-                table.appendChild(
-                    row
-                );
-
-            }
-
-        }
-    }
-
-
-    if(activity && activity.logs){
-        var box = document.getElementById("logs");
-        if(box){
-            var items = activity.logs.slice().reverse();
-            if(!items.length){
-                box.innerHTML = "<div style='text-align:center;color:rgba(255,255,255,.3);padding:24px;font-size:11px'>فعالیتی ثبت نشده است</div>";
-            } else {
-                var html = "";
-                items.forEach(function(item){
-                    var level = (item.level || "info").toLowerCase();
-                    var color = "#60a5fa";
-                    var bg = "rgba(37,99,235,.08)";
-                    var border = "rgba(96,165,250,.18)";
-                    var icon = "ℹ";
-                    if(level === "ok" || level === "success"){
-                        color = "#4ade80"; bg = "rgba(34,197,94,.08)"; border = "rgba(74,222,128,.2)"; icon = "✓";
-                    } else if(level === "err" || level === "error"){
-                        color = "#f87171"; bg = "rgba(239,68,68,.08)"; border = "rgba(248,113,113,.2)"; icon = "!";
-                    } else if(level === "warn" || level === "warning"){
-                        color = "#fbbf24"; bg = "rgba(245,158,11,.08)"; border = "rgba(251,191,36,.2)"; icon = "⚠";
-                    }
-                    var t = item.time || "";
-                    try {
-                        if(t){
-                            var d = new Date(t);
-                            if(!isNaN(d.getTime())){
-                                t = d.toLocaleString("fa-IR", {hour:"2-digit", minute:"2-digit", second:"2-digit", day:"2-digit", month:"2-digit"});
-                            }
-                        }
-                    } catch(e){}
-                    var kind = item.kind ? ("<span style='opacity:.55;margin-left:6px'>· " + escapeHtml(item.kind) + "</span>") : "";
-                    html += "<div style='display:flex;gap:10px;align-items:flex-start;padding:10px 12px;margin-bottom:6px;border-radius:12px;background:" + bg + ";border:1px solid " + border + "'>";
-                    html += "<div style='flex:0 0 28px;width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:" + color + ";background:rgba(0,0,0,.2);border:1px solid " + border + "'>" + icon + "</div>";
-                    html += "<div style='flex:1;min-width:0'>";
-                    html += "<div style='font-size:11px;font-weight:600;color:rgba(255,255,255,.88);line-height:1.7'>" + escapeHtml(item.message || "") + "</div>";
-                    html += "<div style='margin-top:3px;font-size:9px;color:rgba(255,255,255,.35);display:flex;gap:8px;flex-wrap:wrap'>";
-                    html += "<span style='color:" + color + ";font-weight:700'>" + escapeHtml(level.toUpperCase()) + "</span>" + kind;
-                    if(t) html += "<span style='margin-right:auto;direction:ltr'>" + escapeHtml(t) + "</span>";
-                    html += "</div></div></div>";
-                });
-                box.innerHTML = html;
-            }
-        }
-    }
-
-}
-
-
-async function copyText(text){
-
-    const value =
-        String(text ?? "").trim();
-
-    if (!value) {
-        showToast("متنی برای کپی وجود ندارد");
-        return false;
-    }
-
-    try {
-        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-            await navigator.clipboard.writeText(value);
-            showToast("کپی شد");
-            return true;
-        }
-    } catch (error) {
-        console.warn("Clipboard API failed:", error);
-    }
-
-    try {
-        const textarea = document.createElement("textarea");
-        textarea.value = value;
-        textarea.setAttribute("readonly", "");
-        textarea.style.position = "fixed";
-        textarea.style.left = "-9999px";
-        textarea.style.top = "0";
-        textarea.style.opacity = "0";
-        document.body.appendChild(textarea);
-        textarea.focus();
-        textarea.select();
-        textarea.setSelectionRange(0, textarea.value.length);
-        const copied = document.execCommand("copy");
-        textarea.remove();
-
-        if (copied) {
-            showToast("کپی شد");
-            return true;
-        }
-    } catch (error) {
-        console.warn("Legacy clipboard fallback failed:", error);
-    }
-
-    try {
-        window.prompt("لینک را کپی کنید:", value);
-    } catch (error) {
-        console.warn("Prompt fallback failed:", error);
-    }
-
-    return false;
-
-}
-
-function openManualModal(){
-
-    document
-        .getElementById(
-            "manualModal"
-        )
-        .classList.add(
-            "open"
-        );
-
-}
-
-
-function closeManualModal(){
-
-    document
-        .getElementById(
-            "manualModal"
-        )
-        .classList.remove(
-            "open"
-        );
-
-}
-
-
-function openAutoModal(){
-
-    document
-        .getElementById(
-            "autoModal"
-        )
-        .classList.add(
-            "open"
-        );
-
-}
-
-
-function closeAutoModal(){
-
-    document
-        .getElementById(
-            "autoModal"
-        )
-        .classList.remove(
-            "open"
-        );
-
-}
-
-
-function openPasswordModal(){
-
-    document
-        .getElementById(
-            "passwordModal"
-        )
-        .classList.add(
-            "open"
-        );
-
-}
-
-
-function closePasswordModal(){
-
-    document
-        .getElementById(
-            "passwordModal"
-        )
-        .classList.remove(
-            "open"
-        );
-
-}
-
-
-async function createAuto(){
-    const protocol = document.getElementById("autoProtocol")?.value || "vless-ws";
-    const profile = document.getElementById("autoProfile")?.value || "balanced";
-    const category_id = (document.getElementById("autoCategory")||{}).value || "0";
-    const config_count = Number((document.getElementById("autoConfigCount")||{}).value || 1);
-    closeAutoModal();
-    showToast("در حال ساخت کانفیگ حرفه‌ای...");
-    const result = await api("/api/links", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({protocol, profile, category_id, config_count, label:"", limit_value:0, expires_days:0})
-    });
-    if(!result || !result.ok) return;
-    const config = result.config || result.vless || result.link || "";
-    await copyText(config);
-    showToast("کانفیگ ساخته شد و در کلیپ‌بورد قرار گرفت");
-    await refresh();
-}
-
-
-async function createManual(){
-
-    const body = {
-
-        label:
-            document
-                .getElementById(
-                    "manualName"
-                )
-                .value
-                .trim()
-            ||
-            "کانفیگ جدید",
-
-        limit_value:
-            Number(
-                document
-                    .getElementById(
-                        "manualVolume"
-                    )
-                    .value
-                || 0
-            ),
-
-        limit_unit:
-            document
-                .getElementById(
-                    "manualVolumeUnit"
-                )
-                .value,
-
-        expires_days:
-            Number(
-                document
-                    .getElementById(
-                        "manualDays"
-                    )
-                    .value
-                || 0
-            ),
-
-        ip_limit:
-            Number(
-                document
-                    .getElementById(
-                        "manualIpLimit"
-                    )
-                    .value
-                || 0
-            ),
-
-        connection_limit:
-            Number(
-                document
-                    .getElementById(
-                        "manualConnections"
-                    )
-                    .value
-                || 0
-            ),
-
-        speed_limit_value:
-            Number(
-                document
-                    .getElementById(
-                        "manualSpeed"
-                    )
-                    .value
-                || 0
-            ),
-
-        speed_limit_unit:
-            "MBIT",
-
-        protocol:
-            document
-                .getElementById(
-                    "manualProtocol"
-                )
-                .value,
-
-        fingerprint:
-            document
-                .getElementById(
-                    "manualFingerprint"
-                )
-                .value,
-
-        fragment:
-            document
-                .getElementById(
-                    "manualFragment"
-                )
-                .value,
-
-        port:
-            Number(
-                document
-                    .getElementById(
-                        "manualPort"
-                    )
-                    .value
-                || 443
-            ),
-
-        alpn:
-            document
-                .getElementById(
-                    "manualAlpn"
-                )
-                .value,
-
-        note:
-            document
-                .getElementById(
-                    "manualNote"
-                )
-                .value,
-        clean_ips: (document.getElementById("manualCleanIps")||{}).value || "",
-        alarm_enabled: !!(document.getElementById("manualAlarm")||{}).checked,
-        category_id: (document.getElementById("manualCategory")||{}).value || "0",
-        config_count: Number((document.getElementById("manualConfigCount")||{}).value || 1)
-
-    };
-
-
-    const result =
-        await api(
-            "/api/links",
-            {
-                method:"POST",
-
-                headers:{
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body:
-                    JSON.stringify(
-                        body
-                    )
-            }
-        );
-
-
-    if(
-        !result
-    ){
-        return;
-    }
-
-
-    closeManualModal();
-
-    if(result.vless){
-
-        await copyText(
-            result.vless
-        );
-
-        showToast(
-            "کانفیگ ساخته شد"
-        );
-
-    }
-
-    await refresh();
-
-}
-
-
-async function toggleLink(
-    uuid,
-    active
-){
-
-    const result =
-        await api(
-            "/api/links/" +
-            encodeURIComponent(uuid),
-            {
-                method:"PATCH",
-                headers:{
-                    "Content-Type":"application/json"
-                },
-                body:JSON.stringify({
-                    active:Boolean(active)
-                })
-            }
-        );
-
-    if (!result || result.ok !== true) {
-        return false;
-    }
-
-    showToast(
-        active
-        ? "کانفیگ فعال شد"
-        : "کانفیگ غیرفعال شد"
-    );
-
-    await refresh();
-    return true;
-
-}
-
-
-async function resetUsage(
-    uuid
-){
-
-    const result =
-        await api(
-            "/api/links/" +
-            encodeURIComponent(uuid) +
-            "/reset-usage",
-            {
-                method:"POST"
-            }
-        );
-
-    if (!result || result.ok !== true) {
-        return false;
-    }
-
-    showToast("مصرف ریست شد");
-    await refresh();
-    return true;
-
-}
-
-
-async function deleteLink(
-    uuid
-){
-
-    if (!confirm("این کانفیگ حذف شود؟")) {
-        return false;
-    }
-
-    const result =
-        await api(
-            "/api/links/" +
-            encodeURIComponent(uuid),
-            {
-                method:"DELETE"
-            }
-        );
-
-    if (!result || result.ok !== true) {
-        return false;
-    }
-
-    showToast("کانفیگ حذف شد");
-    await refresh();
-    return true;
-
-}
-
-
-async function changePassword(){
-
-    const current =
-        document
-            .getElementById(
-                "currentPassword"
-            )
-            .value;
-
-    const newPassword =
-        document
-            .getElementById(
-                "newPassword"
-            )
-            .value;
-
-    const repeat =
-        document
-            .getElementById(
-                "repeatPassword"
-            )
-            .value;
-
-
-    const result =
-        await api(
-            "/api/change-password",
-            {
-                method:"POST",
-
-                headers:{
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body:
-                    JSON.stringify({
-
-                        current_password:
-                            current,
-
-                        new_password:
-                            newPassword,
-
-                        repeat_password:
-                            repeat
-
-                    })
-            }
-        );
-
-
-    if(
-        result
-        &&
-        result.ok
-    ){
-
-        closePasswordModal();
-
-        document
-            .getElementById(
-                "currentPassword"
-            )
-            .value = "";
-
-        document
-            .getElementById(
-                "newPassword"
-            )
-            .value = "";
-
-        document
-            .getElementById(
-                "repeatPassword"
-            )
-            .value = "";
-
-        showToast(
-            "رمز عبور تغییر کرد"
-        );
-
-    }
-
-}
-
-
-function openMixModal(){
-  var list=document.getElementById("mixList");
-  if(!list)return;
-  api("/api/links").then(function(data){
-    if(!data||!data.links){list.innerHTML="<div class='empty'>کانفیگی نیست</div>";return;}
-    var html="";
-    data.links.forEach(function(link){
-      if(!link.active)return;
-      html+="<label style='display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.03);margin-bottom:5px;cursor:pointer'>";
-      html+="<input type='checkbox' class='mix-check' value='"+link.uuid+"' style='width:16px;height:16px'>";
-      html+="<span style='flex:1'><b>"+escapeHtml(link.label)+"</b> <span style='color:rgba(255,255,255,.35);font-size:9px'>"+escapeHtml(link.protocol||"")+"</span></span>";
-      html+="<span style='color:#60a5fa;font-size:10px'>دسته "+(link.category_number!=null?link.category_number:0)+"</span>";
-      html+="</label>";
-    });
-    list.innerHTML=html||"<div class='empty'>کانفیگ فعالی نیست</div>";
-  });
-  document.getElementById("mixModal").classList.add("open");
-}
-function closeMixModal(){document.getElementById("mixModal").classList.remove("open");}
-async function doMixConfigs(){
-  var ids=[];
-  document.querySelectorAll(".mix-check:checked").forEach(function(el){ids.push(el.value);});
-  if(ids.length<2){showToast("حداقل ۲ کانفیگ انتخاب کنید");return;}
-  var res=await api("/api/mix-sub",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({link_ids:ids})});
-  if(res&&res.ok){
-    showToast("ساب مخلوط ساخته شد ("+res.count+")");
-    if(res.sub_url){await copyText(res.sub_url);showToast("لینک ساب کپی شد");}
-    closeMixModal();
-  }
-}
-
-function toggleAlarmCheck(){
-  var cb=document.getElementById("manualAlarm");
-  var box=document.getElementById("alarmToggle");
-  if(!cb||!box)return;
-  cb.checked=!cb.checked;
-  if(cb.checked){box.style.background="#22c55e";box.style.borderColor="#22c55e";box.style.color="#fff";}
-  else{box.style.background="#374151";box.style.borderColor="#6b7280";box.style.color="transparent";}
-}
-function openCategoryModal(){loadCategoriesUI();document.getElementById("categoryModal").classList.add("open");}
-function closeCategoryModal(){document.getElementById("categoryModal").classList.remove("open");}
-async function loadCategoriesUI(){
-  var data=await api("/api/categories");
-  if(!data||!data.categories)return;
-  window.__cats = data.categories;
-  var list=document.getElementById("categoryList");
-  var html=""; var opts="";
-  data.categories.forEach(function(cat){
-    opts+="<option value='"+cat.id+"'>"+cat.number+" — "+escapeHtml(cat.name)+"</option>";
-    html+="<div style='display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:10px;background:rgba(255,255,255,.03);margin-bottom:5px;gap:8px'><span><b style='color:#60a5fa'>"+cat.number+"</b> — "+escapeHtml(cat.name);
-    if(cat.single_user) html+=" <span style='color:#fbbf24;font-size:9px'>تک‌کاربره</span>";
-    html+="</span><span style='display:flex;gap:4px'>";
-    html+="<button class='action' type='button' onclick=\"editCategory('"+cat.id+"')\">ویرایش</button>";
-    if(cat.id!=="0"&&cat.id!=="1") html+="<button class='action danger' type='button' onclick=\"deleteCategory('"+cat.id+"')\">حذف</button>";
-    html+="</span></div>";
-  });
-  if(list) list.innerHTML=html;
-  ["manualCategory","autoCategory"].forEach(function(id){var s=document.getElementById(id);if(s){var v=s.value;s.innerHTML=opts;if(v)s.value=v;}});
-}
-function editCategory(id){
-  var cat=(window.__cats||[]).find(function(x){return x.id===id});
-  if(!cat)return;
-  document.getElementById("catEditId").value=id;
-  document.getElementById("catName").value=cat.name||"";
-  document.getElementById("catVolume").value="";
-  document.getElementById("catDays").value=cat.expires_days||0;
-  document.getElementById("catIp").value=cat.ip_limit||0;
-  document.getElementById("catConn").value=cat.connection_limit||0;
-  document.getElementById("catSpeed").value="";
-  document.getElementById("catClean").value=(cat.clean_ips||[]).join("\n");
-  document.getElementById("catRandom").checked=!!cat.random_name;
-  document.getElementById("catSingle").checked=!!cat.single_user;
-  showToast("در حال ویرایش: "+cat.name);
-}
-
-async function createCategory(){
-  var body={name:(document.getElementById("catName").value||"").trim()||"دسته جدید",
-    limit_value:Number(document.getElementById("catVolume").value||0),
-    limit_unit:document.getElementById("catVolumeUnit").value,
-    expires_days:Number(document.getElementById("catDays").value||0),
-    ip_limit:Number(document.getElementById("catIp").value||0),
-    connection_limit:Number(document.getElementById("catConn").value||0),
-    speed_limit_value:Number(document.getElementById("catSpeed").value||0),
-    clean_ips:(document.getElementById("catClean").value||"").trim(),
-    random_name:!!document.getElementById("catRandom").checked,
-    single_user:!!document.getElementById("catSingle").checked};
-  var editId=(document.getElementById("catEditId")||{}).value||"";
-  var res;
-  if(editId){
-    res=await api("/api/categories/"+encodeURIComponent(editId),{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  } else {
-    res=await api("/api/categories",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  }
-  if(res&&res.ok){
-    showToast(editId?"ویرایش شد":"ساخته شد");
-    document.getElementById("catName").value="";
-    document.getElementById("catEditId").value="";
-    await loadCategoriesUI();
-  }
-}
-async function deleteCategory(id){
-  if(!confirm("حذف؟"))return;
-  var res=await api("/api/categories/"+encodeURIComponent(id),{method:"DELETE"});
-  if(res&&res.ok){showToast("حذف شد");await loadCategoriesUI();}
-}
-
-refresh();
-setInterval(refresh, 3000);
-
-
-</script>
-
-<!-- ===================================================== -->
-<!-- POST LOGIN REGION / DOMAIN NOTICE -->
-<!-- ===================================================== -->
-
-<div
-    id="regionNotice"
-    style="
-        display:none;
-        position:fixed;
-        inset:0;
-        z-index:99999;
-        align-items:center;
-        justify-content:center;
-        padding:20px;
-        background:rgba(2,6,23,.78);
-        backdrop-filter:blur(18px);
-        -webkit-backdrop-filter:blur(18px);
-    "
->
-    <div
-        style="
-            width:min(560px,100%);
-            position:relative;
-            overflow:hidden;
-            border:1px solid rgba(245,158,11,.28);
-            border-radius:26px;
-            padding:26px;
-            background:linear-gradient(145deg,rgba(30,25,8,.98),rgba(10,12,20,.98));
-            box-shadow:0 30px 100px rgba(0,0,0,.55),0 0 60px rgba(245,158,11,.10);
-            font-family:"Vazirmatn",sans-serif;
-        "
-    >
-        <div
-            style="
-                position:absolute;
-                width:180px;
-                height:180px;
-                left:-70px;
-                top:-90px;
-                border-radius:999px;
-                background:rgba(245,158,11,.12);
-                filter:blur(35px);
-                pointer-events:none;
-            "
-        ></div>
-
-        <div style="display:flex;align-items:flex-start;gap:14px;position:relative;">
-            <div
-                style="
-                    flex:0 0 auto;
-                    width:54px;
-                    height:54px;
-                    display:flex;
-                    align-items:center;
-                    justify-content:center;
-                    border-radius:17px;
-                    color:#fbbf24;
-                    border:1px solid rgba(251,191,36,.25);
-                    background:rgba(245,158,11,.10);
-                "
-            >
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M12 3 2.8 19a1.4 1.4 0 0 0 1.22 2h15.96a1.4 1.4 0 0 0 1.22-2L12 3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                    <path d="M12 9v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                    <circle cx="12" cy="16.8" r="1" fill="currentColor"/>
-                </svg>
-            </div>
-
-            <div style="min-width:0;flex:1;">
-                <div style="font-size:18px;font-weight:900;color:#fff;line-height:1.5;">به بهترین نسخه PX Panel خوش اومدید عشقا 💙</div>
-                <div style="margin-top:5px;font-size:11px;color:rgba(255,255,255,.45);">کانال تلگرام: LogicSec</div>
-            </div>
-
-            <button
-                type="button"
-                onclick="closeRegionNotice()"
-                aria-label="بستن"
-                style="
-                    width:38px;
-                    height:38px;
-                    flex:0 0 auto;
-                    border:1px solid rgba(255,255,255,.08);
-                    border-radius:12px;
-                    color:rgba(255,255,255,.65);
-                    background:rgba(255,255,255,.04);
-                    cursor:pointer;
-                    display:flex;
-                    align-items:center;
-                    justify-content:center;
-                "
-            >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                    <path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                </svg>
-            </button>
-        </div>
-
-        <div
-            style="
-                position:relative;
-                margin-top:20px;
-                padding:17px;
-                border:1px solid rgba(251,191,36,.16);
-                border-radius:18px;
-                background:rgba(245,158,11,.055);
-                color:rgba(255,255,255,.82);
-                font-size:13px;
-                line-height:2.05;
-                text-align:right;
-            "
-        >
-            <div style="color:rgba(255,255,255,.85);font-size:13px;line-height:2;margin-bottom:10px;">
-              به <b style="color:#60a5fa;">PX Panel</b> خوش آمدید. پنل آماده مدیریت کانفیگ‌ها، دسته‌بندی و سابسکریپشن است.
-            </div>
-            <div style="margin-top:8px;padding:12px;border-radius:12px;background:rgba(37,99,235,.1);border:1px solid rgba(96,165,250,.2);color:#93c5fd;font-size:12px;">
-              کانال تلگرام: <b>LogicSec</b>
-            </div>
-            <div style="margin-top:12px;color:rgba(255,255,255,.5);font-size:11px;line-height:1.9;">
-              اگر کانفیگ‌ها پینگ ندادند، دامنه ممکن است فیلتر شده باشد — دامنه جدید بسازید.
-            </div>
-        </div>
-
-        <button
-            type="button"
-            onclick="closeRegionNotice()"
-            style="
-                position:relative;
-                width:100%;
-                margin-top:15px;
-                min-height:46px;
-                border:1px solid rgba(251,191,36,.20);
-                border-radius:15px;
-                color:#17120a;
-                background:linear-gradient(135deg,#fbbf24,#f59e0b);
-                font-family:inherit;
-                font-weight:900;
-                cursor:pointer;
-            "
-        >
-            متوجه شدم
-        </button>
+  <div class="card" style="padding:0">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th data-i18n="th_name">نام</th>
+            <th data-i18n="th_proto">پروتکل</th>
+            <th data-i18n="th_status">وضعیت</th>
+            <th data-i18n="th_usage">مصرف</th>
+            <th data-i18n="th_ops">عملیات</th>
+          </tr>
+        </thead>
+        <tbody id="linksTable"><tr><td colspan="5" style="text-align:center;color:var(--t3);padding:30px" data-i18n="loading">...</td></tr></tbody>
+      </table>
     </div>
-</div>
+  </div>
+</section>
+
+<!-- CREATE -->
+<section class="page" id="page-create">
+  <div class="page-head">
+    <div>
+      <div class="page-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
+        <span data-i18n="nav_create">ساخت کانفیگ</span>
+      </div>
+    </div>
+  </div>
+  <div class="g2">
+    <div class="card">
+      <div class="card-title"><span data-i18n="manual_create">ساخت دستی</span></div>
+      <div class="field"><label data-i18n="label_name">نام</label><input id="cName" placeholder="auto"></div>
+      <div class="form-row">
+        <div class="field"><label data-i18n="label_limit">محدودیت حجم</label><input id="cLimit" type="number" value="0" min="0"></div>
+        <div class="field"><label data-i18n="label_unit">واحد</label>
+          <select id="cUnit"><option>GB</option><option>MB</option><option>KB</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label data-i18n="label_days">انقضا (روز)</label><input id="cDays" type="number" value="0" min="0"></div>
+        <div class="field"><label data-i18n="label_ip">محدودیت IP</label><input id="cIp" type="number" value="0" min="0"></div>
+      </div>
+      <div class="field"><label data-i18n="label_speed">محدودیت سرعت (Mbps)</label><input id="cSpeed" type="number" value="0" min="0"></div>
+      <button class="btn btn-p" style="width:100%" onclick="doManualCreate()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>
+        <span data-i18n="btn_create">ساخت</span>
+      </button>
+    </div>
+    <div class="card" style="border-color:rgba(139,92,246,.3)">
+      <div class="card-title"><span data-i18n="auto_create">ساخت خودکار (پیشنهادی)</span></div>
+      <p style="color:var(--t2);font-size:13px;line-height:1.7;margin-bottom:16px" data-i18n="auto_desc">با یک کلیک کانفیگ با تنظیمات بهینه ساخته می‌شود. نام تصادفی، بدون محدودیت حجم و سرعت.</p>
+      <button class="btn btn-p" style="width:100%;background:linear-gradient(135deg,#8b5cf6,#6366f1)" onclick="doAutoCreate()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8 19 13M17.8 6.2 19 5M12.2 11.8 11 13M12.2 6.2 11 5"/><circle cx="15" cy="9" r="5"/><path d="M4 18a5 5 0 0 1 8-4"/></svg>
+        <span data-i18n="btn_auto">ساخت خودکار</span>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<section class="page" id="page-stats">
+  <div class="page-head">
+    <div>
+      <div class="page-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-6"/></svg>
+        <span data-i18n="nav_stats">آمار</span>
+      </div>
+      <div class="page-sub" data-i18n="stats_sub">ترافیک و اتصالات · فیلتر زمانی</div>
+    </div>
+    <div class="range-tabs" id="rangeTabs">
+      <button class="range-tab" data-r="day" onclick="setRange('day',this)" data-i18n="r_day">روز</button>
+      <button class="range-tab" data-r="week" onclick="setRange('week',this)" data-i18n="r_week">هفته</button>
+      <button class="range-tab on" data-r="month" onclick="setRange('month',this)" data-i18n="r_month">ماه</button>
+      <button class="range-tab" data-r="all" onclick="setRange('all',this)" data-i18n="r_all">کل</button>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="metric-label" data-i18n="m_traffic">ترافیک</div><div class="metric-val" id="sTraffic">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_conns">اتصالات</div><div class="metric-val" id="sConns">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_links">کانفیگ فعال</div><div class="metric-val" id="sActive">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_requests">درخواست‌ها</div><div class="metric-val" id="sReq">—</div></div>
+  </div>
+  <div class="card">
+    <div class="card-title" data-i18n="panel_info">اطلاعات کل پنل</div>
+    <div id="panelInfo" style="font-size:13px;color:var(--t2);line-height:2"></div>
+  </div>
+</section>
+
+<!-- LOGS -->
+<section class="page" id="page-logs">
+  <div class="page-head">
+    <div>
+      <div class="page-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        <span data-i18n="nav_logs">لاگ فعالیت</span>
+      </div>
+    </div>
+    <button class="btn btn-sm" onclick="loadLogs()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.1-3.4L23 10"/></svg>
+    </button>
+  </div>
+  <div class="card" id="logsBox"><div style="text-align:center;color:var(--t3);padding:24px" data-i18n="loading">...</div></div>
+</section>
+
+<!-- SETTINGS -->
+<section class="page" id="page-settings">
+  <div class="page-head">
+    <div>
+      <div class="page-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2"/></svg>
+        <span data-i18n="nav_settings">تنظیمات</span>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" data-i18n="lang_label">زبان / Language</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-p" onclick="setLang('fa')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 8l6 6M4 14l6-6 2 3 4-4M2 5h12M7 2v3"/></svg>
+        فارسی کامل
+      </button>
+      <button class="btn" onclick="setLang('en')">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        Full English
+      </button>
+    </div>
+    <p style="color:var(--t3);font-size:11px;margin-top:10px">فارسی بدون انگلیسی · English with zero Persian</p>
+  </div>
+  <div class="card">
+    <div class="card-title" data-i18n="change_pw">تغییر رمز عبور</div>
+    <div class="field"><label data-i18n="pw_cur">رمز فعلی</label><input type="password" id="pwCur"></div>
+    <div class="field"><label data-i18n="pw_new">رمز جدید</label><input type="password" id="pwNew"></div>
+    <div class="field"><label data-i18n="pw_cf">تکرار رمز</label><input type="password" id="pwCf"></div>
+    <button class="btn btn-p" onclick="doChangePw()"><span data-i18n="btn_save">ذخیره</span></button>
+  </div>
+</section>
+
+<!-- SUPPORT -->
+<section class="page" id="page-support">
+  <div class="page-head">
+    <div>
+      <div class="page-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+        <span data-i18n="nav_support">پشتیبانی</span>
+      </div>
+    </div>
+  </div>
+  <div class="support-grid">
+    <a class="support-tile" href="https://github.com/iran-px-panel/pxpanel" target="_blank" rel="noopener">
+      <div class="support-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.4.6.1.82-.26.82-.58v-2.03c-3.34.73-4.03-1.61-4.03-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.1-.75.08-.74.08-.74 1.21.09 1.85 1.24 1.85 1.24 1.07 1.84 2.81 1.31 3.5 1 .11-.78.42-1.31.76-1.61-2.66-.3-5.46-1.33-5.46-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.8 5.62-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.69.83.57C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/></svg></div>
+      <div><div class="support-label" data-i18n="github">گیت‌هاب</div><div class="support-val">iran-px-panel/pxpanel</div></div>
+    </a>
+    <a class="support-tile" href="https://t.me/logic_sec" target="_blank" rel="noopener">
+      <div class="support-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.2-1.86 8.77c-.14.62-.5.77-1.01.48l-2.8-2.06-1.35 1.3c-.15.15-.27.27-.55.27l.2-2.84 5.18-4.68c.22-.2-.05-.31-.35-.12l-6.4 4.03-2.76-.86c-.6-.19-.61-.6.12-.89l10.78-4.16c.5-.18.94.12.78.86z"/></svg></div>
+      <div><div class="support-label" data-i18n="telegram">تلگرام</div><div class="support-val">@logic_sec</div></div>
+    </a>
+    <a class="support-tile" href="https://t.me/logictop12" target="_blank" rel="noopener">
+      <div class="support-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></div>
+      <div><div class="support-label" data-i18n="channel">کانال پشتیبان</div><div class="support-val">t.me/logictop12</div></div>
+    </a>
+  </div>
+</section>
+
+</main>
+
+<div class="toast" id="toast"></div>
 
 <script>
-(function(){
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("login") === "1") {
-        const modal = document.getElementById("regionNotice");
-        if (modal) {
-            modal.style.display = "flex";
-            document.body.style.overflow = "hidden";
-        }
-        const cleanUrl = window.location.pathname;
-        window.history.replaceState({}, document.title, cleanUrl);
-    }
-})();
+const I18N = {
+fa:{
+  sec_panel:'پنل',sec_sys:'سیستم',nav_dash:'داشبورد',nav_configs:'کانفیگ‌ها',nav_create:'ساخت کانفیگ',
+  nav_stats:'آمار',nav_logs:'لاگ فعالیت',nav_settings:'تنظیمات',nav_support:'پشتیبانی',
+  refresh:'بروزرسانی',logout:'خروج',loading:'در حال بارگذاری...',m_conns:'اتصالات فعال',m_traffic:'ترافیک کل',
+  m_links:'کانفیگ‌ها',m_uptime:'آپتایم',m_requests:'درخواست‌ها',quick_create:'ساخت کانفیگ',
+  quick_create_desc:'ساخت دستی با محدودیت ترافیک، سرعت و انقضا',auto_create:'ساخت خودکار (پیشنهادی)',
+  auto_create_desc:'ساخت سریع با تنظیمات بهینه',configs_sub:'مدیریت لینک‌ها',th_name:'نام',th_proto:'پروتکل',
+  th_status:'وضعیت',th_usage:'مصرف',th_ops:'عملیات',manual_create:'ساخت دستی',label_name:'نام',
+  label_limit:'محدودیت حجم',label_unit:'واحد',label_days:'انقضا (روز)',label_ip:'محدودیت IP',
+  label_speed:'محدودیت سرعت (Mbps)',btn_create:'ساخت',btn_auto:'ساخت خودکار',auto_desc:'با یک کلیک کانفیگ با تنظیمات بهینه ساخته می‌شود.',
+  stats_sub:'ترافیک و اتصالات · فیلتر زمانی',r_day:'روز',r_week:'هفته',r_month:'ماه',r_all:'کل',
+  panel_info:'اطلاعات کل پنل',lang_label:'زبان',change_pw:'تغییر رمز عبور',pw_cur:'رمز فعلی',pw_new:'رمز جدید',
+  pw_cf:'تکرار رمز',btn_save:'ذخیره',github:'گیت‌هاب',telegram:'تلگرام',channel:'کانال پشتیبان'
+},
+en:{
+  sec_panel:'PANEL',sec_sys:'SYSTEM',nav_dash:'Dashboard',nav_configs:'Configs',nav_create:'Create Config',
+  nav_stats:'Statistics',nav_logs:'Activity Log',nav_settings:'Settings',nav_support:'Support',
+  refresh:'Refresh',logout:'Logout',loading:'Loading...',m_conns:'Active connections',m_traffic:'Total traffic',
+  m_links:'Configs',m_uptime:'Uptime',m_requests:'Requests',quick_create:'Create Config',
+  quick_create_desc:'Manual create with traffic, speed and expiry limits',auto_create:'Auto Create (Suggested)',
+  auto_create_desc:'Quick create with optimal settings',configs_sub:'Manage links',th_name:'Name',th_proto:'Protocol',
+  th_status:'Status',th_usage:'Usage',th_ops:'Actions',manual_create:'Manual create',label_name:'Name',
+  label_limit:'Traffic limit',label_unit:'Unit',label_days:'Expiry (days)',label_ip:'IP limit',
+  label_speed:'Speed limit (Mbps)',btn_create:'Create',btn_auto:'Auto create',auto_desc:'One click creates a config with optimal defaults.',
+  stats_sub:'Traffic and connections · time filter',r_day:'Day',r_week:'Week',r_month:'Month',r_all:'All',
+  panel_info:'Panel overview',lang_label:'Language',change_pw:'Change password',pw_cur:'Current password',pw_new:'New password',
+  pw_cf:'Confirm password',btn_save:'Save',github:'GitHub',telegram:'Telegram',channel:'Support channel'
+}
+};
+let lang = localStorage.getItem('px_lang') || 'fa';
+let statRange = 'month';
 
-function closeRegionNotice(){
-    const modal = document.getElementById("regionNotice");
-    if (modal) modal.style.display = "none";
-    document.body.style.overflow = "";
+function t(k){return (I18N[lang]||I18N.fa)[k]||k}
+function applyLang(){
+  document.getElementById('htmlRoot').lang = lang;
+  document.getElementById('htmlRoot').dir = lang==='fa'?'rtl':'ltr';
+  document.body.classList.toggle('en', lang==='en');
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const k=el.getAttribute('data-i18n');
+    if(I18N[lang][k]) el.textContent=I18N[lang][k];
+  });
+}
+function setLang(l){lang=l;localStorage.setItem('px_lang',l);applyLang();toast(l==='fa'?'زبان فارسی':'English');}
+
+const sb=document.getElementById('sidebar');
+const main=document.getElementById('main');
+document.getElementById('sbToggle').onclick=()=>{
+  sb.classList.toggle('collapsed');
+  main.classList.toggle('expanded', sb.classList.contains('collapsed'));
+  localStorage.setItem('sb_c', sb.classList.contains('collapsed')?'1':'0');
+};
+if(localStorage.getItem('sb_c')==='1'){sb.classList.add('collapsed');main.classList.add('expanded');}
+
+document.getElementById('mobMenuBtn').onclick=()=>{sb.classList.add('open');document.getElementById('overlay').classList.add('show')};
+document.getElementById('overlay').onclick=()=>{sb.classList.remove('open');document.getElementById('overlay').classList.remove('show')};
+
+function goPage(name){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('on', n.dataset.page===name));
+  document.querySelectorAll('.page').forEach(p=>p.classList.toggle('on', p.id==='page-'+name));
+  sb.classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+  window.scrollTo({top:0,behavior:'smooth'});
+  if(name==='logs') loadLogs();
+  if(name==='configs'||name==='dash'||name==='stats') refreshAll();
+}
+document.querySelectorAll('.nav-item').forEach(el=>el.addEventListener('click',()=>goPage(el.dataset.page)));
+
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.classList.add('show');
+  clearTimeout(window.__tt);window.__tt=setTimeout(()=>el.classList.remove('show'),2200);
 }
 
-document.addEventListener("keydown", function(event){
-    if (event.key === "Escape") closeRegionNotice();
-});
-</script>
+async function api(url, opts={}){
+  try{
+    const r=await fetch(url,{cache:'no-store',credentials:'same-origin',...opts});
+    if(r.status===401){location.href='/login';return null}
+    let data=null;try{data=await r.json()}catch{data={ok:false}}
+    if(!r.ok){toast(data.detail||data.error||'Error');return null}
+    return data;
+  }catch(e){toast(lang==='fa'?'ارتباط برقرار نشد':'Connection failed');return null}
+}
 
+function fmtB(b){
+  b=Number(b)||0;
+  if(b<1024)return b+' B';
+  if(b<1024**2)return (b/1024).toFixed(1)+' KB';
+  if(b<1024**3)return (b/1024**2).toFixed(2)+' MB';
+  return (b/1024**3).toFixed(2)+' GB';
+}
+
+async function refreshAll(){
+  const links=await api('/api/links');
+  if(!links)return;
+  const list=links.links||links||[];
+  const arr=Array.isArray(list)?list:(list.links||[]);
+  document.getElementById('mLinks').textContent=arr.length;
+  let active=0,used=0;
+  arr.forEach(l=>{if(l.active!==false)active++;used+=Number(l.used_bytes||0)});
+  document.getElementById('mTraffic').textContent=fmtB(used);
+  document.getElementById('sTraffic').textContent=fmtB(used);
+  document.getElementById('sActive').textContent=active;
+  document.getElementById('lastUpd').textContent=(lang==='fa'?'بروزرسانی: ':'Updated: ')+new Date().toLocaleTimeString(lang==='fa'?'fa-IR':'en-US');
+
+  // try stats endpoints if exist
+  try{
+    const st=await api('/api/activity');
+    if(st&&Array.isArray(st)){/* handled in loadLogs */}
+  }catch{}
+
+  // connections
+  try{
+    const c=await api('/api/connections');
+    const cnt=c&&c.connections?c.connections.length:(c&&c.count)||0;
+    document.getElementById('mConns').textContent=cnt;
+    document.getElementById('sConns').textContent=cnt;
+  }catch{document.getElementById('mConns').textContent='—'}
+
+  // uptime from me or links meta
+  try{
+    const me=await api('/api/me');
+    if(me&&me.uptime)document.getElementById('mUptime').textContent=me.uptime;
+  }catch{}
+
+  renderLinks(arr);
+  document.getElementById('panelInfo').innerHTML=
+    (lang==='fa'
+      ?`کل کانفیگ: <b>${arr.length}</b> · فعال: <b>${active}</b> · مصرف: <b>${fmtB(used)}</b> · بازه: <b>${statRange}</b>`
+      :`Total configs: <b>${arr.length}</b> · Active: <b>${active}</b> · Usage: <b>${fmtB(used)}</b> · Range: <b>${statRange}</b>`);
+  document.getElementById('sReq').textContent=arr.reduce((s,l)=>s+(l.requests||0),0)||'—';
+}
+
+function renderLinks(arr){
+  const tb=document.getElementById('linksTable');
+  if(!arr.length){tb.innerHTML=`<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:28px">${lang==='fa'?'کانفیگی نیست':'No configs'}</td></tr>`;return}
+  tb.innerHTML=arr.map(l=>{
+    const uid=l.uuid||l.id||'';
+    const name=l.label||l.name||uid.slice(0,8);
+    const proto=(l.protocol||'vless-ws').replace(/-ws$/,'');
+    const on=l.active!==false&&!l.expired;
+    const link=l.vless_link||l.link||'';
+    return `<tr>
+      <td><b>${esc(name)}</b></td>
+      <td style="color:var(--t3)">${esc(proto)}</td>
+      <td><span class="badge ${on?'badge-on':'badge-off'}">${on?(lang==='fa'?'فعال':'ON'):(lang==='fa'?'خاموش':'OFF')}</span></td>
+      <td>${fmtB(l.used_bytes)}</td>
+      <td class="ops">
+        <button class="btn btn-sm" onclick="copyText('${esc(link)}')" title="Copy"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        <button class="btn btn-sm" onclick="toggleLink('${uid}',${!on})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <button class="btn btn-sm btn-d" onclick="deleteLink('${uid}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+async function copyText(t){try{await navigator.clipboard.writeText(t);toast(lang==='fa'?'کپی شد':'Copied')}catch{toast('Copy failed')}}
+async function toggleLink(uid,state){
+  const r=await api('/api/links/'+uid,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:state})});
+  if(r){toast(state?(lang==='fa'?'فعال':'ON'):(lang==='fa'?'غیرفعال':'OFF'));refreshAll()}
+}
+async function deleteLink(uid){
+  if(!confirm(lang==='fa'?'حذف شود؟':'Delete?'))return;
+  const r=await api('/api/links/'+uid,{method:'DELETE'});
+  if(r!==null){toast(lang==='fa'?'حذف شد':'Deleted');refreshAll()}
+}
+
+async function doAutoCreate(){
+  toast(lang==='fa'?'در حال ساخت...':'Creating...');
+  const r=await api('/api/links/auto',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+  if(r){
+    toast(lang==='fa'?'ساخته شد':'Created');
+    if(r.link||r.vless_link) copyText(r.link||r.vless_link);
+    goPage('configs');refreshAll();
+  }else{
+    // fallback to normal create
+    const r2=await api('/api/links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:'auto-'+Date.now().toString(36).slice(-5),limit_value:0,limit_unit:'GB'})});
+    if(r2){toast(lang==='fa'?'ساخته شد':'Created');goPage('configs');refreshAll()}
+  }
+}
+async function doManualCreate(){
+  const body={
+    label:document.getElementById('cName').value||undefined,
+    limit_value:Number(document.getElementById('cLimit').value)||0,
+    limit_unit:document.getElementById('cUnit').value||'GB',
+    expires_days:Number(document.getElementById('cDays').value)||0,
+    ip_limit:Number(document.getElementById('cIp').value)||0,
+    speed_limit_value:Number(document.getElementById('cSpeed').value)||0,
+    speed_limit_unit:'MBIT'
+  };
+  const r=await api('/api/links',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r){toast(lang==='fa'?'ساخته شد':'Created');goPage('configs');refreshAll()}
+}
+
+async function doChangePw(){
+  const cur=document.getElementById('pwCur').value;
+  const nw=document.getElementById('pwNew').value;
+  const cf=document.getElementById('pwCf').value;
+  if(nw!==cf){toast(lang==='fa'?'رمزها یکی نیستند':'Passwords mismatch');return}
+  const r=await api('/api/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
+  if(r){toast(lang==='fa'?'رمز تغییر کرد':'Password changed');document.getElementById('pwCur').value='';document.getElementById('pwNew').value='';document.getElementById('pwCf').value=''}
+}
+
+async function loadLogs(){
+  const box=document.getElementById('logsBox');
+  const data=await api('/api/activity');
+  const logs=Array.isArray(data)?data:(data&&data.logs)||[];
+  if(!logs.length){box.innerHTML=`<div style="text-align:center;color:var(--t3);padding:24px">${lang==='fa'?'لاگی نیست':'No logs'}</div>`;return}
+  box.innerHTML=logs.slice().reverse().map(l=>{
+    const tm=(l.time||l.ts||'').toString().slice(11,19)||'—';
+    return `<div class="log-item"><div class="log-time">${esc(tm)}</div><div class="log-msg">${esc(l.message||l.msg||JSON.stringify(l))}</div></div>`;
+  }).join('');
+}
+
+function setRange(r,el){
+  statRange=r;
+  document.querySelectorAll('#rangeTabs .range-tab').forEach(t=>t.classList.toggle('on',t.dataset.r===r));
+  refreshAll();
+  toast(t('r_'+r));
+}
+
+applyLang();
+refreshAll();
+setInterval(refreshAll,15000);
+</script>
 </body>
 </html>
 """
+
 
 
 @app.get(
