@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.9.9"
+APP_VERSION = "13.10.0"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -2165,6 +2165,10 @@ html{scroll-behavior:smooth} body{overflow-x:hidden} button,input,select,textare
 .bottom-bulk.show{display:block}
 .bottom-bulk-inner{max-width:960px;margin:0 auto;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center}
 .bottom-bulk select{padding:8px 10px;border-radius:10px;border:1px solid var(--card-b);background:var(--input-bg);color:var(--t1);font-family:inherit;font-size:12px}
+
+table th:first-child, table td:first-child{overflow:visible}
+.cfg-chk{accent-color:var(--accent)}
+#page-donate .page-title{width:100%}
 </style>
 </head>
 
@@ -6735,16 +6739,13 @@ tr:hover td{background:var(--hover)}
   </div>
   <div class="card" style="padding:0">
     <div class="table-wrap">
-      <div id="bulkBar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);cursor:pointer">
-          <input type="checkbox" id="chkAll" onchange="toggleSelectAll(this.checked);updateBulkBar()"> انتخاب همه
-        </label>
-        <span style="font-size:11px;color:var(--t3)">کشیدن برای جابجایی اولویت · برای عملیات گروهی تیک بزنید</span>
-      </div>
+      <div id="bulkBar" style="display:none"></div>
       <table>
         <thead><tr>
-          <th style="width:36px"></th>
-          <th style="width:28px"></th>
+          <th style="width:40px;text-align:center;padding:10px 8px">
+            <input type="checkbox" id="chkAll" onchange="toggleSelectAll(this.checked);updateBulkBar()" title="انتخاب همه" style="width:16px;height:16px;margin:0;vertical-align:middle;cursor:pointer">
+          </th>
+          <th style="width:28px;padding:10px 4px"></th>
           <th data-i18n="th_name">نام</th><th data-i18n="th_proto">پروتکل</th><th data-i18n="th_status">وضعیت</th>
           <th data-i18n="th_usage">مصرف</th><th data-i18n="th_ops">عملیات</th>
         </tr></thead>
@@ -6954,22 +6955,24 @@ tr:hover td{background:var(--hover)}
 
 
 <section class="page" id="page-donate">
-  <div class="page-head">
+  <div class="page-head" style="justify-content:center">
     <div>
-      <div class="page-title">
+      <div class="page-title" style="justify-content:center">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
         <span data-i18n="nav_donate">حمایت مالی</span>
       </div>
     </div>
   </div>
-  <div class="card" style="max-width:560px;line-height:2;font-size:14px;color:var(--t2)">
+  <div style="display:flex;justify-content:center;width:100%">
+  <div class="card" style="max-width:560px;width:100%;line-height:2;font-size:14px;color:var(--t2);text-align:center">
     <div style="font-size:16px;font-weight:800;color:var(--t1);margin-bottom:12px">💖 حمایت از پروژه (اختیاری)</div>
     <p>اگه از پروژه خوشتون اومده یا براتون مفید بوده، می‌تونید با یه حمایت کوچیک مالی به ادامه‌ی توسعه و بهتر شدن پروژه کمک کنید. 🫶🏻✨</p>
     <p style="margin-top:10px">💰 هر مقدار حمایتی، حتی کم، برای ما ارزشمنده و باعث میشه با انگیزه‌ی بیشتری ادامه بدیم! 🚀❤️‍🔥</p>
     <p style="margin-top:10px">🔗 لینک حمایت مالی:</p>
-    <a href="https://reymit.ir/moditor" target="_blank" rel="noopener" class="btn btn-p" style="margin-top:12px;display:inline-flex;text-decoration:none">🙂 reymit.ir/moditor</a>
+    <div style="margin-top:12px;display:flex;justify-content:center"><a href="https://reymit.ir/moditor" target="_blank" rel="noopener" class="btn btn-p" style="display:inline-flex;text-decoration:none">🙂 reymit.ir/moditor</a></div>
     <p style="margin-top:16px;font-size:13px;color:var(--t3)">🙏🏻 ممنون از حمایت و همراهی‌تون عشقا! ❤️‍🔥🌹</p>
     <p style="margin-top:8px;font-size:12px;color:var(--t3)">کاملاً اختیاری است و هیچ اجباری وجود ندارد.</p>
+  </div>
   </div>
 </section>
 
@@ -7237,7 +7240,7 @@ function renderLinks(arr){
     const gname=catMap[String(l.category_id||'')]||'';
     const chk=prevChecked.has(uid)?'checked':'';
     return `<tr draggable="true" data-uid="${esc(uid)}" ondragstart="cfgDragStart(event)" ondragover="cfgDragOver(event)" ondrop="cfgDrop(event)" ondragend="cfgDragEnd(event)">
-      <td><input type="checkbox" class="cfg-chk" value="${esc(uid)}" ${chk} onchange="updateBulkBar()"></td>
+      <td style="text-align:center;padding:10px 8px;vertical-align:middle"><input type="checkbox" class="cfg-chk" value="${esc(uid)}" ${chk} onchange="updateBulkBar()" style="width:16px;height:16px;margin:0;vertical-align:middle;cursor:pointer"></td>
       <td style="cursor:grab;color:var(--t3);user-select:none" title="کشیدن">⋮⋮</td>
       <td>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
