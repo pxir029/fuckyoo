@@ -67,9 +67,15 @@ async def check_and_use(uid: str, n: int) -> bool:
             return False
         if not is_link_allowed(link):
             return False
-        link["used_bytes"] += n
-        stats["total_bytes"] += n
-        hourly_traffic[now_ir().strftime("%H:00")] += n
+        coef = int(link.get("volume_coef") or 1)
+        if coef < 1:
+            coef = 1
+        if coef > 2:
+            coef = 2
+        billed = int(n) * coef
+        link["used_bytes"] = int(link.get("used_bytes") or 0) + billed
+        stats["total_bytes"] += billed
+        hourly_traffic[now_ir().strftime("%H:00")] += billed
     return True
 
 async def relay_ws_to_tcp(ws: WebSocket, writer: asyncio.StreamWriter, conn_id: str, uid: str):
