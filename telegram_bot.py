@@ -281,6 +281,7 @@ def _links_list_kb(page: int):
         label = (l.get("label") or "?")[:22]
         extra = f" · {online}👤" if online else ""
         rows.append([{"text": f"{dot} {label}{extra}", "callback_data": f"view:{uid}"}])
+    
     nav = []
     if start > 0:
         nav.append({"text": "⬅️ قبلی", "callback_data": f"list:{page-1}"})
@@ -288,10 +289,17 @@ def _links_list_kb(page: int):
         nav.append({"text": "بعدی ➡️", "callback_data": f"list:{page+1}"})
     if nav:
         rows.append(nav)
-    rows.append([{"text": "🟢 ساخت کانفیگ جدید", "callback_data": "newcfg"}])
+        
+    rows.append([
+        {
+            "text": "🟢 ساخت کانفیگ جدید", 
+            "callback_data": "newcfg",
+            "style": "success"
+        }
+    ])
+    
     rows.append([{"text": "🏠 منوی اصلی", "callback_data": "menu"}])
     return {"inline_keyboard": rows}
-
 
 def _link_detail_kb(uid: str, active: bool):
     return {
@@ -303,9 +311,16 @@ def _link_detail_kb(uid: str, active: bool):
                 {
                     "text": "🔴 غیرفعال" if active else "🟢 فعال‌سازی",
                     "callback_data": f"toggle:{uid}",
+                    "style": "danger" if active else "success" 
                 }
             ],
-            [{"text": "🗑 حذف کانفیگ", "callback_data": f"del:{uid}"}],
+            [
+                {
+                    "text": "🗑 حذف کانفیگ", 
+                    "callback_data": f"del:{uid}",
+                    "style": "danger" 
+                }
+            ],
             [{"text": "⬅️ بازگشت به لیست", "callback_data": "list:0"}],
         ]
     }
