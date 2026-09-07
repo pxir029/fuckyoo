@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.9.4"
+APP_VERSION = "13.9.7"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -1098,6 +1098,7 @@ def get_link_info(
         "clean_ips": clean_ips,
         "alarm_enabled": bool(link.get("alarm_enabled", False)),
         "category_id": str(link.get("category_id") or "0"),
+        "sort_order": int(link.get("sort_order") or 0),
         "category_number": int(cat.get("number", 0)),
         "category_name": str(cat.get("name", "عمومی")),
         "config_count": cfg_count,
@@ -1222,6 +1223,7 @@ async def load_state():
             link.setdefault("alarm_enabled", False)
             link.setdefault("category_id", "0")
             link.setdefault("config_count", 1)
+            link.setdefault("sort_order", 0)
             link.setdefault("usage_history", [])
 
         logger.info(
@@ -2305,44 +2307,46 @@ LOGIN_HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PXPanel | ورود</title>
+<title>پی ایکس پنل</title>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;font-family:Vazirmatn,sans-serif;color:#f8fafc;
-background:#06060b;background-image:radial-gradient(ellipse 80% 50% at 20% 0%,rgba(59,130,246,.18),transparent 50%),radial-gradient(ellipse 60% 40% at 100% 100%,rgba(139,92,246,.12),transparent 45%)}
-.card{width:100%;max-width:440px;padding:28px;border-radius:22px;background:rgba(18,18,28,.96);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(20px)}
-.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-weight:900;margin-bottom:16px}
-h1{font-size:22px;font-weight:800;margin-bottom:4px}
-.ver{font-size:11px;color:#60a5fa;margin-bottom:8px}
-.desc{font-size:12px;color:rgba(255,255,255,.5);line-height:1.8;margin-bottom:18px}
-.warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:14px;padding:14px;font-size:12px;line-height:1.85;color:#fbbf24;margin-bottom:18px}
-.warn b{color:#fde68a}
-.warn code{background:rgba(0,0,0,.35);padding:2px 7px;border-radius:6px;font-family:ui-monospace,monospace;color:#93c5fd}
-label{display:block;font-size:11px;color:rgba(255,255,255,.5);margin-bottom:6px;font-weight:600}
-input{width:100%;padding:13px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.35);color:#fff;font-family:inherit;font-size:14px;outline:none;margin-bottom:12px;direction:ltr;text-align:left}
-input:focus{border-color:rgba(59,130,246,.6);padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;margin-top:4px}
-button:hover{filter:brightness(1.08)}
+body{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;
+  font-family:Vazirmatn,sans-serif;color:#f1f5f9;background:#0a0a0f;
+}
+.card{
+  width:100%;max-width:380px;padding:28px 24px;border-radius:18px;
+  background:#12121a;border:1px solid rgba(255,255,255,.08);
+}
+h1{font-size:20px;font-weight:800;text-align:center;margin-bottom:22px;letter-spacing:-.02em}
+label{display:block;font-size:12px;color:rgba(255,255,255,.5);margin-bottom:6px;font-weight:600}
+input{
+  width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.1);
+  background:rgba(0,0,0,.35);color:#fff;font-family:inherit;font-size:14px;outline:none;margin-bottom:14px;
+  direction:ltr;text-align:left;
+}
+input:focus{border-color:rgba(59,130,246,.55)}
+button{
+  width:100%;padding:13px;border:none;border-radius:12px;
+  background:#2563eb;color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;margin-top:4px;
+}
+button:hover{background:#1d4ed8}
 button:disabled{opacity:.5;cursor:not-allowed}
-.err{display:none;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#fca5a5;padding:10px 12px;border-radius:10px;font-size:12px;margin-bottom:12px}
+.err{display:none;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.28);color:#fca5a5;padding:10px 12px;border-radius:10px;font-size:12px;margin-bottom:12px}
 .err.show{display:block}
+.warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.28);border-radius:12px;padding:12px;font-size:12px;line-height:1.85;color:#fbbf24;margin-bottom:16px}
+.warn code{background:rgba(0,0,0,.35);padding:2px 6px;border-radius:6px;font-family:ui-monospace,monospace;color:#93c5fd}
 .hidden{display:none}
-.step{font-size:10px;color:rgba(255,255,255,.35);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;font-weight:700}
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="logo">PX</div>
-  <div class="ver">v13.9.4</div>
+  <h1>پی ایکس پنل</h1>
 
   <div id="setupBox" class="hidden">
-    <div class="step">راه‌اندازی اولیه</div>
-    <h1>خوش آمدید</h1>
-    <p class="desc">قبل از شروع، این مرحله را کامل کنید.</p>
     <div class="warn">
-      <b>نگهداری داده‌ها روی Railway</b><br>
-      حتماً روی سرویس خود راست‌کلیک کنید → <b>Attach Volume</b> → مسیر را دقیقاً <code>/data</code> بگذارید.
-      بدون Volume با ری‌استارت، کانفیگ‌ها و رمز پاک می‌شوند.
+      برای نگه‌داشتن داده‌ها روی Railway حتماً Volume با مسیر <code>/data</code> وصل کنید.
     </div>
     <div class="err" id="setupErr"></div>
     <label>رمز عبور پنل</label>
@@ -2353,13 +2357,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
   </div>
 
   <div id="loginBox" class="hidden">
-    <div class="step">ورود</div>
-    <h1>ورود به پنل</h1>
-    <p class="desc">رمز عبور پنل را وارد کنید.</p>
     <div class="err" id="loginErr"></div>
     <form id="loginForm">
-      <label>نام کاربری (اختیاری برای مالک)</label>
-      <input type="text" id="loginUser" placeholder="خالی = مالک پنل" autocomplete="username" style="direction:ltr;text-align:left">
+      <label>نام کاربری ادمین</label>
+      <input type="text" id="loginUser" placeholder="خالی = مالک پنل" autocomplete="username">
       <label>رمز عبور</label>
       <input type="password" id="loginPw" placeholder="رمز عبور" autocomplete="current-password" required>
       <button type="submit" id="loginBtn">ورود</button>
@@ -2405,7 +2406,10 @@ document.getElementById('loginForm').addEventListener('submit',async e=>{
   err.classList.remove('show');
   const btn=document.getElementById('loginBtn');btn.disabled=true;
   try{
-    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('loginPw').value,username:document.getElementById('loginUser').value})});
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      password:document.getElementById('loginPw').value,
+      username:document.getElementById('loginUser').value
+    })});
     if(!r.ok){
       const d=await r.json().catch(()=>({}));
       throw new Error(d.detail||'رمز اشتباه است');
@@ -2421,6 +2425,7 @@ checkSetup();
 </body>
 </html>
 """
+
 
 
 
@@ -3145,13 +3150,12 @@ async def list_links(
             }
         )
 
-    result.sort(
-        key=lambda item:
-            item.get(
-                "created_at",
-                "",
-            ),
-        reverse=True,
+    result = sorted(
+        result,
+        key=lambda item: (
+            -int(item.get("sort_order") or 0),
+            str(item.get("created_at") or ""),
+        ),
     )
 
     return {
@@ -3198,6 +3202,68 @@ async def link_info_api(
 # UPDATE LINK
 # ============================================================
 
+
+
+@app.post("/api/links/reorder")
+async def reorder_links(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, detail="JSON نامعتبر")
+    order = body.get("order") or body.get("ids") or []
+    if not isinstance(order, list):
+        raise HTTPException(400, detail="order باید آرایه باشد")
+    # first item = highest priority
+    n = len(order)
+    async with LINKS_LOCK:
+        for i, uid in enumerate(order):
+            uid = str(uid)
+            if uid in LINKS:
+                LINKS[uid]["sort_order"] = n - i
+    await save_state()
+    return {"ok": True, "count": n}
+
+
+@app.post("/api/links/bulk-delete")
+async def bulk_delete_links(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, detail="JSON نامعتبر")
+    ids = body.get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(400, detail="ids خالی است")
+    deleted = []
+    for uid in ids:
+        uid = str(uid)
+        if uid in LINKS:
+            await remove_link(uid)
+            deleted.append(uid)
+    log_activity("link", f"حذف گروهی {len(deleted)} کانفیگ", "warn")
+    return {"ok": True, "deleted": len(deleted)}
+
+
+@app.post("/api/links/bulk-category")
+async def bulk_category(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, detail="JSON نامعتبر")
+    ids = body.get("ids") or []
+    cid = str(body.get("category_id") or "0")
+    if cid not in CATEGORIES:
+        cid = "0"
+    n = 0
+    async with LINKS_LOCK:
+        for uid in ids:
+            uid = str(uid)
+            if uid in LINKS:
+                LINKS[uid]["category_id"] = cid
+                n += 1
+    await save_state()
+    return {"ok": True, "updated": n}
+
+
 @app.patch("/api/links/{uid}")
 async def update_link(
     uid: str,
@@ -3242,6 +3308,18 @@ async def update_link(
             link["active"] = bool(
                 body["active"]
             )
+
+        if "category_id" in body:
+            cid = str(body.get("category_id") or "0")
+            if cid not in CATEGORIES:
+                cid = "0"
+            link["category_id"] = cid
+
+        if "sort_order" in body:
+            try:
+                link["sort_order"] = int(body.get("sort_order") or 0)
+            except Exception:
+                pass
 
         if "label" in body:
 
@@ -5326,8 +5404,8 @@ async def list_categories(_=Depends(require_auth)):
 
 @app.post("/api/categories")
 async def create_category(request: Request, _=Depends(require_auth)):
-    if len(CATEGORIES) >= 10:
-        raise HTTPException(status_code=400, detail="حداکثر ۱۰ دسته‌بندی")
+    if len(CATEGORIES) >= 50:
+        raise HTTPException(status_code=400, detail="حداکثر ۵۰ گروه")
     try:
         body = await request.json()
     except Exception:
@@ -5886,6 +5964,155 @@ async def api_news(token=Depends(require_auth)):
 
 
 
+
+# ============================================================
+# BACKUP / RESTORE
+# ============================================================
+
+@app.get("/api/backup/users")
+async def backup_users(token=Depends(require_auth)):
+    meta = get_session_meta(token)
+    if meta.get("role") != "owner" and not (meta.get("permissions") or {}).get("settings"):
+        raise HTTPException(403, detail="دسترسی ندارید")
+    payload = {
+        "type": "pxpanel_users_backup",
+        "version": APP_VERSION,
+        "created_at": datetime.now().isoformat(),
+        "links": dict(LINKS),
+        "subs": dict(SUBS),
+        "categories": dict(CATEGORIES),
+        "admin_accounts": dict(ADMIN_ACCOUNTS),
+    }
+    body = json.dumps(payload, ensure_ascii=False, indent=2)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="pxpanel-users-{datetime.now().strftime("%Y%m%d-%H%M%S")}.json"'
+        },
+    )
+
+
+@app.get("/api/backup/bot")
+async def backup_bot(token=Depends(require_auth)):
+    meta = get_session_meta(token)
+    if meta.get("role") != "owner" and not (meta.get("permissions") or {}).get("settings"):
+        raise HTTPException(403, detail="دسترسی ندارید")
+    data = {}
+    try:
+        if TG_FILE.exists():
+            data = json.loads(TG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    payload = {
+        "type": "pxpanel_bot_backup",
+        "version": APP_VERSION,
+        "created_at": datetime.now().isoformat(),
+        "telegram": data,
+    }
+    body = json.dumps(payload, ensure_ascii=False, indent=2)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="pxpanel-bot-{datetime.now().strftime("%Y%m%d-%H%M%S")}.json"'
+        },
+    )
+
+
+@app.post("/api/restore/users")
+async def restore_users(request: Request, token=Depends(require_auth)):
+    meta = get_session_meta(token)
+    if meta.get("role") != "owner":
+        raise HTTPException(403, detail="فقط مالک پنل")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, detail="فایل JSON نامعتبر")
+    if not isinstance(body, dict):
+        raise HTTPException(400, detail="فرمت نامعتبر")
+    # accept either wrapper or raw state
+    links = body.get("links")
+    if links is None and body.get("type") == "pxpanel_users_backup":
+        raise HTTPException(400, detail="لینک‌ها در بک‌آپ نیست")
+    if links is None:
+        raise HTTPException(400, detail="فایل بک‌آپ کاربران نیست")
+    if not isinstance(links, dict):
+        raise HTTPException(400, detail="links نامعتبر")
+    mode = str(body.get("mode") or "merge").lower()  # merge | replace
+    async with LINKS_LOCK:
+        if mode == "replace":
+            LINKS.clear()
+            SUBS.clear()
+            CATEGORIES.clear()
+            ADMIN_ACCOUNTS.clear()
+        LINKS.update(links)
+        if isinstance(body.get("subs"), dict):
+            SUBS.update(body["subs"])
+        if isinstance(body.get("categories"), dict):
+            CATEGORIES.update(body["categories"])
+        if isinstance(body.get("admin_accounts"), dict):
+            ADMIN_ACCOUNTS.update(body["admin_accounts"])
+        for uid, link in list(LINKS.items()):
+            if not isinstance(link, dict):
+                LINKS.pop(uid, None)
+                continue
+            link.setdefault("protocol", DEFAULT_PROTOCOL)
+            link.setdefault("fingerprint", DEFAULT_FINGERPRINT)
+            link.setdefault("used_bytes", 0)
+            link.setdefault("active", True)
+            link.setdefault("config_count", 1)
+    await save_state()
+    log_activity("backup", f"بازیابی کاربران ({mode}) — {len(links)} کانفیگ", "ok")
+    return {"ok": True, "links": len(LINKS), "subs": len(SUBS), "mode": mode}
+
+
+@app.post("/api/restore/bot")
+async def restore_bot(request: Request, token=Depends(require_auth)):
+    meta = get_session_meta(token)
+    if meta.get("role") != "owner":
+        raise HTTPException(403, detail="فقط مالک پنل")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, detail="فایل JSON نامعتبر")
+    tg = body.get("telegram") if isinstance(body, dict) else None
+    if tg is None and isinstance(body, dict) and (body.get("token") or body.get("admin_ids") is not None):
+        tg = body
+    if not isinstance(tg, dict):
+        raise HTTPException(400, detail="فایل بک‌آپ ربات نیست")
+    # merge with existing
+    current = {}
+    try:
+        if TG_FILE.exists():
+            current = json.loads(TG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        current = {}
+    current.update({k: v for k, v in tg.items() if v is not None})
+    TG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    TG_FILE.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    # try activate
+    try:
+        from telegram_bot import configure_bot, start_bot, stop_bot, setup_webhook
+        await stop_bot()
+        configure_bot(current.get("token") or "", current.get("admin_ids") or "")
+        host = get_host(request)
+        if current.get("webhook") and host and host != "localhost":
+            wh = f"https://{host}/telegram/webhook"
+            await setup_webhook(wh)
+            await start_bot(mode="webhook")
+        else:
+            await setup_webhook("")
+            await start_bot(mode="polling")
+    except Exception as exc:
+        logger.warning("restore bot activate: %s", exc)
+        log_activity("backup", f"بک‌آپ ربات ذخیره شد (فعال‌سازی: {exc})", "warn")
+        return {"ok": True, "warning": str(exc)}
+    log_activity("backup", "بازیابی تنظیمات ربات انجام شد", "ok")
+    return {"ok": True, "message": "ربات بازیابی و فعال شد"}
+
+
+
 # TELEGRAM SETTINGS API
 # ============================================================
 
@@ -6358,6 +6585,10 @@ tr:hover td{background:var(--hover)}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       <span class="nav-label" data-i18n="nav_configs">کانفیگ‌ها</span>
     </button>
+    <button class="nav-item" data-page="groups" data-perm="configs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      <span class="nav-label" data-i18n="nav_groups">گروه‌ها</span>
+    </button>
     <button class="nav-item" data-page="create" data-perm="create">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
       <span class="nav-label" data-i18n="nav_create">ساخت کانفیگ</span>
@@ -6457,12 +6688,23 @@ tr:hover td{background:var(--hover)}
   </div>
   <div class="card" style="padding:0">
     <div class="table-wrap">
+      <div id="bulkBar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);cursor:pointer">
+          <input type="checkbox" id="chkAll" onchange="toggleSelectAll(this.checked)"> انتخاب همه
+        </label>
+        <button class="btn btn-sm btn-d" onclick="bulkDelete()">حذف انتخاب‌شده</button>
+        <select id="bulkGroup" style="padding:8px 10px;border-radius:10px;border:1px solid var(--card-b);background:var(--input-bg);color:var(--t1);font-family:inherit;font-size:12px"></select>
+        <button class="btn btn-sm" onclick="bulkMoveGroup()">انتقال به گروه</button>
+        <span style="font-size:11px;color:var(--t3)">کشیدن برای جابجایی اولویت</span>
+      </div>
       <table>
         <thead><tr>
+          <th style="width:36px"></th>
+          <th style="width:28px"></th>
           <th data-i18n="th_name">نام</th><th data-i18n="th_proto">پروتکل</th><th data-i18n="th_status">وضعیت</th>
           <th data-i18n="th_usage">مصرف</th><th data-i18n="th_ops">عملیات</th>
         </tr></thead>
-        <tbody id="linksTable"><tr><td colspan="5" style="text-align:center;color:var(--t3);padding:32px">...</td></tr></tbody>
+        <tbody id="linksTable"><tr><td colspan="7" style="text-align:center;color:var(--t3);padding:32px">...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -6484,6 +6726,7 @@ tr:hover td{background:var(--hover)}
         </div>
       </div>
             <div class="field"><label data-i18n="label_proto">پروتکل</label><select id="cProto"></select></div>
+      <div class="field"><label>گروه</label><select id="cGroup"></select></div>
 <div class="form-row">
         <div class="field"><label data-i18n="label_count">تعداد کانفیگ در ساب (۱–۴۰)</label><input id="cCount" type="number" value="1" min="1" max="40"></div>
         <div class="field"><label data-i18n="label_days">انقضا (روز)</label><input id="cDays" type="number" value="0" min="0"></div>
@@ -6514,6 +6757,26 @@ tr:hover td{background:var(--hover)}
   </div>
 </section>
 
+
+<section class="page" id="page-groups">
+  <div class="page-head">
+    <div>
+      <div class="page-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span data-i18n="nav_groups">گروه‌ها</span></div>
+      <div class="page-sub">ساخت گروه و اختصاص کانفیگ‌های دستی و خودکار</div>
+    </div>
+  </div>
+  <div class="g2">
+    <div class="card">
+      <div class="card-title">ساخت گروه جدید</div>
+      <div class="field"><label>نام گروه</label><input id="grpName" placeholder="مثلاً VIP"></div>
+      <button class="btn btn-p" style="width:100%" onclick="createGroup()">ساخت گروه</button>
+    </div>
+    <div class="card" style="padding:0">
+      <div style="padding:16px 18px;border-bottom:1px solid var(--card-b);font-weight:700">لیست گروه‌ها</div>
+      <div id="groupsList" style="padding:12px;max-height:480px;overflow:auto">...</div>
+    </div>
+  </div>
+</section>
 <section class="page" id="page-stats">
   <div class="page-head">
     <div>
@@ -6566,6 +6829,27 @@ tr:hover td{background:var(--hover)}
     <div class="field"><label data-i18n="pw_new">رمز جدید</label><input type="password" id="pwNew"></div>
     <div class="field"><label data-i18n="pw_cf">تکرار رمز</label><input type="password" id="pwCf"></div>
     <button class="btn btn-p" onclick="doChangePw()"><span data-i18n="btn_save">ذخیره</span></button>
+  </div>
+  <div class="card">
+    <div class="card-title">بک‌آپ و بازیابی</div>
+    <p style="font-size:12px;color:var(--t3);line-height:1.8;margin-bottom:14px">در صورت خرابی پنل، بک‌آپ را دانلود کنید و در پنل جدید وارد کنید.</p>
+    <div class="g2" style="margin-bottom:12px">
+      <button class="btn btn-p" style="width:100%" onclick="downloadBackup('users')">دانلود بک‌آپ کاربران</button>
+      <button class="btn btn-p" style="width:100%;background:linear-gradient(135deg,#8b5cf6,#6366f1)" onclick="downloadBackup('bot')">دانلود بک‌آپ ربات</button>
+    </div>
+    <div class="field">
+      <label>وارد کردن بک‌آپ کاربران</label>
+      <input type="file" id="restoreUsersFile" accept="application/json,.json" style="padding:10px">
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="restoreUsers('merge')">ادغام با فعلی</button>
+        <button class="btn btn-sm btn-d" onclick="restoreUsers('replace')">جایگزینی کامل</button>
+      </div>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label>وارد کردن بک‌آپ ربات</label>
+      <input type="file" id="restoreBotFile" accept="application/json,.json" style="padding:10px">
+      <button class="btn btn-sm" style="margin-top:8px" onclick="restoreBot()">بازیابی ربات</button>
+    </div>
   </div>
 </section>
 
@@ -6705,8 +6989,8 @@ tr:hover td{background:var(--hover)}
 
 <script>
 const I18N={
-fa:{sec_panel:'پنل',sec_sys:'سیستم',nav_dash:'داشبورد',nav_configs:'کانفیگ‌ها',nav_create:'ساخت کانفیگ',nav_stats:'آمار',nav_logs:'لاگ فعالیت',nav_settings:'تنظیمات',nav_support:'پشتیبانی',nav_news:'اخبار',nav_admins:'ادمین‌ها',news_sub:'اطلاعیه‌ها از news.json',refresh_news:'بروزرسانی اطلاعیه',admins_sub:'ساخت اکانت ادمین با دسترسی سفارشی',admin_create:'ساخت اکانت ادمین',admin_user:'نام کاربری',admin_pw:'رمز عبور',admin_pw2:'تکرار رمز',admin_perms:'دسترسی‌ها',admin_btn:'ساخت اکانت',admin_list:'لیست ادمین‌ها',refresh:'بروزرسانی',refresh_stats:'بروزرسانی آمار',refresh_panel:'بروزرسانی پنل',nav_telegram:'ربات تلگرام',tg_sub:'توکن ربات و آیدی عددی ادمین · فعال‌سازی خودکار و وب‌هوک',tg_config:'پیکربندی ربات',tg_token:'توکن ربات (BotFather)',tg_admin:'آیدی عددی ادمین',tg_webhook:'فعال‌سازی Webhook (پیشنهادی روی Railway)',tg_activate:'ذخیره و فعال‌سازی ربات',tg_help:'راهنما',tg_h1:'از @BotFather یک ربات بساز و توکن را کپی کن',tg_h2:'آیدی عددی خودت را از @userinfobot بگیر',tg_h3:'ذخیره کن — وب‌هوک خودکار روی دامنه Railway ست می‌شود',logout:'خروج',loading:'در حال بارگذاری...',m_conns:'اتصالات فعال',m_traffic:'ترافیک کل',m_links:'کانفیگ‌ها',m_uptime:'آپتایم سرور',quick_create:'ساخت کانفیگ',quick_create_desc:'ساخت دستی با محدودیت ترافیک، سرعت، تعداد و انقضا',auto_create:'ساخت خودکار (پیشنهادی)',auto_create_desc:'ساخت سریع با تنظیمات بهینه · لینک VLESS و ساب',configs_sub:'مدیریت لینک‌ها · VLESS و ساب',th_name:'نام',th_proto:'پروتکل',th_status:'وضعیت',th_usage:'مصرف',th_ops:'عملیات',manual_create:'ساخت دستی',label_name:'نام',label_proto:'پروتکل',label_count:'تعداد کانفیگ در ساب (۱–۴۰)',label_limit:'محدودیت حجم',label_unit:'واحد',label_days:'انقضا (روز)',label_ip:'محدودیت IP',label_speed:'سرعت (Mbps)',btn_create:'ساخت',btn_auto:'ساخت خودکار',auto_desc:'با یک کلیک کانفیگ بهینه ساخته می‌شود. بعد از ساخت لینک VLESS و ساب در اختیار شماست.',stats_sub:'ترافیک و اتصالات · فیلتر زمانی',r_day:'روز',r_week:'هفته',r_month:'ماه',r_all:'کل',panel_info:'اطلاعات کل پنل',lang_label:'زبان',change_pw:'تغییر رمز عبور',pw_cur:'رمز فعلی',pw_new:'رمز جدید',pw_cf:'تکرار رمز',btn_save:'ذخیره',github:'گیت‌هاب',telegram:'تلگرام',channel:'کانال پشتیبان',theme:'تم',theme_dark:'تم تیره',theme_light:'تم روشن',created_title:'کانفیگ ساخته شد',copy_vless:'کپی VLESS',copy_sub:'کپی ساب',sub_label:'سابسکریپشن'},
-en:{sec_panel:'PANEL',sec_sys:'SYSTEM',nav_dash:'Dashboard',nav_configs:'Configs',nav_create:'Create Config',nav_stats:'Statistics',nav_logs:'Activity Log',nav_settings:'Settings',nav_support:'Support',nav_news:'News',nav_admins:'Admins',news_sub:'Announcements from news.json',refresh_news:'Refresh news',admins_sub:'Create admin accounts with custom access',admin_create:'Create admin account',admin_user:'Username',admin_pw:'Password',admin_pw2:'Confirm password',admin_perms:'Permissions',admin_btn:'Create account',admin_list:'Admin list',refresh:'Refresh',refresh_stats:'Refresh stats',refresh_panel:'Update panel',nav_telegram:'Telegram bot',tg_sub:'Bot token and numeric admin ID · auto activate and webhook',tg_config:'Bot configuration',tg_token:'Bot token (BotFather)',tg_admin:'Admin numeric ID',tg_webhook:'Enable Webhook (recommended on Railway)',tg_activate:'Save and activate bot',tg_help:'Guide',tg_h1:'Create a bot with @BotFather and copy the token',tg_h2:'Get your numeric ID from @userinfobot',tg_h3:'Save — webhook is set automatically on Railway domain',logout:'Logout',loading:'Loading...',m_conns:'Active connections',m_traffic:'Total traffic',m_links:'Configs',m_uptime:'Server uptime',quick_create:'Create Config',quick_create_desc:'Manual create with traffic, speed, count and expiry',auto_create:'Auto Create (Suggested)',auto_create_desc:'Quick optimal create · VLESS and Sub links',configs_sub:'Manage links · VLESS and Sub',th_name:'Name',th_proto:'Protocol',th_status:'Status',th_usage:'Usage',th_ops:'Actions',manual_create:'Manual create',label_name:'Name',label_proto:'Protocol',label_count:'Configs in sub (1–40)',label_limit:'Traffic limit',label_unit:'Unit',label_days:'Expiry (days)',label_ip:'IP limit',label_speed:'Speed (Mbps)',btn_create:'Create',btn_auto:'Auto create',auto_desc:'One click creates an optimal config. VLESS and Sub links will be shown.',stats_sub:'Traffic and connections · time filter',r_day:'Day',r_week:'Week',r_month:'Month',r_all:'All',panel_info:'Panel overview',lang_label:'Language',change_pw:'Change password',pw_cur:'Current password',pw_new:'New password',pw_cf:'Confirm password',btn_save:'Save',github:'GitHub',telegram:'Telegram',channel:'Support channel',theme:'Theme',theme_dark:'Dark theme',theme_light:'Light theme',created_title:'Config created',copy_vless:'Copy VLESS',copy_sub:'Copy Sub',sub_label:'Subscription'}
+fa:{sec_panel:'پنل',sec_sys:'سیستم',nav_dash:'داشبورد',nav_configs:'کانفیگ‌ها',nav_groups:'گروه‌ها',nav_create:'ساخت کانفیگ',nav_stats:'آمار',nav_logs:'لاگ فعالیت',nav_settings:'تنظیمات',nav_support:'پشتیبانی',nav_news:'اخبار',nav_admins:'ادمین‌ها',news_sub:'اطلاعیه‌ها از news.json',refresh_news:'بروزرسانی اطلاعیه',admins_sub:'ساخت اکانت ادمین با دسترسی سفارشی',admin_create:'ساخت اکانت ادمین',admin_user:'نام کاربری',admin_pw:'رمز عبور',admin_pw2:'تکرار رمز',admin_perms:'دسترسی‌ها',admin_btn:'ساخت اکانت',admin_list:'لیست ادمین‌ها',refresh:'بروزرسانی',refresh_stats:'بروزرسانی آمار',refresh_panel:'بروزرسانی پنل',nav_telegram:'ربات تلگرام',tg_sub:'توکن ربات و آیدی عددی ادمین · فعال‌سازی خودکار و وب‌هوک',tg_config:'پیکربندی ربات',tg_token:'توکن ربات (BotFather)',tg_admin:'آیدی عددی ادمین',tg_webhook:'فعال‌سازی Webhook (پیشنهادی روی Railway)',tg_activate:'ذخیره و فعال‌سازی ربات',tg_help:'راهنما',tg_h1:'از @BotFather یک ربات بساز و توکن را کپی کن',tg_h2:'آیدی عددی خودت را از @userinfobot بگیر',tg_h3:'ذخیره کن — وب‌هوک خودکار روی دامنه Railway ست می‌شود',logout:'خروج',loading:'در حال بارگذاری...',m_conns:'اتصالات فعال',m_traffic:'ترافیک کل',m_links:'کانفیگ‌ها',m_uptime:'آپتایم سرور',quick_create:'ساخت کانفیگ',quick_create_desc:'ساخت دستی با محدودیت ترافیک، سرعت، تعداد و انقضا',auto_create:'ساخت خودکار (پیشنهادی)',auto_create_desc:'ساخت سریع با تنظیمات بهینه · لینک VLESS و ساب',configs_sub:'مدیریت لینک‌ها · VLESS و ساب',th_name:'نام',th_proto:'پروتکل',th_status:'وضعیت',th_usage:'مصرف',th_ops:'عملیات',manual_create:'ساخت دستی',label_name:'نام',label_proto:'پروتکل',label_count:'تعداد کانفیگ در ساب (۱–۴۰)',label_limit:'محدودیت حجم',label_unit:'واحد',label_days:'انقضا (روز)',label_ip:'محدودیت IP',label_speed:'سرعت (Mbps)',btn_create:'ساخت',btn_auto:'ساخت خودکار',auto_desc:'با یک کلیک کانفیگ بهینه ساخته می‌شود. بعد از ساخت لینک VLESS و ساب در اختیار شماست.',stats_sub:'ترافیک و اتصالات · فیلتر زمانی',r_day:'روز',r_week:'هفته',r_month:'ماه',r_all:'کل',panel_info:'اطلاعات کل پنل',lang_label:'زبان',change_pw:'تغییر رمز عبور',pw_cur:'رمز فعلی',pw_new:'رمز جدید',pw_cf:'تکرار رمز',btn_save:'ذخیره',github:'گیت‌هاب',telegram:'تلگرام',channel:'کانال پشتیبان',theme:'تم',theme_dark:'تم تیره',theme_light:'تم روشن',created_title:'کانفیگ ساخته شد',copy_vless:'کپی VLESS',copy_sub:'کپی ساب',sub_label:'سابسکریپشن'},
+en:{sec_panel:'PANEL',sec_sys:'SYSTEM',nav_dash:'Dashboard',nav_configs:'Configs',nav_groups:'Groups',nav_create:'Create Config',nav_stats:'Statistics',nav_logs:'Activity Log',nav_settings:'Settings',nav_support:'Support',nav_news:'News',nav_admins:'Admins',news_sub:'Announcements from news.json',refresh_news:'Refresh news',admins_sub:'Create admin accounts with custom access',admin_create:'Create admin account',admin_user:'Username',admin_pw:'Password',admin_pw2:'Confirm password',admin_perms:'Permissions',admin_btn:'Create account',admin_list:'Admin list',refresh:'Refresh',refresh_stats:'Refresh stats',refresh_panel:'Update panel',nav_telegram:'Telegram bot',tg_sub:'Bot token and numeric admin ID · auto activate and webhook',tg_config:'Bot configuration',tg_token:'Bot token (BotFather)',tg_admin:'Admin numeric ID',tg_webhook:'Enable Webhook (recommended on Railway)',tg_activate:'Save and activate bot',tg_help:'Guide',tg_h1:'Create a bot with @BotFather and copy the token',tg_h2:'Get your numeric ID from @userinfobot',tg_h3:'Save — webhook is set automatically on Railway domain',logout:'Logout',loading:'Loading...',m_conns:'Active connections',m_traffic:'Total traffic',m_links:'Configs',m_uptime:'Server uptime',quick_create:'Create Config',quick_create_desc:'Manual create with traffic, speed, count and expiry',auto_create:'Auto Create (Suggested)',auto_create_desc:'Quick optimal create · VLESS and Sub links',configs_sub:'Manage links · VLESS and Sub',th_name:'Name',th_proto:'Protocol',th_status:'Status',th_usage:'Usage',th_ops:'Actions',manual_create:'Manual create',label_name:'Name',label_proto:'Protocol',label_count:'Configs in sub (1–40)',label_limit:'Traffic limit',label_unit:'Unit',label_days:'Expiry (days)',label_ip:'IP limit',label_speed:'Speed (Mbps)',btn_create:'Create',btn_auto:'Auto create',auto_desc:'One click creates an optimal config. VLESS and Sub links will be shown.',stats_sub:'Traffic and connections · time filter',r_day:'Day',r_week:'Week',r_month:'Month',r_all:'All',panel_info:'Panel overview',lang_label:'Language',change_pw:'Change password',pw_cur:'Current password',pw_new:'New password',pw_cf:'Confirm password',btn_save:'Save',github:'GitHub',telegram:'Telegram',channel:'Support channel',theme:'Theme',theme_dark:'Dark theme',theme_light:'Light theme',created_title:'Config created',copy_vless:'Copy VLESS',copy_sub:'Copy Sub',sub_label:'Subscription'}
 };
 let lang=localStorage.getItem('px_lang')||'fa';
 let statRange='month';
@@ -6771,6 +7055,7 @@ function fmtB(b){b=Number(b)||0;if(b<1024)return b+' B';if(b<1024**2)return (b/1
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
 async function refreshAll(){
+  if(typeof loadGroups==='function') try{await loadGroups()}catch(e){}
   const links=await api('/api/links');
   if(!links)return;
   const arr=Array.isArray(links.links)?links.links:(Array.isArray(links)?links:[]);
@@ -6802,8 +7087,9 @@ async function refreshAll(){
 
 function renderLinks(arr){
   const tb=document.getElementById('linksTable');
-  if(!arr.length){tb.innerHTML=`<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:28px">${lang==='fa'?'کانفیگی نیست':'No configs'}</td></tr>`;return}
+  if(!arr.length){tb.innerHTML=`<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:28px">${lang==='fa'?'کانفیگی نیست':'No configs'}</td></tr>`;return}
   window.__linksMap={};
+  const catMap=window.__catMap||{};
   tb.innerHTML=arr.map(l=>{
     const uid=l.uuid||l.id||'';
     window.__linksMap[uid]=l;
@@ -6814,19 +7100,20 @@ function renderLinks(arr){
     const used=Number(l.used_bytes||0), lim=Number(l.limit_bytes||0);
     let usagePct=lim>0?(used/lim)*100:0;
     let expWarn=false, expDead=false;
-    if(l.expires_at){
-      try{const ms=new Date(l.expires_at)-Date.now();if(ms<=0)expDead=true;else if(ms<3*864e5)expWarn=true}catch(e){}
-    }
+    if(l.expires_at){try{const ms=new Date(l.expires_at)-Date.now();if(ms<=0)expDead=true;else if(ms<3*864e5)expWarn=true}catch(e){}}
     let badgeCls='conn-badge gray';
     if(expDead||usagePct>=90) badgeCls='conn-badge red';
     else if(expWarn||usagePct>=70) badgeCls='conn-badge orange';
     else if(conn>0) badgeCls='conn-badge green';
-    else badgeCls='conn-badge gray';
-    return `<tr>
+    const gname=catMap[String(l.category_id||'0')]||'';
+    return `<tr draggable="true" data-uid="${esc(uid)}" ondragstart="cfgDragStart(event)" ondragover="cfgDragOver(event)" ondrop="cfgDrop(event)" ondragend="cfgDragEnd(event)">
+      <td><input type="checkbox" class="cfg-chk" value="${esc(uid)}"></td>
+      <td style="cursor:grab;color:var(--t3);user-select:none" title="کشیدن">⋮⋮</td>
       <td>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <b>${esc(name)}</b>
           <span class="${badgeCls}" title="${lang==='fa'?'متصل الان':'Online now'}">${conn}</span>
+          ${gname?`<span style="font-size:10px;padding:2px 7px;border-radius:8px;background:var(--hover);color:var(--t3)">${esc(gname)}</span>`:''}
         </div>
       </td>
       <td style="color:var(--t3);font-size:11px">${esc(proto)}</td>
@@ -6856,9 +7143,23 @@ async function copyText(text){
 async function copyLinkById(uid){await copyText(getLinkUrl((window.__linksMap||{})[uid]))}
 async function copySubById(uid){await copyText(getSubUrl((window.__linksMap||{})[uid]))}
 async function toggleLink(uid,state){
+  // optimistic UI — رنگ بلافاصله عوض می‌شود
+  if(window.__linksMap && window.__linksMap[uid]){
+    window.__linksMap[uid].active = !!state;
+    if(window.__linksMap[uid].expired && state) window.__linksMap[uid].expired = false;
+  }
+  if(typeof __allLinks !== 'undefined' && Array.isArray(__allLinks)){
+    const item = __allLinks.find(x => (x.uuid||x.id)===uid);
+    if(item) item.active = !!state;
+  }
   const r=await api('/api/links/'+uid,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!!state})});
-  if(r!==null) toast(state?(lang==='fa'?'فعال شد':'Enabled'):(lang==='fa'?'غیرفعال شد':'Disabled'));
-  refreshAll();
+  if(r===null){
+    // rollback
+    if(window.__linksMap && window.__linksMap[uid]) window.__linksMap[uid].active = !state;
+    refreshAll();
+    return;
+  }
+  toast(state?(lang==='fa'?'فعال شد':'Enabled'):(lang==='fa'?'غیرفعال شد':'Disabled'));
 }
 async function deleteLink(uid){
   if(!confirm(lang==='fa'?'حذف شود؟':'Delete?'))return;
@@ -6888,6 +7189,7 @@ async function doManualCreate(){
   const body={
     label:document.getElementById('cName').value||undefined,
     protocol:document.getElementById('cProto')?.value||undefined,
+    category_id:document.getElementById('cGroup')?.value||'0',
     config_count:Math.max(1,Math.min(40,Number(document.getElementById('cCount').value)||1)),
     limit_value:Number(document.getElementById('cLimit').value)||0,
     limit_unit:document.getElementById('cUnit').value||'GB',
@@ -6965,6 +7267,7 @@ goPage=function(name){
   if(name==='telegram') loadTelegram();
   if(name==='news') loadNews();
   if(name==='admins') loadAdmins();
+  if(name==='groups') loadGroups();
 };
 
 const PERM_LABELS={
@@ -7091,7 +7394,81 @@ async function resetUsage(uid){
   if(r!==null){toast(lang==='fa'?'مصرف ریست شد':'Usage reset');refreshAll()}
 }
 
-applyLang();loadMe();loadProtocols();refreshAll();setInterval(refreshAll,1000);
+
+let __dragUid=null;
+function cfgDragStart(e){__dragUid=e.currentTarget.getAttribute('data-uid');e.currentTarget.style.opacity='.5';e.dataTransfer.effectAllowed='move';}
+function cfgDragOver(e){e.preventDefault();e.dataTransfer.dropEffect='move';const tr=e.currentTarget;if(tr&&tr.tagName==='TR')tr.style.background='var(--hover)';}
+function cfgDragEnd(e){e.currentTarget.style.opacity='1';document.querySelectorAll('#linksTable tr').forEach(tr=>tr.style.background='');}
+async function cfgDrop(e){
+  e.preventDefault();
+  const target=e.currentTarget.getAttribute('data-uid');
+  document.querySelectorAll('#linksTable tr').forEach(tr=>tr.style.background='');
+  if(!__dragUid||!target||__dragUid===target)return;
+  const rows=[...document.querySelectorAll('#linksTable tr[data-uid]')];
+  const ids=rows.map(r=>r.getAttribute('data-uid'));
+  const from=ids.indexOf(__dragUid), to=ids.indexOf(target);
+  if(from<0||to<0)return;
+  ids.splice(from,1);ids.splice(to,0,__dragUid);
+  // reorder DOM optimistically
+  const tb=document.getElementById('linksTable');
+  ids.forEach(id=>{const el=tb.querySelector(`tr[data-uid="${id}"]`);if(el)tb.appendChild(el);});
+  await api('/api/links/reorder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order:ids})});
+  toast(lang==='fa'?'ترتیب ذخیره شد':'Order saved');
+}
+function toggleSelectAll(on){document.querySelectorAll('.cfg-chk').forEach(c=>c.checked=!!on)}
+function selectedCfgIds(){return [...document.querySelectorAll('.cfg-chk:checked')].map(c=>c.value)}
+async function bulkDelete(){
+  const ids=selectedCfgIds();
+  if(!ids.length){toast(lang==='fa'?'چیزی انتخاب نشده':'Nothing selected');return}
+  if(!confirm(lang==='fa'?`حذف ${ids.length} کانفیگ؟`:`Delete ${ids.length}?`))return;
+  const r=await api('/api/links/bulk-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});
+  if(r){toast(lang==='fa'?`حذف شد: ${r.deleted}`:`Deleted: ${r.deleted}`);refreshAll()}
+}
+async function bulkMoveGroup(){
+  const ids=selectedCfgIds();
+  const cid=document.getElementById('bulkGroup')?.value||'0';
+  if(!ids.length){toast(lang==='fa'?'چیزی انتخاب نشده':'Nothing selected');return}
+  const r=await api('/api/links/bulk-category',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,category_id:cid})});
+  if(r){toast(lang==='fa'?'به گروه منتقل شد':'Moved');refreshAll()}
+}
+async function loadGroups(){
+  const r=await api('/api/categories');
+  const list=(r&&r.categories)||[];
+  window.__catMap={};
+  list.forEach(g=>{window.__catMap[String(g.id)]=g.name||g.id});
+  const bulk=document.getElementById('bulkGroup');
+  const cGroup=document.getElementById('cGroup');
+  const opts=list.map(g=>`<option value="${esc(g.id)}">${esc(g.name||g.id)}</option>`).join('');
+  if(bulk) bulk.innerHTML=opts||'<option value="0">عمومی</option>';
+  if(cGroup) cGroup.innerHTML=opts||'<option value="0">عمومی</option>';
+  const box=document.getElementById('groupsList');
+  if(box){
+    if(!list.length){box.innerHTML='<div style="color:var(--t3);text-align:center;padding:16px">—</div>';}
+    else{
+      box.innerHTML=list.map(g=>{
+        const cnt=(__allLinks||[]).filter(l=>String(l.category_id||'0')===String(g.id)).length;
+        const canDel=!['0','1'].includes(String(g.id));
+        return `<div style="border:1px solid var(--card-b);border-radius:12px;padding:12px;margin-bottom:8px;background:var(--bg3);display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+          <div><b>${esc(g.name)}</b> <span style="font-size:11px;color:var(--t3)">${cnt} کانفیگ</span></div>
+          ${canDel?`<button class="btn btn-sm btn-d" onclick="deleteGroup('${esc(g.id)}')">حذف</button>`:''}
+        </div>`;
+      }).join('');
+    }
+  }
+}
+async function createGroup(){
+  const name=document.getElementById('grpName').value.trim();
+  if(!name){toast('نام لازم است');return}
+  const r=await api('/api/categories',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+  if(r){toast('گروه ساخته شد');document.getElementById('grpName').value='';loadGroups()}
+}
+async function deleteGroup(id){
+  if(!confirm('حذف گروه؟'))return;
+  const r=await api('/api/categories/'+id,{method:'DELETE'});
+  if(r){toast('حذف شد');loadGroups();refreshAll()}
+}
+
+applyLang();loadMe();loadProtocols();loadGroups();refreshAll();setInterval(refreshAll,1000);
 
 
 </script>
