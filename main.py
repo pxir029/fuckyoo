@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.9.7"
+APP_VERSION = "13.9.8"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -777,7 +777,7 @@ def admin_is_valid(admin: dict) -> bool:
 # Maximum failed login attempts per IP inside the rolling window.
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_WINDOW_SECONDS = 15 * 60
-LOGIN_LOCKOUT_SECONDS = 15 * 60
+LOGIN_LOCKOUT_SECONDS = 30 * 60  # 30 minutes lockout
 LOGIN_MIN_PASSWORD_LENGTH = 6
 
 LOGIN_FAILURES = defaultdict(deque)
@@ -1314,23 +1314,9 @@ _default_link_created = False
 
 
 async def ensure_default_categories():
-    if CATEGORIES:
-        return
-    CATEGORIES["0"] = {
-        "id": "0", "name": "عمومی", "number": 0,
-        "limit_bytes": 0, "expires_days": 0, "connection_limit": 0,
-        "speed_limit_bytes": 0, "ip_limit": 0, "clean_ips": [],
-        "random_name": False, "single_user": False,
-        "created_at": datetime.now().isoformat(),
-    }
-    CATEGORIES["1"] = {
-        "id": "1", "name": "VIP", "number": 1,
-        "limit_bytes": 0, "expires_days": 0, "connection_limit": 1,
-        "speed_limit_bytes": 0, "ip_limit": 1, "clean_ips": [],
-        "random_name": False, "single_user": True,
-        "created_at": datetime.now().isoformat(),
-    }
-    asyncio.create_task(save_state())
+    # گروه‌های پیش‌فرض ساخته نمی‌شوند — کاربر خودش می‌سازد
+    return
+
 
 async def ensure_default_link():
 
@@ -2174,6 +2160,11 @@ html{scroll-behavior:smooth} body{overflow-x:hidden} button,input,select,textare
 .conn-badge.orange{background:rgba(245,158,11,.18);color:#fbbf24}
 .conn-badge.red{background:rgba(239,68,68,.18);color:#f87171}
 
+
+.bottom-bulk{position:fixed;left:0;right:0;bottom:0;z-index:400;display:none;padding:12px 16px;background:var(--card);border-top:1px solid var(--card-b);backdrop-filter:blur(12px)}
+.bottom-bulk.show{display:block}
+.bottom-bulk-inner{max-width:960px;margin:0 auto;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center}
+.bottom-bulk select{padding:8px 10px;border-radius:10px;border:1px solid var(--card-b);background:var(--input-bg);color:var(--t1);font-family:inherit;font-size:12px}
 </style>
 </head>
 
@@ -2254,6 +2245,16 @@ class="support"
 
 </div>
 
+
+<div id="bottomBulkBar" class="bottom-bulk">
+  <div class="bottom-bulk-inner">
+    <span id="bulkCount">0 انتخاب</span>
+    <select id="bulkGroup"></select>
+    <button class="btn btn-sm" onclick="bulkMoveGroup()">انتقال به گروه</button>
+    <button class="btn btn-sm btn-d" onclick="bulkDelete()">حذف انتخاب‌شده</button>
+    <button class="btn btn-sm" onclick="clearSelection()">لغو</button>
+  </div>
+</div>
 </body>
 </html>
 """
@@ -5482,8 +5483,6 @@ async def update_category(cid: str, request: Request, _=Depends(require_auth)):
 
 @app.delete("/api/categories/{cid}")
 async def delete_category(cid: str, _=Depends(require_auth)):
-    if cid in ("0", "1"):
-        raise HTTPException(status_code=400, detail="پیش‌فرض قابل حذف نیست")
     if cid not in CATEGORIES:
         raise HTTPException(status_code=404, detail="یافت نشد")
     del CATEGORIES[cid]
@@ -5968,6 +5967,47 @@ async def api_news(token=Depends(require_auth)):
 # ============================================================
 # BACKUP / RESTORE
 # ============================================================
+
+
+@app.get("/api/security/status")
+async def security_status(token=Depends(require_auth)):
+    meta = get_session_meta(token)
+    if meta.get("role") != "owner":
+        raise HTTPException(403, detail="فقط مالک")
+    now = time.time()
+    locked = []
+    for ip, until in list(LOGIN_LOCKED_UNTIL.items()):
+        if until > now:
+            locked.append({"ip": ip, "remaining_sec": int(until - now)})
+    return {
+        "ok": True,
+        "max_attempts": LOGIN_MAX_ATTEMPTS,
+        "window_seconds": LOGIN_WINDOW_SECONDS,
+        "lockout_seconds": LOGIN_LOCKOUT_SECONDS,
+        "locked_ips": locked,
+        "tracked_ips": len(LOGIN_FAILURES),
+    }
+
+
+@app.post("/api/security/unlock")
+async def security_unlock(request: Request, token=Depends(require_auth)):
+    meta = get_session_meta(token)
+    if meta.get("role") != "owner":
+        raise HTTPException(403, detail="فقط مالک")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    ip = str((body or {}).get("ip") or "").strip()
+    if ip:
+        LOGIN_FAILURES.pop(ip, None)
+        LOGIN_LOCKED_UNTIL.pop(ip, None)
+    else:
+        LOGIN_FAILURES.clear()
+        LOGIN_LOCKED_UNTIL.clear()
+    log_activity("auth", f"رفع مسدودی brute-force ({ip or 'all'})", "ok")
+    return {"ok": True}
+
 
 @app.get("/api/backup/users")
 async def backup_users(token=Depends(require_auth)):
@@ -6690,12 +6730,9 @@ tr:hover td{background:var(--hover)}
     <div class="table-wrap">
       <div id="bulkBar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
         <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t2);cursor:pointer">
-          <input type="checkbox" id="chkAll" onchange="toggleSelectAll(this.checked)"> انتخاب همه
+          <input type="checkbox" id="chkAll" onchange="toggleSelectAll(this.checked);updateBulkBar()"> انتخاب همه
         </label>
-        <button class="btn btn-sm btn-d" onclick="bulkDelete()">حذف انتخاب‌شده</button>
-        <select id="bulkGroup" style="padding:8px 10px;border-radius:10px;border:1px solid var(--card-b);background:var(--input-bg);color:var(--t1);font-family:inherit;font-size:12px"></select>
-        <button class="btn btn-sm" onclick="bulkMoveGroup()">انتقال به گروه</button>
-        <span style="font-size:11px;color:var(--t3)">کشیدن برای جابجایی اولویت</span>
+        <span style="font-size:11px;color:var(--t3)">کشیدن برای جابجایی اولویت · برای عملیات گروهی تیک بزنید</span>
       </div>
       <table>
         <thead><tr>
@@ -6830,7 +6867,15 @@ tr:hover td{background:var(--hover)}
     <div class="field"><label data-i18n="pw_cf">تکرار رمز</label><input type="password" id="pwCf"></div>
     <button class="btn btn-p" onclick="doChangePw()"><span data-i18n="btn_save">ذخیره</span></button>
   </div>
+  
   <div class="card">
+    <div class="card-title">امنیت · ضد Brute-Force</div>
+    <p style="font-size:12px;color:var(--t3);line-height:1.8;margin-bottom:12px">پس از ۵ تلاش ناموفق، IP به مدت ۳۰ دقیقه مسدود می‌شود.</p>
+    <div id="secStatus" style="font-size:12px;color:var(--t2);margin-bottom:10px">—</div>
+    <button class="btn btn-sm" onclick="loadSecurity()">بروزرسانی وضعیت</button>
+    <button class="btn btn-sm btn-d" onclick="unlockAllIps()">رفع مسدودی همه IPها</button>
+  </div>
+<div class="card">
     <div class="card-title">بک‌آپ و بازیابی</div>
     <p style="font-size:12px;color:var(--t3);line-height:1.8;margin-bottom:14px">در صورت خرابی پنل، بک‌آپ را دانلود کنید و در پنل جدید وارد کنید.</p>
     <div class="g2" style="margin-bottom:12px">
@@ -7079,17 +7124,81 @@ async function refreshAll(){
       const su=document.getElementById('sUptime');if(su)su.textContent=h.uptime;
     }
   }catch(e){}
-  __allLinks=arr;renderLinks(arr);
+    __allLinks=arr;
+  softUpdateLinks(arr);
   document.getElementById('panelInfo').innerHTML=lang==='fa'
     ?`کل کانفیگ: <b>${arr.length}</b> · فعال: <b>${active}</b> · مصرف: <b>${fmtB(used)}</b> · بازه: <b>${statRange}</b>`
     :`Total: <b>${arr.length}</b> · Active: <b>${active}</b> · Usage: <b>${fmtB(used)}</b> · Range: <b>${statRange}</b>`;
 }
 
+
+function linkBadgeClass(l){
+  const conn=Number(l.connected_ips||0);
+  const used=Number(l.used_bytes||0), lim=Number(l.limit_bytes||0);
+  let usagePct=lim>0?(used/lim)*100:0;
+  let expWarn=false, expDead=false;
+  if(l.expires_at){try{const ms=new Date(l.expires_at)-Date.now();if(ms<=0)expDead=true;else if(ms<3*864e5)expWarn=true}catch(e){}}
+  if(expDead||usagePct>=90) return 'conn-badge red';
+  if(expWarn||usagePct>=70) return 'conn-badge orange';
+  if(conn>0) return 'conn-badge green';
+  return 'conn-badge gray';
+}
+function softUpdateLinks(arr){
+  const tb=document.getElementById('linksTable');
+  if(!tb) return;
+  const rows=[...tb.querySelectorAll('tr[data-uid]')];
+  const existing=rows.map(r=>r.getAttribute('data-uid'));
+  const incoming=arr.map(l=>String(l.uuid||l.id||''));
+  const same = existing.length===incoming.length && existing.every((id,i)=>id===incoming[i]);
+  // اگر در حال درگ یا انتخاب هستیم، فقط سلول‌ها را آپدیت کن
+  const selecting = document.querySelectorAll('.cfg-chk:checked').length>0;
+  const dragging = !!__dragUid;
+  if(!same || existing.length===0){
+    if(dragging || selecting){
+      // فقط آمار ردیف‌های موجود را آپدیت کن، ساختار را نشکن
+      window.__linksMap = window.__linksMap || {};
+      arr.forEach(l=>{
+        const uid=String(l.uuid||l.id||'');
+        window.__linksMap[uid]=l;
+        const tr=tb.querySelector(`tr[data-uid="${uid}"]`);
+        if(!tr) return;
+        patchLinkRow(tr, l);
+      });
+      return;
+    }
+    renderLinks(arr);
+    return;
+  }
+  window.__linksMap = window.__linksMap || {};
+  arr.forEach(l=>{
+    const uid=String(l.uuid||l.id||'');
+    window.__linksMap[uid]=l;
+    const tr=tb.querySelector(`tr[data-uid="${uid}"]`);
+    if(tr) patchLinkRow(tr, l);
+  });
+}
+function patchLinkRow(tr, l){
+  const conn=Number(l.connected_ips||0);
+  const badge=tr.querySelector('.conn-badge');
+  if(badge){ badge.textContent=String(conn); badge.className=linkBadgeClass(l); }
+  const usageCell=tr.querySelector('[data-usage]');
+  if(usageCell){
+    usageCell.textContent = fmtB(l.used_bytes) + (l.limit_bytes?(' / '+fmtB(l.limit_bytes)):'');
+  }
+  // وضعیت سوئیچ را اگر کاربر همین الان عوض نکرده دست نزن — فقط اگر API فرق دارد و فوکوس نیست
+  const sw=tr.querySelector('.switch input[type=checkbox]');
+  if(sw && document.activeElement!==sw){
+    const on=l.active!==false&&!l.expired;
+    if(sw.checked!==on) sw.checked=on;
+  }
+}
 function renderLinks(arr){
   const tb=document.getElementById('linksTable');
-  if(!arr.length){tb.innerHTML=`<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:28px">${lang==='fa'?'کانفیگی نیست':'No configs'}</td></tr>`;return}
+  if(!arr.length){tb.innerHTML=`<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:28px">${lang==='fa'?'کانفیگی نیست':'No configs'}</td></tr>`;updateBulkBar();return}
   window.__linksMap={};
   const catMap=window.__catMap||{};
+  // preserve checked state
+  const prevChecked=new Set([...document.querySelectorAll('.cfg-chk:checked')].map(c=>c.value));
   tb.innerHTML=arr.map(l=>{
     const uid=l.uuid||l.id||'';
     window.__linksMap[uid]=l;
@@ -7097,37 +7206,31 @@ function renderLinks(arr){
     const proto=l.protocol||'vless-ws';
     const on=l.active!==false&&!l.expired;
     const conn=Number(l.connected_ips||0);
-    const used=Number(l.used_bytes||0), lim=Number(l.limit_bytes||0);
-    let usagePct=lim>0?(used/lim)*100:0;
-    let expWarn=false, expDead=false;
-    if(l.expires_at){try{const ms=new Date(l.expires_at)-Date.now();if(ms<=0)expDead=true;else if(ms<3*864e5)expWarn=true}catch(e){}}
-    let badgeCls='conn-badge gray';
-    if(expDead||usagePct>=90) badgeCls='conn-badge red';
-    else if(expWarn||usagePct>=70) badgeCls='conn-badge orange';
-    else if(conn>0) badgeCls='conn-badge green';
-    const gname=catMap[String(l.category_id||'0')]||'';
+    const gname=catMap[String(l.category_id||'')]||'';
+    const chk=prevChecked.has(uid)?'checked':'';
     return `<tr draggable="true" data-uid="${esc(uid)}" ondragstart="cfgDragStart(event)" ondragover="cfgDragOver(event)" ondrop="cfgDrop(event)" ondragend="cfgDragEnd(event)">
-      <td><input type="checkbox" class="cfg-chk" value="${esc(uid)}"></td>
+      <td><input type="checkbox" class="cfg-chk" value="${esc(uid)}" ${chk} onchange="updateBulkBar()"></td>
       <td style="cursor:grab;color:var(--t3);user-select:none" title="کشیدن">⋮⋮</td>
       <td>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <b>${esc(name)}</b>
-          <span class="${badgeCls}" title="${lang==='fa'?'متصل الان':'Online now'}">${conn}</span>
+          <span class="${linkBadgeClass(l)}" title="${lang==='fa'?'متصل الان':'Online now'}">${conn}</span>
           ${gname?`<span style="font-size:10px;padding:2px 7px;border-radius:8px;background:var(--hover);color:var(--t3)">${esc(gname)}</span>`:''}
         </div>
       </td>
       <td style="color:var(--t3);font-size:11px">${esc(proto)}</td>
       <td><label class="switch"><input type="checkbox" ${on?'checked':''} onchange="toggleLink('${esc(uid)}',this.checked)"><span class="slider"></span></label></td>
-      <td>${fmtB(l.used_bytes)}${l.limit_bytes?(' / '+fmtB(l.limit_bytes)):''}</td>
+      <td data-usage>${fmtB(l.used_bytes)}${l.limit_bytes?(' / '+fmtB(l.limit_bytes)):''}</td>
       <td class="ops">
         <button class="btn btn-sm" onclick="copyLinkById('${esc(uid)}')" title="VLESS"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
         <button class="btn btn-sm" onclick="copySubById('${esc(uid)}')" title="Sub"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></button>
         <a class="btn btn-sm" href="/info/${esc(uid)}" target="_blank" title="INFO" style="text-decoration:none"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></a>
-        <button class="btn btn-sm" onclick="resetUsage('${esc(uid)}')" title="Reset usage"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+        <button class="btn btn-sm" onclick="resetUsage('${esc(uid)}')" title="Reset"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
         <button class="btn btn-sm btn-d" onclick="deleteLink('${esc(uid)}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
       </td>
     </tr>`;
   }).join('');
+  updateBulkBar();
 }
 function getLinkUrl(l){if(!l)return '';return l.vless_full||l.vless||l.vless_link||l.link||''}
 function getSubUrl(l){if(!l)return '';return l.sub||l.sub_url||l.info||''}
@@ -7268,6 +7371,7 @@ goPage=function(name){
   if(name==='news') loadNews();
   if(name==='admins') loadAdmins();
   if(name==='groups') loadGroups();
+  if(name==='settings') loadSecurity();
 };
 
 const PERM_LABELS={
@@ -7415,7 +7519,27 @@ async function cfgDrop(e){
   await api('/api/links/reorder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order:ids})});
   toast(lang==='fa'?'ترتیب ذخیره شد':'Order saved');
 }
-function toggleSelectAll(on){document.querySelectorAll('.cfg-chk').forEach(c=>c.checked=!!on)}
+
+function updateBulkBar(){
+  const n=document.querySelectorAll('.cfg-chk:checked').length;
+  const bar=document.getElementById('bottomBulkBar');
+  const cnt=document.getElementById('bulkCount');
+  if(cnt) cnt.textContent = n + (lang==='fa'?' انتخاب‌شده':' selected');
+  if(bar) bar.classList.toggle('show', n>0);
+  const all=document.getElementById('chkAll');
+  if(all && n===0) all.checked=false;
+}
+function clearSelection(){
+  document.querySelectorAll('.cfg-chk').forEach(c=>c.checked=false);
+  const all=document.getElementById('chkAll');
+  if(all) all.checked=false;
+  updateBulkBar();
+}
+function toggleSelectAll(on){
+  document.querySelectorAll('.cfg-chk').forEach(c=>c.checked=!!on);
+  updateBulkBar();
+}
+
 function selectedCfgIds(){return [...document.querySelectorAll('.cfg-chk:checked')].map(c=>c.value)}
 async function bulkDelete(){
   const ids=selectedCfgIds();
@@ -7447,10 +7571,9 @@ async function loadGroups(){
     else{
       box.innerHTML=list.map(g=>{
         const cnt=(__allLinks||[]).filter(l=>String(l.category_id||'0')===String(g.id)).length;
-        const canDel=!['0','1'].includes(String(g.id));
         return `<div style="border:1px solid var(--card-b);border-radius:12px;padding:12px;margin-bottom:8px;background:var(--bg3);display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
           <div><b>${esc(g.name)}</b> <span style="font-size:11px;color:var(--t3)">${cnt} کانفیگ</span></div>
-          ${canDel?`<button class="btn btn-sm btn-d" onclick="deleteGroup('${esc(g.id)}')">حذف</button>`:''}
+          <button class="btn btn-sm btn-d" onclick="deleteGroup('${esc(g.id)}')">حذف</button>
         </div>`;
       }).join('');
     }
@@ -7466,6 +7589,20 @@ async function deleteGroup(id){
   if(!confirm('حذف گروه؟'))return;
   const r=await api('/api/categories/'+id,{method:'DELETE'});
   if(r){toast('حذف شد');loadGroups();refreshAll()}
+}
+
+
+async function loadSecurity(){
+  const r=await api('/api/security/status');
+  const el=document.getElementById('secStatus');
+  if(!r||!el)return;
+  const locked=(r.locked_ips||[]).map(x=>`${x.ip} (${Math.ceil(x.remaining_sec/60)}د)`).join(' · ')||'—';
+  el.innerHTML=`حداکثر تلاش: <b>${r.max_attempts}</b> · قفل: <b>${Math.round(r.lockout_seconds/60)} دقیقه</b><br>IPهای مسدود: ${locked}`;
+}
+async function unlockAllIps(){
+  if(!confirm('رفع مسدودی همه؟'))return;
+  const r=await api('/api/security/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  if(r){toast('انجام شد');loadSecurity()}
 }
 
 applyLang();loadMe();loadProtocols();loadGroups();refreshAll();setInterval(refreshAll,1000);
