@@ -10,9 +10,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
-
 import httpx
-
 from main import (
     LINKS,
     SUBS,
@@ -53,7 +51,6 @@ ADMIN_IDS = {int(x) for x in _admin_ids_raw.replace(" ", "").split(",") if x.isd
 API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else ""
 _mode = "polling"
 
-# Force-join settings (persisted with telegram_settings.json)
 FORCE_JOIN = {
     "enabled": False,
     "channel": "",  # @username or -100id
@@ -165,7 +162,7 @@ async def process_update(upd: dict):
         logger.warning(f"process_update error: {e}")
 
 
-# ── API helpers ──────────────────────────────────────────────────────────────
+# API helpers 
 async def _call(method: str, **params):
     if not API_BASE:
         return None
@@ -233,14 +230,17 @@ def _force_join_kb():
     return {"inline_keyboard": rows}
 
 
-# ── Keyboards (emoji-rich, green accents with 🟢) ────────────────────────────
 def _main_menu_kb():
     return {
         "inline_keyboard": [
             [{"text": "📊 داشبورد و آمار زنده", "callback_data": "stats"}],
             [
                 {"text": "🟢 لیست کانفیگ‌ها", "callback_data": "list:0"},
-                {"text": "➕ ساخت کانفیگ", "callback_data": "newcfg"},
+                {
+                    "text": "➕ ساخت کانفیگ", 
+                    "callback_data": "newcfg",
+                    "style": "success" 
+                },
             ],
             [
                 {"text": "🗂 گروه‌های ساب", "callback_data": "subs:0"},
@@ -251,7 +251,6 @@ def _main_menu_kb():
             [{"text": "🔄 بروزرسانی منو", "callback_data": "menu"}],
         ]
     }
-
 
 def _settings_kb():
     fj_on = FORCE_JOIN.get("enabled")
@@ -1147,7 +1146,7 @@ async def start_bot(mode: str = "polling"):
     if _client is None:
         _client = httpx.AsyncClient(timeout=httpx.Timeout(40.0, connect=10.0))
     _running = True
-    # set bot name/description soft
+    # set bot
     try:
         await _call("setMyName", name=BOT_NAME)
         await _call(

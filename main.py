@@ -1,8 +1,8 @@
 # ============================================================
 # PXPanel 13.8.0
 # Railway Ready
+# Created By PIXON
 # ============================================================
-
 import asyncio
 import base64
 import hashlib
@@ -12,16 +12,13 @@ import os
 import secrets
 import string
 import time
-
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote, parse_qs
-
 import aiofiles
 import httpx
 import uvicorn
-
 from fastapi import (
     FastAPI,
     Request,
@@ -35,7 +32,6 @@ from fastapi.responses import (
     RedirectResponse,
 )
 from fastapi.middleware.cors import CORSMiddleware
-
 
 # ============================================================
 # APP
@@ -53,7 +49,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(APP_NAME)
-
 
 # ============================================================
 # TIMEZONE
@@ -6623,69 +6618,69 @@ tr:hover td{background:var(--hover)}
     </div>
   </div>
   <nav class="nav">
-    <div class="nav-sec" data-i18n="sec_panel">پنل</div>
+    <div class="nav-sec" data-i18n="sec_panel">پنــــل</div>
     <button class="nav-item on" data-page="dash" data-perm="dash">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-      <span class="nav-label" data-i18n="nav_dash">داشبورد</span>
+      <span class="nav-label" data-i18n="nav_dash">داشبـورد</span>
     </button>
     <button class="nav-item" data-page="configs" data-perm="configs">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-      <span class="nav-label" data-i18n="nav_configs">کانفیگ‌ها</span>
+      <span class="nav-label" data-i18n="nav_configs">کانفیگ‌هـا</span>
     </button>
     <button class="nav-item" data-page="groups" data-perm="configs">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-      <span class="nav-label" data-i18n="nav_groups">گروه‌ها</span>
+      <span class="nav-label" data-i18n="nav_groups">گروه‌هـا</span>
     </button>
     <button class="nav-item" data-page="create" data-perm="create">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
-      <span class="nav-label" data-i18n="nav_create">ساخت کانفیگ</span>
+      <span class="nav-label" data-i18n="nav_create">ساخت کانفیـگ</span>
     </button>
     <button class="nav-item" data-page="stats" data-perm="stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-6"/></svg>
-      <span class="nav-label" data-i18n="nav_stats">آمار</span>
+      <span class="nav-label" data-i18n="nav_stats">امـار</span>
     </button>
     <button class="nav-item" data-page="logs" data-perm="logs">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
-      <span class="nav-label" data-i18n="nav_logs">لاگ فعالیت</span>
+      <span class="nav-label" data-i18n="nav_logs">لاگ فعالیـت</span>
     </button>
-    <div class="nav-sec" data-i18n="sec_sys">سیستم</div>
+    <div class="nav-sec" data-i18n="sec_sys">سیستـم</div>
     <button class="nav-item" data-page="telegram" data-perm="telegram">
       <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.2-1.86 8.77c-.14.62-.5.77-1.01.48l-2.8-2.06-1.35 1.3c-.15.15-.27.27-.55.27l.2-2.84 5.18-4.68c.22-.2-.05-.31-.35-.12l-6.4 4.03-2.76-.86c-.6-.19-.61-.6.12-.89l10.78-4.16c.5-.18.94.12.78.86z"/></svg>
       <span class="nav-label" data-i18n="nav_telegram">پی ایکس بات</span>
     </button>
     <button class="nav-item" data-page="news" data-perm="news">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8V6Z"/></svg>
-      <span class="nav-label" data-i18n="nav_news">اخبار</span>
+      <span class="nav-label" data-i18n="nav_news">اخبـار</span>
     </button>
     <button class="nav-item" data-page="admins" data-perm="admins">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      <span class="nav-label" data-i18n="nav_admins">ادمین‌ها</span>
+      <span class="nav-label" data-i18n="nav_admins">ادمین‌هـا</span>
     </button>
     <button class="nav-item" data-page="settings" data-perm="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-      <span class="nav-label" data-i18n="nav_settings">تنظیمات</span>
+      <span class="nav-label" data-i18n="nav_settings">تنظیمـات</span>
     </button>
     <button class="nav-item" data-page="support" data-perm="support">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
-      <span class="nav-label" data-i18n="nav_support">پشتیبانی</span>
+      <span class="nav-label" data-i18n="nav_support">پشتیبانـی</span>
     </button>
     <button class="nav-item" data-page="donate">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-      <span class="nav-label" data-i18n="nav_donate">حمایت مالی</span>
+      <span class="nav-label" data-i18n="nav_donate">حمایت مالـی</span>
     </button>
   </nav>
   <div class="sb-foot">
     <button type="button" id="themeBtn" onclick="toggleTheme()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-      <span id="themeLabel" data-i18n="theme">تم روشن</span>
+      <span id="themeLabel" data-i18n="theme">تم روشـن</span>
     </button>
     <button type="button" onclick="refreshAll()" title="Stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.1-3.4L23 10M1 14l5.4 4.4A9 9 0 0 0 20.5 15"/></svg>
-      <span data-i18n="refresh_stats">بروزرسانی آمار</span>
+      <span data-i18n="refresh_stats">بروزرسانی امـار</span>
     </button>
     <button type="button" onclick="panelUpdate()" title="Panel" style="background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.35);color:#34d399">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
-      <span data-i18n="refresh_panel">بروزرسانی پنل</span>
+      <span data-i18n="refresh_panel">بروزرسانی پنـل</span>
     </button>
     <a href="/logout" class="btn danger">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M10 5H5v14h5"/><path d="m14 8 4 4-4 4"/><path d="M18 12H9"/></svg>
@@ -6703,14 +6698,14 @@ tr:hover td{background:var(--hover)}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
         <span data-i18n="nav_dash">داشبورد</span>
       </div>
-      <div class="page-sub" id="lastUpd" data-i18n="loading">در حال بارگذاری...</div>
+      <div class="page-sub" id="lastUpd" data-i18n="loading">در حال بارگـذاری...</div>
     </div>
   </div>
   <div class="metrics">
-    <div class="metric"><div class="metric-label" data-i18n="m_conns">اتصالات فعال</div><div class="metric-val" id="mConns">—</div></div>
-    <div class="metric"><div class="metric-label" data-i18n="m_traffic">ترافیک کل</div><div class="metric-val" id="mTraffic">—</div></div>
-    <div class="metric"><div class="metric-label" data-i18n="m_links">کانفیگ‌ها</div><div class="metric-val" id="mLinks">—</div></div>
-    <div class="metric"><div class="metric-label" data-i18n="m_uptime">آپتایم سرور</div><div class="metric-val" id="mUptime" style="font-size:17px">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_conns">اتصالات فعـال</div><div class="metric-val" id="mConns">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_traffic">ترافیک کـل</div><div class="metric-val" id="mTraffic">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_links">کانفیگ‌هـا</div><div class="metric-val" id="mLinks">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_uptime">آپتایـم سرور</div><div class="metric-val" id="mUptime" style="font-size:17px">—</div></div>
   </div>
   <div class="g2">
     <div class="card action-card" onclick="goPage('create')">
@@ -6728,7 +6723,7 @@ tr:hover td{background:var(--hover)}
   <div class="page-head">
     <div>
       <div class="page-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span data-i18n="nav_configs">کانفیگ‌ها</span></div>
-      <div class="page-sub" data-i18n="configs_sub">مدیریت لینک‌ها · VLESS و ساب</div>
+      <div class="page-sub" data-i18n="configs_sub">مدیریـت لینک‌هــا · VLESS و سـاب</div>
     </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input id="cfgSearch" placeholder="جستجو..." oninput="filterConfigs()" style="padding:8px 12px;border-radius:10px;border:1px solid var(--card-b);background:var(--input-bg);color:var(--t1);font-family:inherit;font-size:12px;min-width:140px">
@@ -6746,8 +6741,8 @@ tr:hover td{background:var(--hover)}
             <input type="checkbox" id="chkAll" onchange="toggleSelectAll(this.checked);updateBulkBar()" title="انتخاب همه" style="width:16px;height:16px;margin:0;vertical-align:middle;cursor:pointer">
           </th>
           <th style="width:28px;padding:10px 4px"></th>
-          <th data-i18n="th_name">نام</th><th data-i18n="th_proto">پروتکل</th><th data-i18n="th_status">وضعیت</th>
-          <th data-i18n="th_usage">مصرف</th><th data-i18n="th_ops">عملیات</th>
+          <th data-i18n="th_name">نـام</th><th data-i18n="th_proto">پروتکـل</th><th data-i18n="th_status">وضعیت</th>
+          <th data-i18n="th_usage">مصـرف</th><th data-i18n="th_ops">عملیـات</th>
         </tr></thead>
         <tbody id="linksTable"><tr><td colspan="7" style="text-align:center;color:var(--t3);padding:32px">...</td></tr></tbody>
       </table>
@@ -6770,11 +6765,11 @@ tr:hover td{background:var(--hover)}
           </button>
         </div>
       </div>
-            <div class="field"><label data-i18n="label_proto">پروتکل</label><select id="cProto"></select></div>
+            <div class="field"><label data-i18n="label_proto">پروتکـل</label><select id="cProto"></select></div>
       <div class="field"><label>گروه</label><select id="cGroup"></select></div>
 <div class="form-row">
         <div class="field"><label data-i18n="label_count">تعداد کانفیگ در ساب (۱–۴۰)</label><input id="cCount" type="number" value="1" min="1" max="40"></div>
-        <div class="field"><label data-i18n="label_days">انقضا (روز)</label><input id="cDays" type="number" value="0" min="0"></div>
+        <div class="field"><label data-i18n="label_days">انقضـا (روز)</label><input id="cDays" type="number" value="0" min="0"></div>
       </div>
       <div class="form-row">
         <div class="field"><label data-i18n="label_limit">محدودیت حجم</label><input id="cLimit" type="number" value="0" min="0"></div>
@@ -6782,7 +6777,7 @@ tr:hover td{background:var(--hover)}
       </div>
       <div class="form-row">
         <div class="field"><label data-i18n="label_ip">محدودیت IP</label><input id="cIp" type="number" value="0" min="0"></div>
-        <div class="field"><label data-i18n="label_speed">سرعت (Mbps)</label><input id="cSpeed" type="number" value="0" min="0"></div>
+        <div class="field"><label data-i18n="label_speed">سرعـت (Mbps)</label><input id="cSpeed" type="number" value="0" min="0"></div>
       </div>
       <button class="btn btn-p" style="width:100%" onclick="doManualCreate()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>
@@ -6790,13 +6785,13 @@ tr:hover td{background:var(--hover)}
       </button>
     </div>
     <div class="card" style="border-color:rgba(139,92,246,.35)">
-      <div class="card-title" data-i18n="auto_create">ساخت خودکار (پیشنهادی)</div>
+      <div class="card-title" data-i18n="auto_create">ساخت خودکـار (پیشنهــادی)</div>
       <p style="color:var(--t2);font-size:13px;line-height:1.75;margin-bottom:14px" data-i18n="auto_desc">با یک کلیک کانفیگ بهینه ساخته می‌شود. بعد از ساخت لینک VLESS و ساب در اختیار شماست.</p>
-      <div class="field"><label data-i18n="label_proto">پروتکل</label><select id="aProto"></select></div>
-      <div class="field"><label data-i18n="label_count">تعداد کانفیگ در ساب (۱–۴۰)</label><input id="aCount" type="number" value="1" min="1" max="40"></div>
+      <div class="field"><label data-i18n="label_proto">پروتکـل</label><select id="aProto"></select></div>
+      <div class="field"><label data-i18n="label_count">تعداد کانفیگ در سـاب (1-40)</label><input id="aCount" type="number" value="1" min="1" max="40"></div>
       <button class="btn btn-p" style="width:100%;background:linear-gradient(135deg,#8b5cf6,#6366f1)" onclick="doAutoCreate()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2"/></svg>
-        <span data-i18n="btn_auto">ساخت خودکار</span>
+        <span data-i18n="btn_auto">ساخـت خودکــار</span>
       </button>
     </div>
   </div>
@@ -6807,14 +6802,14 @@ tr:hover td{background:var(--hover)}
   <div class="page-head">
     <div>
       <div class="page-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><span data-i18n="nav_groups">گروه‌ها</span></div>
-      <div class="page-sub">ساخت گروه و اختصاص کانفیگ‌های دستی و خودکار</div>
+      <div class="page-sub">ساخـت گـروه و اختصـاص کانفیـگ هـای دستـی و خودکـار</div>
     </div>
   </div>
   <div class="g2">
     <div class="card">
-      <div class="card-title">ساخت گروه جدید</div>
-      <div class="field"><label>نام گروه</label><input id="grpName" placeholder="مثلاً VIP"></div>
-      <button class="btn btn-p" style="width:100%" onclick="createGroup()">ساخت گروه</button>
+      <div class="card-title">ساخت گروه جدیـد</div>
+      <div class="field"><label>نام گروه</label><input id="grpName" placeholder="مثلا اختصاصـی"></div>
+      <button class="btn btn-p" style="width:100%" onclick="createGroup()">ساخـت گروه</button>
     </div>
     <div class="card" style="padding:0">
       <div style="padding:16px 18px;border-bottom:1px solid var(--card-b);font-weight:700">لیست گروه‌ها</div>
@@ -6826,20 +6821,20 @@ tr:hover td{background:var(--hover)}
   <div class="page-head">
     <div>
       <div class="page-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-6"/></svg><span data-i18n="nav_stats">آمار</span></div>
-      <div class="page-sub" data-i18n="stats_sub">ترافیک و اتصالات · فیلتر زمانی</div>
+      <div class="page-sub" data-i18n="stats_sub">ترافیـک و اتصـالات · فیلتـر زمانـی</div>
     </div>
     <div class="range-tabs" id="rangeTabs">
       <button class="range-tab" data-r="day" onclick="setRange('day',this)" data-i18n="r_day">روز</button>
-      <button class="range-tab" data-r="week" onclick="setRange('week',this)" data-i18n="r_week">هفته</button>
-      <button class="range-tab on" data-r="month" onclick="setRange('month',this)" data-i18n="r_month">ماه</button>
-      <button class="range-tab" data-r="all" onclick="setRange('all',this)" data-i18n="r_all">کل</button>
+      <button class="range-tab" data-r="week" onclick="setRange('week',this)" data-i18n="r_week">هفتـه</button>
+      <button class="range-tab on" data-r="month" onclick="setRange('month',this)" data-i18n="r_month">مـاه</button>
+      <button class="range-tab" data-r="all" onclick="setRange('all',this)" data-i18n="r_all">کـل</button>
     </div>
   </div>
   <div class="metrics">
-    <div class="metric"><div class="metric-label" data-i18n="m_traffic">ترافیک</div><div class="metric-val" id="sTraffic">—</div></div>
-    <div class="metric"><div class="metric-label" data-i18n="m_conns">اتصالات</div><div class="metric-val" id="sConns">—</div></div>
-    <div class="metric"><div class="metric-label" data-i18n="m_links">کانفیگ فعال</div><div class="metric-val" id="sActive">—</div></div>
-    <div class="metric"><div class="metric-label" data-i18n="m_uptime">آپتایم</div><div class="metric-val" id="sUptime" style="font-size:16px">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_traffic">ترافیـک</div><div class="metric-val" id="sTraffic">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_conns">اتصـالات</div><div class="metric-val" id="sConns">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_links">کانفیـگ فعـال</div><div class="metric-val" id="sActive">—</div></div>
+    <div class="metric"><div class="metric-label" data-i18n="m_uptime">آپتایـم</div><div class="metric-val" id="sUptime" style="font-size:16px">—</div></div>
   </div>
   <div class="card"><div class="card-title" data-i18n="panel_info">اطلاعات کل پنل</div><div id="panelInfo" style="font-size:13px;color:var(--t2);line-height:2"></div></div>
 </section>
@@ -6855,53 +6850,53 @@ tr:hover td{background:var(--hover)}
 <section class="page" id="page-settings">
   <div class="page-head"><div><div class="page-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/></svg><span data-i18n="nav_settings">تنظیمات</span></div></div></div>
   <div class="card">
-    <div class="card-title" data-i18n="theme">تم</div>
+    <div class="card-title" data-i18n="theme">تــــم هـا</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn btn-p" onclick="setTheme('dark')" data-i18n="theme_dark">تم تیره</button>
-      <button class="btn" onclick="setTheme('light')" data-i18n="theme_light">تم روشن</button>
+      <button class="btn btn-p" onclick="setTheme('dark')" data-i18n="theme_dark">تـم دارک</button>
+      <button class="btn" onclick="setTheme('light')" data-i18n="theme_light">تـم روشـن</button>
     </div>
   </div>
   <div class="card">
-    <div class="card-title" data-i18n="lang_label">زبان / Language</div>
+    <div class="card-title" data-i18n="lang_label">زبـان / Language</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn btn-p" onclick="setLang('fa')">فارسی کامل</button>
-      <button class="btn" onclick="setLang('en')">Full English</button>
+      <button class="btn btn-p" onclick="setLang('fa')">فارسـی</button>
+      <button class="btn" onclick="setLang('en')">English</button>
     </div>
   </div>
   <div class="card">
-    <div class="card-title" data-i18n="change_pw">تغییر رمز عبور</div>
-    <div class="field"><label data-i18n="pw_cur">رمز فعلی</label><input type="password" id="pwCur"></div>
-    <div class="field"><label data-i18n="pw_new">رمز جدید</label><input type="password" id="pwNew"></div>
-    <div class="field"><label data-i18n="pw_cf">تکرار رمز</label><input type="password" id="pwCf"></div>
-    <button class="btn btn-p" onclick="doChangePw()"><span data-i18n="btn_save">ذخیره</span></button>
+    <div class="card-title" data-i18n="change_pw">تغییر رمز عبـور</div>
+    <div class="field"><label data-i18n="pw_cur">رمز فعلـی</label><input type="password" id="pwCur"></div>
+    <div class="field"><label data-i18n="pw_new">رمـز جدیـد</label><input type="password" id="pwNew"></div>
+    <div class="field"><label data-i18n="pw_cf">تکـرار رمـز</label><input type="password" id="pwCf"></div>
+    <button class="btn btn-p" onclick="doChangePw()"><span data-i18n="btn_save">ذخیـره</span></button>
   </div>
   
   <div class="card">
-    <div class="card-title">امنیت · ضد Brute-Force</div>
-    <p style="font-size:12px;color:var(--t3);line-height:1.8;margin-bottom:12px">پس از ۵ تلاش ناموفق، IP به مدت ۳۰ دقیقه مسدود می‌شود.</p>
+    <div class="card-title">امنیت بیشتـر</div>
+    <p style="font-size:12px;color:var(--t3);line-height:1.8;margin-bottom:12px">پـس از 5 تـلاش ناموفـق، ایپـی به مدت 30 دقیقه مسدود می‌شود.</p>
     <div id="secStatus" style="font-size:12px;color:var(--t2);margin-bottom:10px">—</div>
-    <button class="btn btn-sm" onclick="loadSecurity()">بروزرسانی وضعیت</button>
-    <button class="btn btn-sm btn-d" onclick="unlockAllIps()">رفع مسدودی همه IPها</button>
+    <button class="btn btn-sm" onclick="loadSecurity()">بروزرسانی وضعیـت</button>
+    <button class="btn btn-sm btn-d" onclick="unlockAllIps()">رفع مسدودی همـه ایپــی هــا</button>
   </div>
 <div class="card">
-    <div class="card-title">بک‌آپ و بازیابی</div>
+    <div class="card-title">بــک آپ و بازیابــی</div>
     <p style="font-size:12px;color:var(--t3);line-height:1.8;margin-bottom:14px">در صورت خرابی پنل، بک‌آپ را دانلود کنید و در پنل جدید وارد کنید.</p>
     <div class="g2" style="margin-bottom:12px">
       <button class="btn btn-p" style="width:100%" onclick="downloadBackup('users')">دانلود بک‌آپ کاربران</button>
       <button class="btn btn-p" style="width:100%;background:linear-gradient(135deg,#8b5cf6,#6366f1)" onclick="downloadBackup('bot')">دانلود بک‌آپ ربات</button>
     </div>
     <div class="field">
-      <label>وارد کردن بک‌آپ کاربران</label>
+      <label>وارد کردن بـک‌آپ کاربران</label>
       <input type="file" id="restoreUsersFile" accept="application/json,.json" style="padding:10px">
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-        <button class="btn btn-sm" onclick="restoreUsers('merge')">ادغام با فعلی</button>
-        <button class="btn btn-sm btn-d" onclick="restoreUsers('replace')">جایگزینی کامل</button>
+        <button class="btn btn-sm" onclick="restoreUsers('merge')">ادغام بــــا فعلـی</button>
+        <button class="btn btn-sm btn-d" onclick="restoreUsers('replace')">جایگزینی کامـل</button>
       </div>
     </div>
     <div class="field" style="margin-top:12px">
-      <label>وارد کردن بک‌آپ ربات</label>
+      <label>وارد کردن بــک آپ ربـات</label>
       <input type="file" id="restoreBotFile" accept="application/json,.json" style="padding:10px">
-      <button class="btn btn-sm" style="margin-top:8px" onclick="restoreBot()">بازیابی ربات</button>
+      <button class="btn btn-sm" style="margin-top:8px" onclick="restoreBot()">بازیابـی ربـات</button>
     </div>
   </div>
 </section>
@@ -6925,23 +6920,23 @@ tr:hover td{background:var(--hover)}
 <section class="page" id="page-admins">
   <div class="page-head">
     <div>
-      <div class="page-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span data-i18n="nav_admins">ادمین‌ها</span></div>
-      <div class="page-sub" data-i18n="admins_sub">ساخت اکانت ادمین با دسترسی سفارشی</div>
+      <div class="page-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span data-i18n="nav_admins">(نسخـه دمـو) ادمیـن هــا</span></div>
+      <div class="page-sub" data-i18n="admins_sub">ساخت اکانت ادمین با دسترسی سفارشـی</div>
     </div>
   </div>
   <div class="g2">
     <div class="card">
-      <div class="card-title" data-i18n="admin_create">ساخت اکانت ادمین</div>
-      <div class="field"><label data-i18n="admin_user">نام کاربری</label><input id="adUser" placeholder="user1" style="direction:ltr;text-align:left"></div>
+      <div class="card-title" data-i18n="admin_create">ساخـت اکانـت ادمیـن</div>
+      <div class="field"><label data-i18n="admin_user">نام کاربـری</label><input id="adUser" placeholder="user1" style="direction:ltr;text-align:left"></div>
       <div class="form-row">
-        <div class="field"><label data-i18n="admin_pw">رمز عبور</label><input id="adPw" type="password"></div>
-        <div class="field"><label data-i18n="admin_pw2">تکرار رمز</label><input id="adPw2" type="password"></div>
+        <div class="field"><label data-i18n="admin_pw">رمز عبـور</label><input id="adPw" type="password"></div>
+        <div class="field"><label data-i18n="admin_pw2">تکرار رمـز</label><input id="adPw2" type="password"></div>
       </div>
       <div class="form-row">
-        <div class="field"><label data-i18n="label_limit">حجم</label><input id="adLimit" type="number" value="0" min="0"></div>
-        <div class="field"><label data-i18n="label_unit">واحد</label><select id="adUnit"><option>GB</option><option>MB</option></select></div>
+        <div class="field"><label data-i18n="label_limit">حجـم</label><input id="adLimit" type="number" value="0" min="0"></div>
+        <div class="field"><label data-i18n="label_unit">واحـد</label><select id="adUnit"><option>GB</option><option>MB</option></select></div>
       </div>
-      <div class="field"><label data-i18n="label_days">مدت اعتبار (روز)</label><input id="adDays" type="number" value="0" min="0"></div>
+      <div class="field"><label data-i18n="label_days">مدت اعتبـار (روز)</label><input id="adDays" type="number" value="0" min="0"></div>
       <div class="card-title" style="margin-top:8px" data-i18n="admin_perms">دسترسی‌ها</div>
       <div id="adPerms" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px"></div>
       <button class="btn btn-p" style="width:100%;margin-top:14px" onclick="createAdmin()" data-i18n="admin_btn">ساخت اکانت</button>
@@ -6959,7 +6954,7 @@ tr:hover td{background:var(--hover)}
     <div>
       <div class="page-title" style="justify-content:center">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-        <span data-i18n="nav_donate">حمایت مالی</span>
+        <span data-i18n="nav_donate">حمایـت مالــــی</span>
       </div>
     </div>
   </div>
@@ -6981,15 +6976,15 @@ tr:hover td{background:var(--hover)}
   <div class="support-grid">
     <a class="support-tile" href="https://github.com/iran-px-panel/pxpanel" target="_blank" rel="noopener">
       <div class="support-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.4.6.1.82-.26.82-.58v-2.03c-3.34.73-4.03-1.61-4.03-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.1-.75.08-.74.08-.74 1.21.09 1.85 1.24 1.85 1.24 1.07 1.84 2.81 1.31 3.5 1 .11-.78.42-1.31.76-1.61-2.66-.3-5.46-1.33-5.46-5.93 0-1.31.47-2.38 1.24-3.22-.12-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.8 5.62-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.69.83.57C20.56 21.8 24 17.3 24 12 24 5.37 18.63 0 12 0z"/></svg></div>
-      <div><div class="support-label" data-i18n="github">گیت‌هاب</div><div class="support-val">iran-px-panel/pxpanel</div></div>
+      <div><div class="support-label" data-i18n="github">گیت هـاب پروژه</div><div class="support-val">iran-px-panel/pxpanel</div></div>
     </a>
     <a class="support-tile" href="https://t.me/logic_sec" target="_blank" rel="noopener">
       <div class="support-icon"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.2-1.86 8.77c-.14.62-.5.77-1.01.48l-2.8-2.06-1.35 1.3c-.15.15-.27.27-.55.27l.2-2.84 5.18-4.68c.22-.2-.05-.31-.35-.12l-6.4 4.03-2.76-.86c-.6-.19-.61-.6.12-.89l10.78-4.16c.5-.18.94.12.78.86z"/></svg></div>
-      <div><div class="support-label" data-i18n="telegram">تلگرام</div><div class="support-val">@logic_sec</div></div>
+      <div><div class="support-label" data-i18n="telegram">کانال تلگـرام</div><div class="support-val">@logic_sec</div></div>
     </a>
     <a class="support-tile" href="https://t.me/logictop12" target="_blank" rel="noopener">
       <div class="support-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></div>
-      <div><div class="support-label" data-i18n="channel">کانال پشتیبان</div><div class="support-val">t.me/logictop12</div></div>
+      <div><div class="support-label" data-i18n="channel">گروه تلگـرام (پشتیبانی)</div><div class="support-val">t.me/logictop12</div></div>
     </a>
   </div>
 </section>
