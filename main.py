@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.8.0"
+APP_VERSION = "13.8.1"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -2240,7 +2240,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <body>
 <div class="card">
   <div class="logo">PX</div>
-  <div class="ver">v13.8.0</div>
+  <div class="ver">v13.8.1</div>
 
   <div id="setupBox" class="hidden">
     <div class="step">راه‌اندازی اولیه</div>
@@ -6187,7 +6187,7 @@ tr:hover td{background:var(--hover)}
     <div class="sb-logo-icon">PX</div>
     <div class="sb-logo-text">
       <div class="sb-logo-name">PXPanel</div>
-      <div class="sb-logo-ver">v13.8.0</div>
+      <div class="sb-logo-ver">v13.8.1</div>
     </div>
   </div>
   <nav class="nav">
@@ -6215,7 +6215,7 @@ tr:hover td{background:var(--hover)}
     <div class="nav-sec" data-i18n="sec_sys">سیستم</div>
     <button class="nav-item" data-page="telegram">
       <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.2-1.86 8.77c-.14.62-.5.77-1.01.48l-2.8-2.06-1.35 1.3c-.15.15-.27.27-.55.27l.2-2.84 5.18-4.68c.22-.2-.05-.31-.35-.12l-6.4 4.03-2.76-.86c-.6-.19-.61-.6.12-.89l10.78-4.16c.5-.18.94.12.78.86z"/></svg>
-      <span class="nav-label" data-i18n="nav_telegram">ربات تلگرام</span>
+      <span class="nav-label" data-i18n="nav_telegram">پی ایکس بات</span>
     </button>
     <button class="nav-item" data-page="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
@@ -6422,7 +6422,7 @@ tr:hover td{background:var(--hover)}
     <div>
       <div class="page-title">
         <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.2-1.86 8.77c-.14.62-.5.77-1.01.48l-2.8-2.06-1.35 1.3c-.15.15-.27.27-.55.27l.2-2.84 5.18-4.68c.22-.2-.05-.31-.35-.12l-6.4 4.03-2.76-.86c-.6-.19-.61-.6.12-.89l10.78-4.16c.5-.18.94.12.78.86z"/></svg>
-        <span data-i18n="nav_telegram">ربات تلگرام</span>
+        <span data-i18n="nav_telegram">پی ایکس بات</span>
       </div>
       <div class="page-sub" data-i18n="tg_sub">توکن ربات و آیدی عددی ادمین · فعال‌سازی خودکار و وب‌هوک</div>
     </div>
