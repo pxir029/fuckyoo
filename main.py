@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.8.1"
+APP_VERSION = "13.9.0"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -717,6 +717,59 @@ AUTH = {
     "password_configured": bool(_env_pw),
 }
 
+# Sub-admin accounts (panel operators with granular permissions)
+ADMIN_ACCOUNTS: dict = {}
+# session_token -> {"role": "owner"|"admin", "admin_id": str|None, "username": str}
+SESSION_META: dict = {}
+
+ALL_PERMS = (
+    "dash", "configs", "create", "stats", "logs",
+    "settings", "support", "telegram", "news", "admins",
+)
+DEFAULT_PERMS = {p: True for p in ALL_PERMS}
+
+
+def default_admin_record(username: str, password: str, **kwargs) -> dict:
+    return {
+        "id": secrets.token_hex(8),
+        "username": username.strip().lower(),
+        "password_hash": hash_password(password),
+        "label": kwargs.get("label") or username,
+        "limit_bytes": int(kwargs.get("limit_bytes") or 0),
+        "used_bytes": 0,
+        "expires_at": kwargs.get("expires_at"),
+        "active": True,
+        "blocked": False,
+        "permissions": {**DEFAULT_PERMS, **(kwargs.get("permissions") or {})},
+        "created_at": datetime.now().isoformat(),
+    }
+
+
+def find_admin_by_username(username: str):
+    u = (username or "").strip().lower()
+    for aid, a in ADMIN_ACCOUNTS.items():
+        if a.get("username") == u:
+            return aid, a
+    return None, None
+
+
+def admin_is_valid(admin: dict) -> bool:
+    if not admin or admin.get("blocked") or not admin.get("active", True):
+        return False
+    exp = admin.get("expires_at")
+    if exp:
+        try:
+            if datetime.now() > datetime.fromisoformat(str(exp)):
+                return False
+        except Exception:
+            pass
+    limit = int(admin.get("limit_bytes") or 0)
+    used = int(admin.get("used_bytes") or 0)
+    if limit > 0 and used >= limit:
+        return False
+    return True
+
+
 
 # ============================================================
 # LOGIN BRUTE-FORCE PROTECTION
@@ -800,7 +853,7 @@ SESSION_TTL = (
 )
 
 
-async def create_session() -> str:
+async def create_session(meta: dict | None = None) -> str:
 
     token = secrets.token_urlsafe(48)
 
@@ -809,6 +862,7 @@ async def create_session() -> str:
             time.time()
             + SESSION_TTL
         )
+        SESSION_META[token] = meta or {"role": "owner", "admin_id": None, "username": "owner"}
 
     return token
 
@@ -850,6 +904,32 @@ async def destroy_session(
             token,
             None,
         )
+        SESSION_META.pop(token, None)
+
+
+def get_session_meta(token: str | None) -> dict:
+    if not token:
+        return {"role": "owner", "admin_id": None, "username": "owner", "permissions": {p: True for p in ALL_PERMS}}
+    meta = dict(SESSION_META.get(token) or {"role": "owner", "admin_id": None, "username": "owner"})
+    if meta.get("role") == "owner":
+        meta["permissions"] = {p: True for p in ALL_PERMS}
+    else:
+        aid = meta.get("admin_id")
+        admin = ADMIN_ACCOUNTS.get(aid or "") or {}
+        meta["permissions"] = {p: bool((admin.get("permissions") or {}).get(p, False)) for p in ALL_PERMS}
+        meta["blocked"] = bool(admin.get("blocked"))
+    return meta
+
+
+def require_perm(perm: str):
+    async def _dep(request: Request, token=Depends(require_auth)):
+        meta = get_session_meta(token)
+        if meta.get("role") == "owner":
+            return token
+        if not (meta.get("permissions") or {}).get(perm):
+            raise HTTPException(status_code=403, detail="دسترسی به این بخش مجاز نیست")
+        return token
+    return _dep
 
 
 async def require_auth(
@@ -866,6 +946,14 @@ async def require_auth(
             status_code=401,
             detail="unauthorized",
         )
+
+    meta = get_session_meta(token)
+    if meta.get("role") == "admin":
+        aid = meta.get("admin_id")
+        admin = ADMIN_ACCOUNTS.get(aid or "")
+        if not admin_is_valid(admin or {}):
+            await destroy_session(token)
+            raise HTTPException(status_code=401, detail="حساب منقضی یا مسدود شده است")
 
     return token
 
@@ -1072,6 +1160,9 @@ async def load_state():
             )
         )
 
+        ADMIN_ACCOUNTS.clear()
+        ADMIN_ACCOUNTS.update(data.get("admin_accounts") or {})
+
         stored_password = data.get(
             "password_hash"
         )
@@ -1167,6 +1258,9 @@ async def save_state():
 
                 "categories":
                     dict(CATEGORIES),
+
+                "admin_accounts":
+                    dict(ADMIN_ACCOUNTS),
 
                 "password_hash":
                     AUTH[
@@ -2240,7 +2334,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <body>
 <div class="card">
   <div class="logo">PX</div>
-  <div class="ver">v13.8.1</div>
+  <div class="ver">v13.9.0</div>
 
   <div id="setupBox" class="hidden">
     <div class="step">راه‌اندازی اولیه</div>
@@ -2265,6 +2359,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
     <p class="desc">رمز عبور پنل را وارد کنید.</p>
     <div class="err" id="loginErr"></div>
     <form id="loginForm">
+      <label>نام کاربری (اختیاری برای مالک)</label>
+      <input type="text" id="loginUser" placeholder="خالی = مالک پنل" autocomplete="username" style="direction:ltr;text-align:left">
       <label>رمز عبور</label>
       <input type="password" id="loginPw" placeholder="رمز عبور" autocomplete="current-password" required>
       <button type="submit" id="loginBtn">ورود</button>
@@ -2310,7 +2406,7 @@ document.getElementById('loginForm').addEventListener('submit',async e=>{
   err.classList.remove('show');
   const btn=document.getElementById('loginBtn');btn.disabled=true;
   try{
-    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('loginPw').value})});
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('loginPw').value,username:document.getElementById('loginUser').value})});
     if(!r.ok){
       const d=await r.json().catch(()=>({}));
       throw new Error(d.detail||'رمز اشتباه است');
@@ -2553,116 +2649,44 @@ async def login_form(
 
 
 @app.post("/api/login")
-async def api_login(
-    request: Request,
-):
+async def api_login(request: Request):
     if not (AUTH.get("password_configured") and AUTH.get("password_hash")):
         raise HTTPException(status_code=400, detail="ابتدا رمز پنل را در راه‌اندازی تنظیم کنید")
-
-
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(
-            status_code=400,
-            detail="JSON نامعتبر است",
-        )
-
-    password = str(
-        body.get(
-            "password",
-            "",
-        )
-    ).strip()
-
+        raise HTTPException(status_code=400, detail="JSON نامعتبر است")
+    password = str(body.get("password", "")).strip()
+    username = str(body.get("username", "")).strip().lower()
     ip = client_ip(request)
-
     blocked, retry_after = login_is_blocked(ip)
     if blocked:
-        raise HTTPException(
-            status_code=429,
-            detail=f"ورود موقتاً مسدود است. حدود {max(1, (retry_after + 59) // 60)} دقیقه دیگر تلاش کنید.",
-            headers={"Retry-After": str(retry_after)},
-        )
-
+        raise HTTPException(status_code=429, detail=f"ورود موقتاً مسدود است. حدود {max(1, (retry_after + 59) // 60)} دقیقه دیگر تلاش کنید.", headers={"Retry-After": str(retry_after)})
     if not password:
         register_login_failure(ip)
-        raise HTTPException(
-            status_code=400,
-            detail="رمز عبور را وارد کنید",
-        )
-
-    if (
-        hash_password(password)
-        != AUTH["password_hash"]
-    ):
-
+        raise HTTPException(status_code=400, detail="رمز عبور الزامی است")
+    meta = {"role": "owner", "admin_id": None, "username": "owner"}
+    ok = False
+    if username and username not in ("owner", "admin", "root"):
+        aid, admin = find_admin_by_username(username)
+        if admin and admin.get("password_hash") == hash_password(password):
+            if not admin_is_valid(admin):
+                raise HTTPException(status_code=403, detail="حساب مسدود یا منقضی شده است")
+            ok = True
+            meta = {"role": "admin", "admin_id": aid, "username": username}
+    else:
+        if hash_password(password) == AUTH["password_hash"]:
+            ok = True
+    if not ok:
         locked, value = register_login_failure(ip)
         if locked:
-            raise HTTPException(
-                status_code=429,
-                detail="تعداد تلاش‌های ناموفق بیش از حد مجاز بود. این IP برای ۱۵ دقیقه مسدود شد.",
-                headers={"Retry-After": str(LOGIN_LOCKOUT_SECONDS)},
-            )
-
-        log_activity(
-            "auth",
-            (
-                f"تلاش ورود ناموفق از {ip}؛ "
-                f"{value} تلاش باقی مانده"
-            ),
-            "err",
-        )
-
-        raise HTTPException(
-            status_code=401,
-            detail=f"رمز عبور اشتباه است؛ {value} تلاش دیگر باقی مانده است",
-        )
-
+            raise HTTPException(status_code=429, detail="تعداد تلاش بیش از حد. ۱۵ دقیقه صبر کنید.", headers={"Retry-After": str(LOGIN_LOCKOUT_SECONDS)})
+        raise HTTPException(status_code=401, detail=f"نام کاربری یا رمز اشتباه است. {value} تلاش باقی‌مانده")
     clear_login_failures(ip)
-
-    token = await create_session()
-
-    response = JSONResponse(
-        {
-            "ok": True,
-            "authenticated": True,
-        }
-    )
-
-    set_auth_cookie(
-        response,
-        request,
-        token,
-    )
-
-    return response
-
-
-# ============================================================
-# LOGOUT
-# ============================================================
-
-@app.get("/logout")
-async def logout_page(
-    request: Request,
-):
-
-    await destroy_session(
-        request.cookies.get(
-            SESSION_COOKIE
-        )
-    )
-
-    response = RedirectResponse(
-        "/login"
-    )
-
-    response.delete_cookie(
-        SESSION_COOKIE,
-        path="/",
-    )
-
+    token = await create_session(meta)
+    response = JSONResponse({"ok": True, "role": meta["role"], "username": meta["username"]})
+    set_auth_cookie(response, request, token)
+    log_activity("auth", f"ورود موفق ({meta['username']}) از {ip}", "ok")
     return response
 
 
@@ -2691,19 +2715,7 @@ async def api_logout(
     return response
 
 
-@app.get("/api/me")
-async def api_me(
-    request: Request,
-):
 
-    return {
-        "authenticated":
-            await is_valid_session(
-                request.cookies.get(
-                    SESSION_COOKIE
-                )
-            )
-    }
 
 
 # ============================================================
@@ -5736,6 +5748,144 @@ except Exception as exc:
 
 
 # ============================================================
+
+@app.get("/api/me")
+async def api_me_info(request: Request, token=Depends(require_auth)):
+    meta = get_session_meta(token)
+    return {
+        "ok": True,
+        "role": meta.get("role"),
+        "username": meta.get("username"),
+        "permissions": meta.get("permissions") or {p: True for p in ALL_PERMS},
+        "uptime": uptime(),
+    }
+
+
+@app.get("/api/admins")
+async def api_admins_list(token=Depends(require_perm("admins"))):
+    meta = get_session_meta(token)
+    if meta.get("role") != "owner":
+        raise HTTPException(403, detail="فقط مالک پنل")
+    out = []
+    for aid, a in ADMIN_ACCOUNTS.items():
+        out.append({
+            "id": aid,
+            "username": a.get("username"),
+            "label": a.get("label"),
+            "limit_bytes": int(a.get("limit_bytes") or 0),
+            "used_bytes": int(a.get("used_bytes") or 0),
+            "expires_at": a.get("expires_at"),
+            "active": bool(a.get("active", True)),
+            "blocked": bool(a.get("blocked")),
+            "permissions": a.get("permissions") or {},
+            "created_at": a.get("created_at"),
+            "valid": admin_is_valid(a),
+        })
+    out.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return {"admins": out}
+
+
+@app.post("/api/admins")
+async def api_admins_create(request: Request, token=Depends(require_perm("admins"))):
+    meta = get_session_meta(token)
+    if meta.get("role") != "owner":
+        raise HTTPException(403, detail="فقط مالک پنل")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, detail="JSON نامعتبر")
+    username = str(body.get("username") or "").strip().lower()
+    password = str(body.get("password") or "")
+    repeat = str(body.get("repeat_password") or body.get("confirm") or "")
+    if not username or len(username) < 3:
+        raise HTTPException(400, detail="نام کاربری حداقل ۳ کاراکتر")
+    if not username.isalnum():
+        raise HTTPException(400, detail="نام کاربری فقط حروف و عدد انگلیسی")
+    if username in ("owner", "admin", "root"):
+        raise HTTPException(400, detail="این نام کاربری رزرو شده است")
+    if find_admin_by_username(username)[0]:
+        raise HTTPException(400, detail="نام کاربری تکراری است")
+    if len(password) < 6:
+        raise HTTPException(400, detail="رمز حداقل ۶ کاراکتر")
+    if password != repeat:
+        raise HTTPException(400, detail="تکرار رمز یکسان نیست")
+    limit_value = safe_float(body.get("limit_value", 0))
+    limit_unit = str(body.get("limit_unit") or "GB").upper()
+    limit_bytes = 0 if limit_value <= 0 else parse_size_to_bytes(limit_value, limit_unit)
+    days = safe_int(body.get("expires_days", 0), minimum=0)
+    expires_at = (datetime.now() + timedelta(days=days)).isoformat() if days > 0 else None
+    perms_in = body.get("permissions") or {}
+    permissions = {p: bool(perms_in.get(p, False)) for p in ALL_PERMS}
+    rec = default_admin_record(username, password, limit_bytes=limit_bytes, expires_at=expires_at, permissions=permissions, label=body.get("label") or username)
+    ADMIN_ACCOUNTS[rec["id"]] = rec
+    await save_state()
+    log_activity("admin", f"اکانت ادمین «{username}» ساخته شد", "ok")
+    return {"ok": True, "id": rec["id"], "username": username}
+
+
+@app.patch("/api/admins/{aid}")
+async def api_admins_patch(aid: str, request: Request, token=Depends(require_perm("admins"))):
+    meta = get_session_meta(token)
+    if meta.get("role") != "owner":
+        raise HTTPException(403, detail="فقط مالک پنل")
+    if aid not in ADMIN_ACCOUNTS:
+        raise HTTPException(404, detail="یافت نشد")
+    body = await request.json()
+    a = ADMIN_ACCOUNTS[aid]
+    if "blocked" in body:
+        a["blocked"] = bool(body["blocked"])
+    if "active" in body:
+        a["active"] = bool(body["active"])
+    if "label" in body:
+        a["label"] = str(body["label"])[:40]
+    if "permissions" in body and isinstance(body["permissions"], dict):
+        a["permissions"] = {p: bool(body["permissions"].get(p, False)) for p in ALL_PERMS}
+    if "limit_value" in body:
+        lv = safe_float(body.get("limit_value", 0))
+        lu = str(body.get("limit_unit") or "GB").upper()
+        a["limit_bytes"] = 0 if lv <= 0 else parse_size_to_bytes(lv, lu)
+    if "expires_days" in body:
+        days = safe_int(body.get("expires_days", 0), minimum=0)
+        a["expires_at"] = (datetime.now() + timedelta(days=days)).isoformat() if days > 0 else None
+    if body.get("password"):
+        pw = str(body["password"])
+        if len(pw) < 6:
+            raise HTTPException(400, detail="رمز حداقل ۶ کاراکتر")
+        a["password_hash"] = hash_password(pw)
+    await save_state()
+    log_activity("admin", f"اکانت ادمین «{a.get('username')}» ویرایش شد", "ok")
+    return {"ok": True}
+
+
+@app.delete("/api/admins/{aid}")
+async def api_admins_delete(aid: str, token=Depends(require_perm("admins"))):
+    meta = get_session_meta(token)
+    if meta.get("role") != "owner":
+        raise HTTPException(403, detail="فقط مالک پنل")
+    a = ADMIN_ACCOUNTS.pop(aid, None)
+    if not a:
+        raise HTTPException(404, detail="یافت نشد")
+    await save_state()
+    log_activity("admin", f"اکانت ادمین «{a.get('username')}» حذف شد", "warn")
+    return {"ok": True}
+
+
+NEWS_FILE = Path(__file__).resolve().parent / "news.json"
+
+
+@app.get("/api/news")
+async def api_news(token=Depends(require_auth)):
+    try:
+        if NEWS_FILE.exists():
+            data = json.loads(NEWS_FILE.read_text(encoding="utf-8"))
+        else:
+            data = {"enabled": False, "title": "", "message": "", "updated_at": ""}
+        return {"ok": True, **data}
+    except Exception as e:
+        return {"ok": False, "enabled": False, "title": "", "message": str(e), "updated_at": ""}
+
+
+
 # TELEGRAM SETTINGS API
 # ============================================================
 
@@ -6052,15 +6202,23 @@ body.en{font-family:'Inter',system-ui,sans-serif}
 .sb-logo-text{overflow:hidden;white-space:nowrap}
 .sb-logo-name{font-size:15px;font-weight:800;letter-spacing:-.02em}
 .sb-logo-ver{font-size:10px;color:var(--t3);margin-top:2px}
-.sidebar.collapsed .sb-logo-text,.sidebar.collapsed .nav-label,.sidebar.collapsed .nav-sec,.sidebar.collapsed .sb-foot span{opacity:0;width:0;overflow:hidden;pointer-events:none}
+.sidebar.collapsed .sb-logo-text,
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .nav-sec,
+.sidebar.collapsed .sb-foot span{display:none!important}
+.sidebar.collapsed .sb-logo{justify-content:center;padding:16px 8px}
+.sidebar.collapsed .sb-logo-icon{margin:0 auto}
 .nav{flex:1;overflow-y:auto;padding:10px 0}
 .nav-sec{padding:14px 18px 6px;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--t3);font-weight:700}
 .nav-item{display:flex;align-items:center;gap:11px;padding:11px 16px;margin:2px 10px;border-radius:12px;color:var(--t3);cursor:pointer;transition:.15s;border:none;background:transparent;width:calc(100% - 20px);font-family:inherit;font-size:13px;font-weight:500}
-.nav-item svg{width:18px;height:18px;flex-shrink:0}
+.nav-item svg{width:18px;height:18px;min-width:18px;min-height:18px;flex-shrink:0;display:block}
 .nav-item:hover{background:var(--hover);color:var(--t2)}
 .nav-item.on{background:var(--hover);color:var(--accent2);font-weight:700;box-shadow:inset -3px 0 0 var(--accent)}
-.sidebar.collapsed .nav-item{justify-content:center;padding:12px 0;margin:3px 12px}
+.sidebar.collapsed .nav-item{justify-content:center;align-items:center;padding:12px 0;margin:3px 10px;width:calc(100% - 20px);gap:0}
+.sidebar.collapsed .nav-item svg{margin:0 auto}
 .sidebar.collapsed .nav-item.on{box-shadow:none}
+.sidebar.collapsed .sb-foot button,.sidebar.collapsed .sb-foot a.btn{padding:10px 0;gap:0}
+.sidebar.collapsed .sb-foot button svg,.sidebar.collapsed .sb-foot a.btn svg{margin:0 auto;display:block}
 .sb-foot{padding:12px;border-top:1px solid var(--card-b);display:flex;flex-direction:column;gap:7px}
 .sb-foot button,.sb-foot a.btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:11px;border:1px solid var(--card-b);background:var(--bg3);color:var(--t2);cursor:pointer;font-family:inherit;font-size:12px;width:100%;text-decoration:none;font-weight:600;transition:.15s}
 .sb-foot button:hover,.sb-foot a.btn:hover{background:var(--hover);color:var(--t1)}
@@ -6187,41 +6345,49 @@ tr:hover td{background:var(--hover)}
     <div class="sb-logo-icon">PX</div>
     <div class="sb-logo-text">
       <div class="sb-logo-name">PXPanel</div>
-      <div class="sb-logo-ver">v13.8.1</div>
+      <div class="sb-logo-ver">v13.9.0</div>
     </div>
   </div>
   <nav class="nav">
     <div class="nav-sec" data-i18n="sec_panel">پنل</div>
-    <button class="nav-item on" data-page="dash">
+    <button class="nav-item on" data-page="dash" data-perm="dash">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
       <span class="nav-label" data-i18n="nav_dash">داشبورد</span>
     </button>
-    <button class="nav-item" data-page="configs">
+    <button class="nav-item" data-page="configs" data-perm="configs">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       <span class="nav-label" data-i18n="nav_configs">کانفیگ‌ها</span>
     </button>
-    <button class="nav-item" data-page="create">
+    <button class="nav-item" data-page="create" data-perm="create">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
       <span class="nav-label" data-i18n="nav_create">ساخت کانفیگ</span>
     </button>
-    <button class="nav-item" data-page="stats">
+    <button class="nav-item" data-page="stats" data-perm="stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 4 5-6"/></svg>
       <span class="nav-label" data-i18n="nav_stats">آمار</span>
     </button>
-    <button class="nav-item" data-page="logs">
+    <button class="nav-item" data-page="logs" data-perm="logs">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
       <span class="nav-label" data-i18n="nav_logs">لاگ فعالیت</span>
     </button>
     <div class="nav-sec" data-i18n="sec_sys">سیستم</div>
-    <button class="nav-item" data-page="telegram">
+    <button class="nav-item" data-page="telegram" data-perm="telegram">
       <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.2-1.86 8.77c-.14.62-.5.77-1.01.48l-2.8-2.06-1.35 1.3c-.15.15-.27.27-.55.27l.2-2.84 5.18-4.68c.22-.2-.05-.31-.35-.12l-6.4 4.03-2.76-.86c-.6-.19-.61-.6.12-.89l10.78-4.16c.5-.18.94.12.78.86z"/></svg>
       <span class="nav-label" data-i18n="nav_telegram">پی ایکس بات</span>
     </button>
-    <button class="nav-item" data-page="settings">
+    <button class="nav-item" data-page="news" data-perm="news">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8V6Z"/></svg>
+      <span class="nav-label" data-i18n="nav_news">اخبار</span>
+    </button>
+    <button class="nav-item" data-page="admins" data-perm="admins">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span class="nav-label" data-i18n="nav_admins">ادمین‌ها</span>
+    </button>
+    <button class="nav-item" data-page="settings" data-perm="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
       <span class="nav-label" data-i18n="nav_settings">تنظیمات</span>
     </button>
-    <button class="nav-item" data-page="support">
+    <button class="nav-item" data-page="support" data-perm="support">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
       <span class="nav-label" data-i18n="nav_support">پشتیبانی</span>
     </button>
@@ -6399,6 +6565,53 @@ tr:hover td{background:var(--hover)}
   </div>
 </section>
 
+
+<section class="page" id="page-news">
+  <div class="page-head">
+    <div>
+      <div class="page-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/></svg><span data-i18n="nav_news">اخبار</span></div>
+      <div class="page-sub" data-i18n="news_sub">اطلاعیه‌ها از news.json</div>
+    </div>
+    <button class="btn btn-sm" onclick="loadNews(true)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.1-3.4L23 10"/></svg> <span data-i18n="refresh_news">بروزرسانی اطلاعیه</span></button>
+  </div>
+  <div class="card" id="newsCard">
+    <div class="card-title" id="newsTitle">—</div>
+    <div id="newsBody" style="white-space:pre-wrap;line-height:1.9;color:var(--t2);font-size:13px">...</div>
+    <div id="newsMeta" style="margin-top:14px;font-size:11px;color:var(--t3)"></div>
+  </div>
+</section>
+
+<section class="page" id="page-admins">
+  <div class="page-head">
+    <div>
+      <div class="page-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span data-i18n="nav_admins">ادمین‌ها</span></div>
+      <div class="page-sub" data-i18n="admins_sub">ساخت اکانت ادمین با دسترسی سفارشی</div>
+    </div>
+  </div>
+  <div class="g2">
+    <div class="card">
+      <div class="card-title" data-i18n="admin_create">ساخت اکانت ادمین</div>
+      <div class="field"><label data-i18n="admin_user">نام کاربری</label><input id="adUser" placeholder="user1" style="direction:ltr;text-align:left"></div>
+      <div class="form-row">
+        <div class="field"><label data-i18n="admin_pw">رمز عبور</label><input id="adPw" type="password"></div>
+        <div class="field"><label data-i18n="admin_pw2">تکرار رمز</label><input id="adPw2" type="password"></div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label data-i18n="label_limit">حجم</label><input id="adLimit" type="number" value="0" min="0"></div>
+        <div class="field"><label data-i18n="label_unit">واحد</label><select id="adUnit"><option>GB</option><option>MB</option></select></div>
+      </div>
+      <div class="field"><label data-i18n="label_days">مدت اعتبار (روز)</label><input id="adDays" type="number" value="0" min="0"></div>
+      <div class="card-title" style="margin-top:8px" data-i18n="admin_perms">دسترسی‌ها</div>
+      <div id="adPerms" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px"></div>
+      <button class="btn btn-p" style="width:100%;margin-top:14px" onclick="createAdmin()" data-i18n="admin_btn">ساخت اکانت</button>
+    </div>
+    <div class="card" style="padding:0">
+      <div style="padding:16px 18px;border-bottom:1px solid var(--card-b);font-weight:700" data-i18n="admin_list">لیست ادمین‌ها</div>
+      <div id="adminsList" style="padding:12px;max-height:480px;overflow:auto"><div style="color:var(--t3);text-align:center;padding:20px">...</div></div>
+    </div>
+  </div>
+</section>
+
 <section class="page" id="page-support">
   <div class="page-head"><div><div class="page-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg><span data-i18n="nav_support">پشتیبانی</span></div></div></div>
   <div class="support-grid">
@@ -6488,8 +6701,8 @@ tr:hover td{background:var(--hover)}
 
 <script>
 const I18N={
-fa:{sec_panel:'پنل',sec_sys:'سیستم',nav_dash:'داشبورد',nav_configs:'کانفیگ‌ها',nav_create:'ساخت کانفیگ',nav_stats:'آمار',nav_logs:'لاگ فعالیت',nav_settings:'تنظیمات',nav_support:'پشتیبانی',refresh:'بروزرسانی',refresh_stats:'بروزرسانی آمار',refresh_panel:'بروزرسانی پنل',nav_telegram:'ربات تلگرام',tg_sub:'توکن ربات و آیدی عددی ادمین · فعال‌سازی خودکار و وب‌هوک',tg_config:'پیکربندی ربات',tg_token:'توکن ربات (BotFather)',tg_admin:'آیدی عددی ادمین',tg_webhook:'فعال‌سازی Webhook (پیشنهادی روی Railway)',tg_activate:'ذخیره و فعال‌سازی ربات',tg_help:'راهنما',tg_h1:'از @BotFather یک ربات بساز و توکن را کپی کن',tg_h2:'آیدی عددی خودت را از @userinfobot بگیر',tg_h3:'ذخیره کن — وب‌هوک خودکار روی دامنه Railway ست می‌شود',logout:'خروج',loading:'در حال بارگذاری...',m_conns:'اتصالات فعال',m_traffic:'ترافیک کل',m_links:'کانفیگ‌ها',m_uptime:'آپتایم سرور',quick_create:'ساخت کانفیگ',quick_create_desc:'ساخت دستی با محدودیت ترافیک، سرعت، تعداد و انقضا',auto_create:'ساخت خودکار (پیشنهادی)',auto_create_desc:'ساخت سریع با تنظیمات بهینه · لینک VLESS و ساب',configs_sub:'مدیریت لینک‌ها · VLESS و ساب',th_name:'نام',th_proto:'پروتکل',th_status:'وضعیت',th_usage:'مصرف',th_ops:'عملیات',manual_create:'ساخت دستی',label_name:'نام',label_count:'تعداد کانفیگ در ساب (۱–۴۰)',label_limit:'محدودیت حجم',label_unit:'واحد',label_days:'انقضا (روز)',label_ip:'محدودیت IP',label_speed:'سرعت (Mbps)',btn_create:'ساخت',btn_auto:'ساخت خودکار',auto_desc:'با یک کلیک کانفیگ بهینه ساخته می‌شود. بعد از ساخت لینک VLESS و ساب در اختیار شماست.',stats_sub:'ترافیک و اتصالات · فیلتر زمانی',r_day:'روز',r_week:'هفته',r_month:'ماه',r_all:'کل',panel_info:'اطلاعات کل پنل',lang_label:'زبان',change_pw:'تغییر رمز عبور',pw_cur:'رمز فعلی',pw_new:'رمز جدید',pw_cf:'تکرار رمز',btn_save:'ذخیره',github:'گیت‌هاب',telegram:'تلگرام',channel:'کانال پشتیبان',theme:'تم',theme_dark:'تم تیره',theme_light:'تم روشن',created_title:'کانفیگ ساخته شد',copy_vless:'کپی VLESS',copy_sub:'کپی ساب',sub_label:'سابسکریپشن'},
-en:{sec_panel:'PANEL',sec_sys:'SYSTEM',nav_dash:'Dashboard',nav_configs:'Configs',nav_create:'Create Config',nav_stats:'Statistics',nav_logs:'Activity Log',nav_settings:'Settings',nav_support:'Support',refresh:'Refresh',refresh_stats:'Refresh stats',refresh_panel:'Update panel',nav_telegram:'Telegram bot',tg_sub:'Bot token and numeric admin ID · auto activate and webhook',tg_config:'Bot configuration',tg_token:'Bot token (BotFather)',tg_admin:'Admin numeric ID',tg_webhook:'Enable Webhook (recommended on Railway)',tg_activate:'Save and activate bot',tg_help:'Guide',tg_h1:'Create a bot with @BotFather and copy the token',tg_h2:'Get your numeric ID from @userinfobot',tg_h3:'Save — webhook is set automatically on Railway domain',logout:'Logout',loading:'Loading...',m_conns:'Active connections',m_traffic:'Total traffic',m_links:'Configs',m_uptime:'Server uptime',quick_create:'Create Config',quick_create_desc:'Manual create with traffic, speed, count and expiry',auto_create:'Auto Create (Suggested)',auto_create_desc:'Quick optimal create · VLESS and Sub links',configs_sub:'Manage links · VLESS and Sub',th_name:'Name',th_proto:'Protocol',th_status:'Status',th_usage:'Usage',th_ops:'Actions',manual_create:'Manual create',label_name:'Name',label_count:'Configs in sub (1–40)',label_limit:'Traffic limit',label_unit:'Unit',label_days:'Expiry (days)',label_ip:'IP limit',label_speed:'Speed (Mbps)',btn_create:'Create',btn_auto:'Auto create',auto_desc:'One click creates an optimal config. VLESS and Sub links will be shown.',stats_sub:'Traffic and connections · time filter',r_day:'Day',r_week:'Week',r_month:'Month',r_all:'All',panel_info:'Panel overview',lang_label:'Language',change_pw:'Change password',pw_cur:'Current password',pw_new:'New password',pw_cf:'Confirm password',btn_save:'Save',github:'GitHub',telegram:'Telegram',channel:'Support channel',theme:'Theme',theme_dark:'Dark theme',theme_light:'Light theme',created_title:'Config created',copy_vless:'Copy VLESS',copy_sub:'Copy Sub',sub_label:'Subscription'}
+fa:{sec_panel:'پنل',sec_sys:'سیستم',nav_dash:'داشبورد',nav_configs:'کانفیگ‌ها',nav_create:'ساخت کانفیگ',nav_stats:'آمار',nav_logs:'لاگ فعالیت',nav_settings:'تنظیمات',nav_support:'پشتیبانی',nav_news:'اخبار',nav_admins:'ادمین‌ها',news_sub:'اطلاعیه‌ها از news.json',refresh_news:'بروزرسانی اطلاعیه',admins_sub:'ساخت اکانت ادمین با دسترسی سفارشی',admin_create:'ساخت اکانت ادمین',admin_user:'نام کاربری',admin_pw:'رمز عبور',admin_pw2:'تکرار رمز',admin_perms:'دسترسی‌ها',admin_btn:'ساخت اکانت',admin_list:'لیست ادمین‌ها',refresh:'بروزرسانی',refresh_stats:'بروزرسانی آمار',refresh_panel:'بروزرسانی پنل',nav_telegram:'ربات تلگرام',tg_sub:'توکن ربات و آیدی عددی ادمین · فعال‌سازی خودکار و وب‌هوک',tg_config:'پیکربندی ربات',tg_token:'توکن ربات (BotFather)',tg_admin:'آیدی عددی ادمین',tg_webhook:'فعال‌سازی Webhook (پیشنهادی روی Railway)',tg_activate:'ذخیره و فعال‌سازی ربات',tg_help:'راهنما',tg_h1:'از @BotFather یک ربات بساز و توکن را کپی کن',tg_h2:'آیدی عددی خودت را از @userinfobot بگیر',tg_h3:'ذخیره کن — وب‌هوک خودکار روی دامنه Railway ست می‌شود',logout:'خروج',loading:'در حال بارگذاری...',m_conns:'اتصالات فعال',m_traffic:'ترافیک کل',m_links:'کانفیگ‌ها',m_uptime:'آپتایم سرور',quick_create:'ساخت کانفیگ',quick_create_desc:'ساخت دستی با محدودیت ترافیک، سرعت، تعداد و انقضا',auto_create:'ساخت خودکار (پیشنهادی)',auto_create_desc:'ساخت سریع با تنظیمات بهینه · لینک VLESS و ساب',configs_sub:'مدیریت لینک‌ها · VLESS و ساب',th_name:'نام',th_proto:'پروتکل',th_status:'وضعیت',th_usage:'مصرف',th_ops:'عملیات',manual_create:'ساخت دستی',label_name:'نام',label_count:'تعداد کانفیگ در ساب (۱–۴۰)',label_limit:'محدودیت حجم',label_unit:'واحد',label_days:'انقضا (روز)',label_ip:'محدودیت IP',label_speed:'سرعت (Mbps)',btn_create:'ساخت',btn_auto:'ساخت خودکار',auto_desc:'با یک کلیک کانفیگ بهینه ساخته می‌شود. بعد از ساخت لینک VLESS و ساب در اختیار شماست.',stats_sub:'ترافیک و اتصالات · فیلتر زمانی',r_day:'روز',r_week:'هفته',r_month:'ماه',r_all:'کل',panel_info:'اطلاعات کل پنل',lang_label:'زبان',change_pw:'تغییر رمز عبور',pw_cur:'رمز فعلی',pw_new:'رمز جدید',pw_cf:'تکرار رمز',btn_save:'ذخیره',github:'گیت‌هاب',telegram:'تلگرام',channel:'کانال پشتیبان',theme:'تم',theme_dark:'تم تیره',theme_light:'تم روشن',created_title:'کانفیگ ساخته شد',copy_vless:'کپی VLESS',copy_sub:'کپی ساب',sub_label:'سابسکریپشن'},
+en:{sec_panel:'PANEL',sec_sys:'SYSTEM',nav_dash:'Dashboard',nav_configs:'Configs',nav_create:'Create Config',nav_stats:'Statistics',nav_logs:'Activity Log',nav_settings:'Settings',nav_support:'Support',nav_news:'News',nav_admins:'Admins',news_sub:'Announcements from news.json',refresh_news:'Refresh news',admins_sub:'Create admin accounts with custom access',admin_create:'Create admin account',admin_user:'Username',admin_pw:'Password',admin_pw2:'Confirm password',admin_perms:'Permissions',admin_btn:'Create account',admin_list:'Admin list',refresh:'Refresh',refresh_stats:'Refresh stats',refresh_panel:'Update panel',nav_telegram:'Telegram bot',tg_sub:'Bot token and numeric admin ID · auto activate and webhook',tg_config:'Bot configuration',tg_token:'Bot token (BotFather)',tg_admin:'Admin numeric ID',tg_webhook:'Enable Webhook (recommended on Railway)',tg_activate:'Save and activate bot',tg_help:'Guide',tg_h1:'Create a bot with @BotFather and copy the token',tg_h2:'Get your numeric ID from @userinfobot',tg_h3:'Save — webhook is set automatically on Railway domain',logout:'Logout',loading:'Loading...',m_conns:'Active connections',m_traffic:'Total traffic',m_links:'Configs',m_uptime:'Server uptime',quick_create:'Create Config',quick_create_desc:'Manual create with traffic, speed, count and expiry',auto_create:'Auto Create (Suggested)',auto_create_desc:'Quick optimal create · VLESS and Sub links',configs_sub:'Manage links · VLESS and Sub',th_name:'Name',th_proto:'Protocol',th_status:'Status',th_usage:'Usage',th_ops:'Actions',manual_create:'Manual create',label_name:'Name',label_count:'Configs in sub (1–40)',label_limit:'Traffic limit',label_unit:'Unit',label_days:'Expiry (days)',label_ip:'IP limit',label_speed:'Speed (Mbps)',btn_create:'Create',btn_auto:'Auto create',auto_desc:'One click creates an optimal config. VLESS and Sub links will be shown.',stats_sub:'Traffic and connections · time filter',r_day:'Day',r_week:'Week',r_month:'Month',r_all:'All',panel_info:'Panel overview',lang_label:'Language',change_pw:'Change password',pw_cur:'Current password',pw_new:'New password',pw_cf:'Confirm password',btn_save:'Save',github:'GitHub',telegram:'Telegram',channel:'Support channel',theme:'Theme',theme_dark:'Dark theme',theme_light:'Light theme',created_title:'Config created',copy_vless:'Copy VLESS',copy_sub:'Copy Sub',sub_label:'Subscription'}
 };
 let lang=localStorage.getItem('px_lang')||'fa';
 let statRange='month';
@@ -6743,8 +6956,102 @@ const _goPage=goPage;
 goPage=function(name){
   _goPage(name);
   if(name==='telegram') loadTelegram();
+  if(name==='news') loadNews();
+  if(name==='admins') loadAdmins();
 };
-applyLang();refreshAll();setInterval(refreshAll,1000);
+
+const PERM_LABELS={
+  fa:{dash:'داشبورد',configs:'کانفیگ‌ها',create:'ساخت',stats:'آمار',logs:'لاگ',settings:'تنظیمات',support:'پشتیبانی',telegram:'ربات',news:'اخبار',admins:'ادمین‌ها'},
+  en:{dash:'Dashboard',configs:'Configs',create:'Create',stats:'Stats',logs:'Logs',settings:'Settings',support:'Support',telegram:'Bot',news:'News',admins:'Admins'}
+};
+let USER_PERMS=null;
+let USER_ROLE='owner';
+function buildPermChecks(containerId, selected){
+  const box=document.getElementById(containerId);
+  if(!box)return;
+  const labels=PERM_LABELS[lang]||PERM_LABELS.fa;
+  box.innerHTML=Object.keys(labels).map(k=>{
+    const on=selected?!!selected[k]:(['dash','configs','create','stats','news'].includes(k));
+    return `<label style="display:flex;align-items:center;gap:8px;padding:8px;border-radius:10px;background:var(--bg3);border:1px solid var(--card-b);cursor:pointer">
+      <input type="checkbox" data-perm="${k}" ${on?'checked':''}> ${labels[k]}</label>`;
+  }).join('');
+}
+function readPermChecks(containerId){
+  const out={};
+  document.querySelectorAll('#'+containerId+' input[data-perm]').forEach(inp=>{out[inp.getAttribute('data-perm')]=inp.checked});
+  return out;
+}
+async function loadMe(){
+  const r=await api('/api/me');
+  if(!r)return;
+  USER_ROLE=r.role||'owner';
+  USER_PERMS=r.permissions||{};
+  document.querySelectorAll('.nav-item[data-perm]').forEach(el=>{
+    const p=el.getAttribute('data-perm');
+    if(USER_ROLE==='owner'){el.style.display='';return}
+    el.style.display=USER_PERMS[p]?'':'none';
+  });
+  // hide admins for non-owner always if no perm
+  document.querySelectorAll('.nav-item[data-page="admins"]').forEach(el=>{
+    if(USER_ROLE!=='owner') el.style.display='none';
+  });
+}
+async function loadNews(toastOk){
+  const r=await api('/api/news');
+  if(!r)return;
+  document.getElementById('newsTitle').textContent=r.title||(lang==='fa'?'بدون عنوان':'No title');
+  document.getElementById('newsBody').textContent=r.message||'';
+  document.getElementById('newsMeta').textContent=(lang==='fa'?'بروزرسانی: ':'Updated: ')+(r.updated_at||'—');
+  if(toastOk) toast(lang==='fa'?'اطلاعیه بروزرسانی شد':'News refreshed');
+}
+async function loadAdmins(){
+  buildPermChecks('adPerms');
+  const r=await api('/api/admins');
+  const box=document.getElementById('adminsList');
+  if(!r||!r.admins){box.innerHTML='<div style="color:var(--t3);text-align:center;padding:20px">—</div>';return}
+  if(!r.admins.length){box.innerHTML=`<div style="color:var(--t3);text-align:center;padding:20px">${lang==='fa'?'ادمینی نیست':'No admins'}</div>`;return}
+  const labels=PERM_LABELS[lang]||PERM_LABELS.fa;
+  box.innerHTML=r.admins.map(a=>{
+    const st=a.blocked?'🔴 مسدود':(a.valid?'🟢 فعال':'🟠 نامعتبر');
+    const perms=Object.entries(a.permissions||{}).filter(([,v])=>v).map(([k])=>labels[k]||k).join(' · ')||'—';
+    return `<div style="border:1px solid var(--card-b);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--bg3)">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
+        <div><b>${esc(a.username)}</b> <span style="font-size:11px;color:var(--t3)">${st}</span></div>
+        <div class="ops">
+          <button class="btn btn-sm" onclick="toggleBlockAdmin('${esc(a.id)}',${!a.blocked})">${a.blocked?'رفع مسدودی':'مسدود'}</button>
+          <button class="btn btn-sm btn-d" onclick="deleteAdmin('${esc(a.id)}')">حذف</button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--t3);margin-top:8px">حجم: ${fmtB(a.used_bytes)}${a.limit_bytes?(' / '+fmtB(a.limit_bytes)):' / ∞'} · انقضا: ${a.expires_at||'∞'}</div>
+      <div style="font-size:11px;color:var(--t2);margin-top:6px">${perms}</div>
+    </div>`;
+  }).join('');
+}
+async function createAdmin(){
+  const body={
+    username:document.getElementById('adUser').value.trim(),
+    password:document.getElementById('adPw').value,
+    repeat_password:document.getElementById('adPw2').value,
+    limit_value:Number(document.getElementById('adLimit').value)||0,
+    limit_unit:document.getElementById('adUnit').value,
+    expires_days:Number(document.getElementById('adDays').value)||0,
+    permissions:readPermChecks('adPerms')
+  };
+  const r=await api('/api/admins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r){toast(lang==='fa'?'اکانت ساخته شد':'Created');document.getElementById('adUser').value='';document.getElementById('adPw').value='';document.getElementById('adPw2').value='';loadAdmins()}
+}
+async function toggleBlockAdmin(id,blocked){
+  const r=await api('/api/admins/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({blocked})});
+  if(r){toast(blocked?'مسدود شد':'رفع شد');loadAdmins()}
+}
+async function deleteAdmin(id){
+  if(!confirm(lang==='fa'?'حذف اکانت؟':'Delete?'))return;
+  const r=await api('/api/admins/'+id,{method:'DELETE'});
+  if(r){toast('OK');loadAdmins()}
+}
+
+applyLang();loadMe();refreshAll();setInterval(refreshAll,1000);
+
 
 </script>
 </body>
