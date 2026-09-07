@@ -1,5 +1,5 @@
 # ============================================================
-# PXPanel 13.7.1
+# PXPanel 13.8.0
 # Railway Ready
 # ============================================================
 
@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.7.1"
+APP_VERSION = "13.8.0"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -95,6 +95,8 @@ DATA_DIR.mkdir(
 )
 
 DATA_FILE = DATA_DIR / "pixonpanel_state.json"
+TG_FILE = DATA_DIR / "telegram_settings.json"
+
 SECRET_FILE = DATA_DIR / "pixonpanel_secret.key"
 
 
@@ -708,16 +710,11 @@ def hash_password(
     ).hexdigest()
 
 
-DEFAULT_ADMIN_PASSWORD = os.environ.get(
-    "ADMIN_PASSWORD",
-    "pxpanel2026",
-)
-
+# No default password — first-run setup required unless ADMIN_PASSWORD env is set
+_env_pw = os.environ.get("ADMIN_PASSWORD", "").strip()
 AUTH = {
-    "password_hash":
-        hash_password(
-            DEFAULT_ADMIN_PASSWORD
-        )
+    "password_hash": hash_password(_env_pw) if _env_pw else "",
+    "password_configured": bool(_env_pw),
 }
 
 
@@ -1080,9 +1077,8 @@ async def load_state():
         )
 
         if stored_password:
-            AUTH[
-                "password_hash"
-            ] = stored_password
+            AUTH["password_hash"] = stored_password
+            AUTH["password_configured"] = True
 
         # Compatibility for older records
         for uid, link in LINKS.items():
@@ -2075,6 +2071,13 @@ html{scroll-behavior:smooth} body{overflow-x:hidden} button,input,select,textare
 .switch input:checked+.slider{background:var(--green)}
 .switch input:checked+.slider:before{transform:translateX(18px)}
 
+
+.conn-badge{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 7px;border-radius:8px;font-size:10px;font-weight:800}
+.conn-badge.green{background:rgba(34,197,94,.18);color:#4ade80}
+.conn-badge.gray{background:rgba(148,163,184,.15);color:#94a3b8}
+.conn-badge.orange{background:rgba(245,158,11,.18);color:#fbbf24}
+.conn-badge.red{background:rgba(239,68,68,.18);color:#f87171}
+
 </style>
 </head>
 
@@ -2092,7 +2095,7 @@ PX Panel
 </div>
 
 <div class="version">
-13.7.1
+13.8.0
 </div>
 </div>
 
@@ -2140,7 +2143,7 @@ class="btn secondary"
 <div class="footer">
 
 <span>
-PX Panel · 13.7.1
+PX Panel · 13.8.0
 </span>
 
 <a
@@ -2205,254 +2208,125 @@ async def health():
 LOGIN_HTML = r"""
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
-
 <head>
-
 <meta charset="UTF-8">
-
-<meta
-name="viewport"
-content="width=device-width,initial-scale=1"
->
-
-<title>ورود | PX Panel</title>
-
-<link
-rel="preconnect"
-href="https://fonts.googleapis.com"
->
-
-<link
-rel="preconnect"
-href="https://fonts.gstatic.com"
-crossorigin
->
-
-<link
-href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap"
-rel="stylesheet"
->
-
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PXPanel | ورود</title>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-
-*{
-    box-sizing:border-box;
-}
-
-body{
-    margin:0;
-    min-height:100vh;
-
-    display:flex;
-    align-items:center;
-    justify-content:center;
-
-    padding:20px;
-
-    font-family:"Vazirmatn",sans-serif;
-    color:#fff;
-
-    background:
-        radial-gradient(
-            circle at 15% 15%,
-            rgba(37,99,235,.20),
-            transparent 32%
-        ),
-        #07070a;
-}
-
-.card{
-    width:100%;
-    max-width:420px;
-    padding:30px;
-    border-radius:26px;
-
-    background:rgba(255,255,255,.045);
-    border:1px solid rgba(255,255,255,.09);
-
-    backdrop-filter:blur(28px);
-
-    box-shadow:
-        0 30px 90px rgba(0,0,0,.45);
-}
-
-.logo{
-    width:49px;
-    height:49px;
-
-    display:flex;
-    align-items:center;
-    justify-content:center;
-
-    border-radius:16px;
-    margin-bottom:20px;
-
-    font-weight:900;
-
-    background:
-        linear-gradient(
-            135deg,
-            #2563eb,
-            #3b82f6
-        );
-}
-
-h1{
-    margin:0;
-    font-size:25px;
-}
-
-.version{
-    margin-top:5px;
-    color:#60a5fa;
-    font-size:11px;
-}
-
-.desc{
-    margin-top:9px;
-    color:rgba(255,255,255,.48);
-    line-height:1.9;
-    font-size:12px;
-}
-
-form{
-    margin-top:21px;
-}
-
-label{
-    display:block;
-    margin-bottom:8px;
-    font-size:12px;
-    color:rgba(255,255,255,.55);
-}
-
-input{
-    width:100%;
-    padding:14px;
-
-    border:1px solid rgba(255,255,255,.08);
-    outline:none;
-    border-radius:14px;
-
-    color:#fff;
-    background:rgba(0,0,0,.18);
-
-    direction:ltr;
-    text-align:left;
-
-    font-family:"Vazirmatn",sans-serif;
-}
-
-input:focus{
-    border-color:rgba(129,140,248,.6);
-}
-
-button{
-    width:100%;
-    margin-top:13px;
-    padding:14px;
-
-    border:0;
-    border-radius:14px;
-
-    color:#fff;
-    cursor:pointer;
-
-    font-family:"Vazirmatn",sans-serif;
-    font-weight:800;
-
-    background:
-        linear-gradient(
-            135deg,
-            #2563eb,
-            #3b82f6
-        );
-}
-
-.error{
-    margin-top:12px;
-    padding:11px;
-
-    border-radius:12px;
-
-    color:#fca5a5;
-    background:rgba(239,68,68,.08);
-    border:1px solid rgba(239,68,68,.15);
-
-    font-size:11px;
-}
-
-.support{
-    display:block;
-    margin-top:18px;
-    text-align:center;
-
-    color:#60a5fa;
-    text-decoration:none;
-
-    font-size:11px;
-}
-
+*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;font-family:Vazirmatn,sans-serif;color:#f8fafc;
+background:#06060b;background-image:radial-gradient(ellipse 80% 50% at 20% 0%,rgba(59,130,246,.18),transparent 50%),radial-gradient(ellipse 60% 40% at 100% 100%,rgba(139,92,246,.12),transparent 45%)}
+.card{width:100%;max-width:440px;padding:28px;border-radius:22px;background:rgba(18,18,28,.92);border:1px solid rgba(255,255,255,.08);box-shadow:0 24px 64px rgba(0,0,0,.5);backdrop-filter:blur(20px)}
+.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-weight:900;margin-bottom:16px;box-shadow:0 8px 24px rgba(59,130,246,.35)}
+h1{font-size:22px;font-weight:800;margin-bottom:4px}
+.ver{font-size:11px;color:#60a5fa;margin-bottom:8px}
+.desc{font-size:12px;color:rgba(255,255,255,.5);line-height:1.8;margin-bottom:18px}
+.warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:14px;padding:14px;font-size:12px;line-height:1.85;color:#fbbf24;margin-bottom:18px}
+.warn b{color:#fde68a}
+.warn code{background:rgba(0,0,0,.35);padding:2px 7px;border-radius:6px;font-family:ui-monospace,monospace;color:#93c5fd}
+label{display:block;font-size:11px;color:rgba(255,255,255,.5);margin-bottom:6px;font-weight:600}
+input{width:100%;padding:13px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.35);color:#fff;font-family:inherit;font-size:14px;outline:none;margin-bottom:12px;direction:ltr;text-align:left}
+input:focus{border-color:rgba(59,130,246,.6);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+button{width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;margin-top:4px;box-shadow:0 6px 20px rgba(59,130,246,.3)}
+button:hover{filter:brightness(1.08)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.err{display:none;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#fca5a5;padding:10px 12px;border-radius:10px;font-size:12px;margin-bottom:12px}
+.err.show{display:block}
+.hidden{display:none}
+.step{font-size:10px;color:rgba(255,255,255,.35);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;font-weight:700}
 </style>
-
 </head>
-
 <body>
-
 <div class="card">
+  <div class="logo">PX</div>
+  <div class="ver">v13.8.0</div>
 
-<div class="logo">
-P
+  <div id="setupBox" class="hidden">
+    <div class="step">راه‌اندازی اولیه</div>
+    <h1>خوش آمدید</h1>
+    <p class="desc">قبل از شروع، این مرحله را کامل کنید.</p>
+    <div class="warn">
+      <b>نگهداری داده‌ها روی Railway</b><br>
+      حتماً روی سرویس خود راست‌کلیک کنید → <b>Attach Volume</b> → مسیر را دقیقاً <code>/data</code> بگذارید.
+      بدون Volume با ری‌استارت، کانفیگ‌ها و رمز پاک می‌شوند.
+    </div>
+    <div class="err" id="setupErr"></div>
+    <label>رمز عبور پنل</label>
+    <input type="password" id="setupPw" placeholder="حداقل ۶ کاراکتر" autocomplete="new-password">
+    <label>تکرار رمز عبور</label>
+    <input type="password" id="setupPw2" placeholder="تکرار رمز" autocomplete="new-password">
+    <button type="button" id="setupBtn" onclick="doSetup()">تنظیم رمز و ورود</button>
+  </div>
+
+  <div id="loginBox" class="hidden">
+    <div class="step">ورود</div>
+    <h1>ورود به پنل</h1>
+    <p class="desc">رمز عبور پنل را وارد کنید.</p>
+    <div class="err" id="loginErr"></div>
+    <form id="loginForm">
+      <label>رمز عبور</label>
+      <input type="password" id="loginPw" placeholder="رمز عبور" autocomplete="current-password" required>
+      <button type="submit" id="loginBtn">ورود</button>
+    </form>
+  </div>
 </div>
-
-<h1>
-ورود به PX Panel
-</h1>
-
-<div class="version">
-13.7.1
-</div>
-
-<div class="desc">
-برای ادامه رمز عبور پنل مدیریت را وارد کنید.
-</div>
-
-<form
-method="post"
-action="/login"
->
-
-<label>
-رمز عبور
-</label>
-
-<input
-type="password"
-name="password"
-autocomplete="current-password"
-autofocus
-placeholder="رمز عبور"
->
-
-<button type="submit">
-ورود به پنل
-</button>
-
-</form>
-
-<a
-href="https://t.me/Pixonal"
-target="_blank"
-class="support"
->
-پشتیبانی @Pixonal
-</a>
-
-</div>
-
+<script>
+async function checkSetup(){
+  try{
+    const r=await fetch('/api/setup/status',{cache:'no-store'});
+    const d=await r.json();
+    if(d.needs_setup){
+      document.getElementById('setupBox').classList.remove('hidden');
+    }else{
+      document.getElementById('loginBox').classList.remove('hidden');
+      document.getElementById('loginPw').focus();
+    }
+  }catch(e){
+    document.getElementById('loginBox').classList.remove('hidden');
+  }
+}
+async function doSetup(){
+  const pw=document.getElementById('setupPw').value;
+  const pw2=document.getElementById('setupPw2').value;
+  const err=document.getElementById('setupErr');
+  err.classList.remove('show');
+  if(pw.length<6){err.textContent='رمز حداقل ۶ کاراکتر';err.classList.add('show');return}
+  if(pw!==pw2){err.textContent='تکرار رمز یکسان نیست';err.classList.add('show');return}
+  const btn=document.getElementById('setupBtn');btn.disabled=true;
+  try{
+    const r=await fetch('/api/setup/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw,repeat_password:pw2})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.detail||'خطا');
+    location.href='/dashboard';
+  }catch(e){
+    err.textContent=e.message||'خطا';err.classList.add('show');
+    btn.disabled=false;
+  }
+}
+document.getElementById('loginForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const err=document.getElementById('loginErr');
+  err.classList.remove('show');
+  const btn=document.getElementById('loginBtn');btn.disabled=true;
+  try{
+    const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('loginPw').value})});
+    if(!r.ok){
+      const d=await r.json().catch(()=>({}));
+      throw new Error(d.detail||'رمز اشتباه است');
+    }
+    location.href='/dashboard';
+  }catch(e){
+    err.textContent=e.message;err.classList.add('show');
+    btn.disabled=false;
+  }
+});
+checkSetup();
+</script>
 </body>
 </html>
 """
+
 
 
 def login_error_html(
@@ -2473,6 +2347,43 @@ def login_error_html(
             """
         ),
     )
+
+
+
+# ============================================================
+# FIRST-RUN SETUP
+# ============================================================
+
+@app.get("/api/setup/status")
+async def setup_status():
+    return {
+        "password_configured": bool(AUTH.get("password_configured") and AUTH.get("password_hash")),
+        "needs_setup": not bool(AUTH.get("password_configured") and AUTH.get("password_hash")),
+    }
+
+
+@app.post("/api/setup/password")
+async def setup_password(request: Request):
+    if AUTH.get("password_configured") and AUTH.get("password_hash"):
+        raise HTTPException(status_code=400, detail="رمز قبلاً تنظیم شده است")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="اطلاعات نامعتبر")
+    pw = str(body.get("password") or "")
+    rp = str(body.get("repeat_password") or body.get("confirm") or "")
+    if len(pw) < 6:
+        raise HTTPException(status_code=400, detail="رمز باید حداقل ۶ کاراکتر باشد")
+    if pw != rp:
+        raise HTTPException(status_code=400, detail="تکرار رمز یکسان نیست")
+    AUTH["password_hash"] = hash_password(pw)
+    AUTH["password_configured"] = True
+    await save_state()
+    token = await create_session()
+    response = JSONResponse({"ok": True, "message": "رمز تنظیم شد"})
+    set_auth_cookie(response, request, token)
+    log_activity("auth", "رمز اولیه پنل تنظیم شد", "ok")
+    return response
 
 
 @app.get(
@@ -2501,6 +2412,9 @@ async def login_page(
 async def login_form(
     request: Request,
 ):
+    if not (AUTH.get("password_configured") and AUTH.get("password_hash")):
+        return HTMLResponse(login_error_html("ابتدا از صفحه ورود، رمز اولیه را تنظیم کنید"))
+
 
     try:
 
@@ -2642,6 +2556,9 @@ async def login_form(
 async def api_login(
     request: Request,
 ):
+    if not (AUTH.get("password_configured") and AUTH.get("password_hash")):
+        raise HTTPException(status_code=400, detail="ابتدا رمز پنل را در راه‌اندازی تنظیم کنید")
+
 
     try:
         body = await request.json()
@@ -5010,7 +4927,7 @@ PX Panel
 </h1>
 
 <div class="version">
-13.7.1
+13.8.0
 </div>
 
 <div class="text">
@@ -5817,6 +5734,95 @@ except Exception as exc:
     )
 
 
+
+# ============================================================
+# TELEGRAM SETTINGS API
+# ============================================================
+
+def load_tg_settings():
+    try:
+        if TG_FILE.exists():
+            return json.loads(TG_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {
+        "token": os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(),
+        "admin_ids": os.environ.get("TELEGRAM_ADMIN_IDS", "").strip(),
+        "webhook": False,
+        "enabled": False,
+    }
+
+
+def save_tg_settings(data: dict):
+    TG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    TG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@app.get("/api/telegram/settings")
+async def api_tg_get(_=Depends(require_auth)):
+    s = load_tg_settings()
+    token = s.get("token") or ""
+    masked = (token[:8] + "…" + token[-4:]) if len(token) > 14 else ("••••" if token else "")
+    return {
+        "token_masked": masked,
+        "has_token": bool(token),
+        "admin_ids": s.get("admin_ids") or "",
+        "webhook": bool(s.get("webhook")),
+        "enabled": bool(s.get("enabled")),
+    }
+
+
+@app.post("/api/telegram/settings")
+async def api_tg_save(request: Request, _=Depends(require_auth)):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, detail="invalid json")
+    s = load_tg_settings()
+    token = str(body.get("token") or "").strip()
+    admin_ids = str(body.get("admin_ids") or "").strip()
+    use_webhook = bool(body.get("webhook", True))
+    if token:
+        s["token"] = token
+    if admin_ids is not None:
+        s["admin_ids"] = admin_ids
+    s["webhook"] = use_webhook
+    s["enabled"] = True
+    save_tg_settings(s)
+    # apply runtime
+    try:
+        from telegram_bot import configure_bot, start_bot, stop_bot, setup_webhook
+        await stop_bot()
+        configure_bot(s.get("token") or "", s.get("admin_ids") or "")
+        host = get_host(request)
+        if use_webhook and host and host != "localhost":
+            wh = f"https://{host}/telegram/webhook"
+            ok = await setup_webhook(wh)
+            s["webhook_url"] = wh
+            s["webhook_ok"] = bool(ok)
+            save_tg_settings(s)
+            await start_bot(mode="webhook")
+        else:
+            await setup_webhook("")  # delete webhook -> polling
+            await start_bot(mode="polling")
+        log_activity("telegram", "ربات تلگرام پیکربندی و فعال شد", "ok")
+        return {"ok": True, "webhook": use_webhook, "message": "ربات فعال شد"}
+    except Exception as exc:
+        logger.warning("telegram activate error: %s", exc)
+        return {"ok": True, "warning": str(exc), "message": "تنظیمات ذخیره شد"}
+
+
+@app.post("/telegram/webhook")
+async def telegram_webhook(request: Request):
+    try:
+        from telegram_bot import process_update
+        data = await request.json()
+        await process_update(data)
+    except Exception as exc:
+        logger.warning("webhook error: %s", exc)
+    return {"ok": True}
+
+
 # ============================================================
 # TELEGRAM
 # ============================================================
@@ -5996,7 +6002,7 @@ DASHBOARD_HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>PXPanel 13.7.1</title>
+<title>PXPanel 13.8.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -6151,6 +6157,16 @@ tr:hover td{background:var(--hover)}
   .g2,.form-row{grid-template-columns:1fr}
 }
 @media(max-width:480px){.metrics{grid-template-columns:1fr}}
+.spin{width:36px;height:36px;border:3px solid var(--card-b);border-top-color:var(--accent);border-radius:50%;margin:0 auto;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.conn-badge{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 7px;border-radius:8px;font-size:10px;font-weight:800}
+.conn-badge.green{background:rgba(34,197,94,.18);color:#4ade80}
+.conn-badge.gray{background:rgba(148,163,184,.15);color:#94a3b8}
+.conn-badge.orange{background:rgba(245,158,11,.18);color:#fbbf24}
+.conn-badge.red{background:rgba(239,68,68,.18);color:#f87171}
+.spin{width:36px;height:36px;border:3px solid var(--card-b);border-top-color:var(--accent);border-radius:50%;margin:0 auto;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -6171,7 +6187,7 @@ tr:hover td{background:var(--hover)}
     <div class="sb-logo-icon">PX</div>
     <div class="sb-logo-text">
       <div class="sb-logo-name">PXPanel</div>
-      <div class="sb-logo-ver">v13.7.1</div>
+      <div class="sb-logo-ver">v13.8.0</div>
     </div>
   </div>
   <nav class="nav">
@@ -6197,6 +6213,10 @@ tr:hover td{background:var(--hover)}
       <span class="nav-label" data-i18n="nav_logs">لاگ فعالیت</span>
     </button>
     <div class="nav-sec" data-i18n="sec_sys">سیستم</div>
+    <button class="nav-item" data-page="telegram">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.2-1.86 8.77c-.14.62-.5.77-1.01.48l-2.8-2.06-1.35 1.3c-.15.15-.27.27-.55.27l.2-2.84 5.18-4.68c.22-.2-.05-.31-.35-.12l-6.4 4.03-2.76-.86c-.6-.19-.61-.6.12-.89l10.78-4.16c.5-.18.94.12.78.86z"/></svg>
+      <span class="nav-label" data-i18n="nav_telegram">ربات تلگرام</span>
+    </button>
     <button class="nav-item" data-page="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
       <span class="nav-label" data-i18n="nav_settings">تنظیمات</span>
@@ -6211,9 +6231,13 @@ tr:hover td{background:var(--hover)}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
       <span id="themeLabel" data-i18n="theme">تم روشن</span>
     </button>
-    <button type="button" onclick="refreshAll()">
+    <button type="button" onclick="refreshAll()" title="Stats">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.1-3.4L23 10M1 14l5.4 4.4A9 9 0 0 0 20.5 15"/></svg>
-      <span data-i18n="refresh">بروزرسانی</span>
+      <span data-i18n="refresh_stats">بروزرسانی آمار</span>
+    </button>
+    <button type="button" onclick="panelUpdate()" title="Panel" style="background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.35);color:#34d399">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+      <span data-i18n="refresh_panel">بروزرسانی پنل</span>
     </button>
     <a href="/logout" class="btn danger">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="16" height="16"><path d="M10 5H5v14h5"/><path d="m14 8 4 4-4 4"/><path d="M18 12H9"/></svg>
@@ -6283,7 +6307,14 @@ tr:hover td{background:var(--hover)}
   <div class="g2">
     <div class="card">
       <div class="card-title" data-i18n="manual_create">ساخت دستی</div>
-      <div class="field"><label data-i18n="label_name">نام</label><input id="cName" placeholder="auto"></div>
+      <div class="field"><label data-i18n="label_name">نام</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="cName" placeholder="auto" style="flex:1">
+          <button type="button" class="btn btn-sm" onclick="randomName()" title="Random" style="min-width:44px;height:42px">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+          </button>
+        </div>
+      </div>
       <div class="form-row">
         <div class="field"><label data-i18n="label_count">تعداد کانفیگ در ساب (۱–۴۰)</label><input id="cCount" type="number" value="1" min="1" max="40"></div>
         <div class="field"><label data-i18n="label_days">انقضا (روز)</label><input id="cDays" type="number" value="0" min="0"></div>
@@ -6385,6 +6416,41 @@ tr:hover td{background:var(--hover)}
     </a>
   </div>
 </section>
+
+<section class="page" id="page-telegram">
+  <div class="page-head">
+    <div>
+      <div class="page-title">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.2-1.86 8.77c-.14.62-.5.77-1.01.48l-2.8-2.06-1.35 1.3c-.15.15-.27.27-.55.27l.2-2.84 5.18-4.68c.22-.2-.05-.31-.35-.12l-6.4 4.03-2.76-.86c-.6-.19-.61-.6.12-.89l10.78-4.16c.5-.18.94.12.78.86z"/></svg>
+        <span data-i18n="nav_telegram">ربات تلگرام</span>
+      </div>
+      <div class="page-sub" data-i18n="tg_sub">توکن ربات و آیدی عددی ادمین · فعال‌سازی خودکار و وب‌هوک</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" data-i18n="tg_config">پیکربندی ربات</div>
+    <div class="field"><label data-i18n="tg_token">توکن ربات (BotFather)</label><input id="tgToken" placeholder="123456:ABC-DEF..." autocomplete="off"></div>
+    <div class="field"><label data-i18n="tg_admin">آیدی عددی ادمین</label><input id="tgAdmin" placeholder="123456789" inputmode="numeric"></div>
+    <div class="field" style="display:flex;align-items:center;gap:10px">
+      <label class="switch"><input type="checkbox" id="tgWebhook" checked><span class="slider"></span></label>
+      <span data-i18n="tg_webhook" style="font-size:13px;color:var(--t2)">فعال‌سازی Webhook (پیشنهادی روی Railway)</span>
+    </div>
+    <div id="tgStatus" style="font-size:12px;color:var(--t3);margin:10px 0"></div>
+    <button class="btn btn-p" style="width:100%" onclick="saveTelegram()">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      <span data-i18n="tg_activate">ذخیره و فعال‌سازی ربات</span>
+    </button>
+  </div>
+  <div class="card">
+    <div class="card-title" data-i18n="tg_help">راهنما</div>
+    <ol style="color:var(--t2);font-size:13px;line-height:2;padding-right:18px">
+      <li data-i18n="tg_h1">از @BotFather یک ربات بساز و توکن را کپی کن</li>
+      <li data-i18n="tg_h2">آیدی عددی خودت را از @userinfobot بگیر</li>
+      <li data-i18n="tg_h3">ذخیره کن — وب‌هوک خودکار روی دامنه Railway ست می‌شود</li>
+    </ol>
+  </div>
+</section>
+
 </main>
 
 <!-- Result modal after create -->
@@ -6409,12 +6475,21 @@ tr:hover td{background:var(--hover)}
   </div>
 </div>
 
+<div class="modal-bg" id="panelModal">
+  <div class="modal">
+    <div class="modal-title" id="panelModalTitle">...</div>
+    <div id="panelModalBody" style="color:var(--t2);font-size:13px;line-height:1.8"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="document.getElementById('panelModal').classList.remove('open')">OK</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
 const I18N={
-fa:{sec_panel:'پنل',sec_sys:'سیستم',nav_dash:'داشبورد',nav_configs:'کانفیگ‌ها',nav_create:'ساخت کانفیگ',nav_stats:'آمار',nav_logs:'لاگ فعالیت',nav_settings:'تنظیمات',nav_support:'پشتیبانی',refresh:'بروزرسانی',logout:'خروج',loading:'در حال بارگذاری...',m_conns:'اتصالات فعال',m_traffic:'ترافیک کل',m_links:'کانفیگ‌ها',m_uptime:'آپتایم سرور',quick_create:'ساخت کانفیگ',quick_create_desc:'ساخت دستی با محدودیت ترافیک، سرعت، تعداد و انقضا',auto_create:'ساخت خودکار (پیشنهادی)',auto_create_desc:'ساخت سریع با تنظیمات بهینه · لینک VLESS و ساب',configs_sub:'مدیریت لینک‌ها · VLESS و ساب',th_name:'نام',th_proto:'پروتکل',th_status:'وضعیت',th_usage:'مصرف',th_ops:'عملیات',manual_create:'ساخت دستی',label_name:'نام',label_count:'تعداد کانفیگ در ساب (۱–۴۰)',label_limit:'محدودیت حجم',label_unit:'واحد',label_days:'انقضا (روز)',label_ip:'محدودیت IP',label_speed:'سرعت (Mbps)',btn_create:'ساخت',btn_auto:'ساخت خودکار',auto_desc:'با یک کلیک کانفیگ بهینه ساخته می‌شود. بعد از ساخت لینک VLESS و ساب در اختیار شماست.',stats_sub:'ترافیک و اتصالات · فیلتر زمانی',r_day:'روز',r_week:'هفته',r_month:'ماه',r_all:'کل',panel_info:'اطلاعات کل پنل',lang_label:'زبان',change_pw:'تغییر رمز عبور',pw_cur:'رمز فعلی',pw_new:'رمز جدید',pw_cf:'تکرار رمز',btn_save:'ذخیره',github:'گیت‌هاب',telegram:'تلگرام',channel:'کانال پشتیبان',theme:'تم',theme_dark:'تم تیره',theme_light:'تم روشن',created_title:'کانفیگ ساخته شد',copy_vless:'کپی VLESS',copy_sub:'کپی ساب',sub_label:'سابسکریپشن'},
-en:{sec_panel:'PANEL',sec_sys:'SYSTEM',nav_dash:'Dashboard',nav_configs:'Configs',nav_create:'Create Config',nav_stats:'Statistics',nav_logs:'Activity Log',nav_settings:'Settings',nav_support:'Support',refresh:'Refresh',logout:'Logout',loading:'Loading...',m_conns:'Active connections',m_traffic:'Total traffic',m_links:'Configs',m_uptime:'Server uptime',quick_create:'Create Config',quick_create_desc:'Manual create with traffic, speed, count and expiry',auto_create:'Auto Create (Suggested)',auto_create_desc:'Quick optimal create · VLESS and Sub links',configs_sub:'Manage links · VLESS and Sub',th_name:'Name',th_proto:'Protocol',th_status:'Status',th_usage:'Usage',th_ops:'Actions',manual_create:'Manual create',label_name:'Name',label_count:'Configs in sub (1–40)',label_limit:'Traffic limit',label_unit:'Unit',label_days:'Expiry (days)',label_ip:'IP limit',label_speed:'Speed (Mbps)',btn_create:'Create',btn_auto:'Auto create',auto_desc:'One click creates an optimal config. VLESS and Sub links will be shown.',stats_sub:'Traffic and connections · time filter',r_day:'Day',r_week:'Week',r_month:'Month',r_all:'All',panel_info:'Panel overview',lang_label:'Language',change_pw:'Change password',pw_cur:'Current password',pw_new:'New password',pw_cf:'Confirm password',btn_save:'Save',github:'GitHub',telegram:'Telegram',channel:'Support channel',theme:'Theme',theme_dark:'Dark theme',theme_light:'Light theme',created_title:'Config created',copy_vless:'Copy VLESS',copy_sub:'Copy Sub',sub_label:'Subscription'}
+fa:{sec_panel:'پنل',sec_sys:'سیستم',nav_dash:'داشبورد',nav_configs:'کانفیگ‌ها',nav_create:'ساخت کانفیگ',nav_stats:'آمار',nav_logs:'لاگ فعالیت',nav_settings:'تنظیمات',nav_support:'پشتیبانی',refresh:'بروزرسانی',refresh_stats:'بروزرسانی آمار',refresh_panel:'بروزرسانی پنل',nav_telegram:'ربات تلگرام',tg_sub:'توکن ربات و آیدی عددی ادمین · فعال‌سازی خودکار و وب‌هوک',tg_config:'پیکربندی ربات',tg_token:'توکن ربات (BotFather)',tg_admin:'آیدی عددی ادمین',tg_webhook:'فعال‌سازی Webhook (پیشنهادی روی Railway)',tg_activate:'ذخیره و فعال‌سازی ربات',tg_help:'راهنما',tg_h1:'از @BotFather یک ربات بساز و توکن را کپی کن',tg_h2:'آیدی عددی خودت را از @userinfobot بگیر',tg_h3:'ذخیره کن — وب‌هوک خودکار روی دامنه Railway ست می‌شود',logout:'خروج',loading:'در حال بارگذاری...',m_conns:'اتصالات فعال',m_traffic:'ترافیک کل',m_links:'کانفیگ‌ها',m_uptime:'آپتایم سرور',quick_create:'ساخت کانفیگ',quick_create_desc:'ساخت دستی با محدودیت ترافیک، سرعت، تعداد و انقضا',auto_create:'ساخت خودکار (پیشنهادی)',auto_create_desc:'ساخت سریع با تنظیمات بهینه · لینک VLESS و ساب',configs_sub:'مدیریت لینک‌ها · VLESS و ساب',th_name:'نام',th_proto:'پروتکل',th_status:'وضعیت',th_usage:'مصرف',th_ops:'عملیات',manual_create:'ساخت دستی',label_name:'نام',label_count:'تعداد کانفیگ در ساب (۱–۴۰)',label_limit:'محدودیت حجم',label_unit:'واحد',label_days:'انقضا (روز)',label_ip:'محدودیت IP',label_speed:'سرعت (Mbps)',btn_create:'ساخت',btn_auto:'ساخت خودکار',auto_desc:'با یک کلیک کانفیگ بهینه ساخته می‌شود. بعد از ساخت لینک VLESS و ساب در اختیار شماست.',stats_sub:'ترافیک و اتصالات · فیلتر زمانی',r_day:'روز',r_week:'هفته',r_month:'ماه',r_all:'کل',panel_info:'اطلاعات کل پنل',lang_label:'زبان',change_pw:'تغییر رمز عبور',pw_cur:'رمز فعلی',pw_new:'رمز جدید',pw_cf:'تکرار رمز',btn_save:'ذخیره',github:'گیت‌هاب',telegram:'تلگرام',channel:'کانال پشتیبان',theme:'تم',theme_dark:'تم تیره',theme_light:'تم روشن',created_title:'کانفیگ ساخته شد',copy_vless:'کپی VLESS',copy_sub:'کپی ساب',sub_label:'سابسکریپشن'},
+en:{sec_panel:'PANEL',sec_sys:'SYSTEM',nav_dash:'Dashboard',nav_configs:'Configs',nav_create:'Create Config',nav_stats:'Statistics',nav_logs:'Activity Log',nav_settings:'Settings',nav_support:'Support',refresh:'Refresh',refresh_stats:'Refresh stats',refresh_panel:'Update panel',nav_telegram:'Telegram bot',tg_sub:'Bot token and numeric admin ID · auto activate and webhook',tg_config:'Bot configuration',tg_token:'Bot token (BotFather)',tg_admin:'Admin numeric ID',tg_webhook:'Enable Webhook (recommended on Railway)',tg_activate:'Save and activate bot',tg_help:'Guide',tg_h1:'Create a bot with @BotFather and copy the token',tg_h2:'Get your numeric ID from @userinfobot',tg_h3:'Save — webhook is set automatically on Railway domain',logout:'Logout',loading:'Loading...',m_conns:'Active connections',m_traffic:'Total traffic',m_links:'Configs',m_uptime:'Server uptime',quick_create:'Create Config',quick_create_desc:'Manual create with traffic, speed, count and expiry',auto_create:'Auto Create (Suggested)',auto_create_desc:'Quick optimal create · VLESS and Sub links',configs_sub:'Manage links · VLESS and Sub',th_name:'Name',th_proto:'Protocol',th_status:'Status',th_usage:'Usage',th_ops:'Actions',manual_create:'Manual create',label_name:'Name',label_count:'Configs in sub (1–40)',label_limit:'Traffic limit',label_unit:'Unit',label_days:'Expiry (days)',label_ip:'IP limit',label_speed:'Speed (Mbps)',btn_create:'Create',btn_auto:'Auto create',auto_desc:'One click creates an optimal config. VLESS and Sub links will be shown.',stats_sub:'Traffic and connections · time filter',r_day:'Day',r_week:'Week',r_month:'Month',r_all:'All',panel_info:'Panel overview',lang_label:'Language',change_pw:'Change password',pw_cur:'Current password',pw_new:'New password',pw_cf:'Confirm password',btn_save:'Save',github:'GitHub',telegram:'Telegram',channel:'Support channel',theme:'Theme',theme_dark:'Dark theme',theme_light:'Light theme',created_title:'Config created',copy_vless:'Copy VLESS',copy_sub:'Copy Sub',sub_label:'Subscription'}
 };
 let lang=localStorage.getItem('px_lang')||'fa';
 let statRange='month';
@@ -6518,15 +6593,32 @@ function renderLinks(arr){
     const name=l.label||l.name||String(uid).slice(0,8);
     const proto=l.protocol||'vless-ws';
     const on=l.active!==false&&!l.expired;
+    const conn=Number(l.connected_ips||0);
+    const used=Number(l.used_bytes||0), lim=Number(l.limit_bytes||0);
+    let usagePct=lim>0?(used/lim)*100:0;
+    let expWarn=false, expDead=false;
+    if(l.expires_at){
+      try{const ms=new Date(l.expires_at)-Date.now();if(ms<=0)expDead=true;else if(ms<3*864e5)expWarn=true}catch(e){}
+    }
+    let badgeCls='conn-badge gray';
+    if(expDead||usagePct>=90) badgeCls='conn-badge red';
+    else if(expWarn||usagePct>=70) badgeCls='conn-badge orange';
+    else if(conn>0) badgeCls='conn-badge green';
+    else badgeCls='conn-badge gray';
     return `<tr>
-      <td><b>${esc(name)}</b></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <b>${esc(name)}</b>
+          <span class="${badgeCls}" title="${lang==='fa'?'متصل الان':'Online now'}">${conn}</span>
+        </div>
+      </td>
       <td style="color:var(--t3);font-size:11px">${esc(proto)}</td>
       <td><label class="switch"><input type="checkbox" ${on?'checked':''} onchange="toggleLink('${esc(uid)}',this.checked)"><span class="slider"></span></label></td>
       <td>${fmtB(l.used_bytes)}${l.limit_bytes?(' / '+fmtB(l.limit_bytes)):''}</td>
       <td class="ops">
         <button class="btn btn-sm" onclick="copyLinkById('${esc(uid)}')" title="VLESS"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
         <button class="btn btn-sm" onclick="copySubById('${esc(uid)}')" title="Sub"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></button>
-        <button class="btn btn-sm" onclick="showResult(window.__linksMap['${esc(uid)}'])" title="Info"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></button>
+        <a class="btn btn-sm" href="/info/${esc(uid)}" target="_blank" title="INFO" style="text-decoration:none"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></a>
         <button class="btn btn-sm btn-d" onclick="deleteLink('${esc(uid)}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
       </td>
     </tr>`;
@@ -6608,7 +6700,52 @@ function setRange(r,el){
   document.querySelectorAll('#rangeTabs .range-tab').forEach(t=>t.classList.toggle('on',t.dataset.r===r));
   refreshAll();toast(t('r_'+r));
 }
-applyLang();refreshAll();setInterval(refreshAll,15000);
+function randomName(){
+  const chars='abcdefghijklmnopqrstuvwxyz0123456789';
+  let s='';
+  for(let i=0;i<10;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  if(/^[0-9]/.test(s)) s='a'+s.slice(1);
+  document.getElementById('cName').value=s;
+}
+async function panelUpdate(){
+  const m=document.getElementById('panelModal');
+  const t=document.getElementById('panelModalTitle');
+  const b=document.getElementById('panelModalBody');
+  t.textContent=lang==='fa'?'در حال بررسی آپدیت...':'Checking update...';
+  b.innerHTML='<div style="text-align:center;padding:20px"><div class="spin"></div></div>';
+  m.classList.add('open');
+  await new Promise(r=>setTimeout(r,1400));
+  t.textContent=lang==='fa'?'آپدیت پنل':'Panel update';
+  b.innerHTML=(lang==='fa'
+    ?'<p style="margin-bottom:12px">اپدیت با خطا مواجه شد. اپدیت را دستی انجام دهید.</p><a href="https://github.com/iran-px-panel/pxpanel" target="_blank" rel="noopener" style="color:var(--accent2);font-weight:700">github.com/iran-px-panel/pxpanel</a>'
+    :'<p style="margin-bottom:12px">Update failed. Please update manually.</p><a href="https://github.com/iran-px-panel/pxpanel" target="_blank" rel="noopener" style="color:var(--accent2);font-weight:700">github.com/iran-px-panel/pxpanel</a>');
+}
+async function saveTelegram(){
+  const token=document.getElementById('tgToken').value.trim();
+  const admin=document.getElementById('tgAdmin').value.trim();
+  const webhook=document.getElementById('tgWebhook').checked;
+  if(!token||!admin){toast(lang==='fa'?'توکن و آیدی لازم است':'Token and admin ID required');return}
+  toast(lang==='fa'?'در حال فعال‌سازی...':'Activating...');
+  const r=await api('/api/telegram/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,admin_ids:admin,webhook})});
+  if(r){
+    document.getElementById('tgStatus').textContent=r.message||(lang==='fa'?'فعال شد':'Enabled');
+    toast(r.message||'OK');
+  }
+}
+async function loadTelegram(){
+  const r=await api('/api/telegram/settings');
+  if(!r)return;
+  if(r.admin_ids) document.getElementById('tgAdmin').value=r.admin_ids;
+  document.getElementById('tgWebhook').checked=r.webhook!==false;
+  document.getElementById('tgStatus').textContent=r.has_token?(lang==='fa'?'توکن ذخیره شده: ':'Token saved: ')+(r.token_masked||''):'';
+}
+const _goPage=goPage;
+goPage=function(name){
+  _goPage(name);
+  if(name==='telegram') loadTelegram();
+};
+applyLang();refreshAll();setInterval(refreshAll,1000);
+
 </script>
 </body>
 </html>

@@ -43,7 +43,41 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 _admin_ids_raw = os.environ.get("TELEGRAM_ADMIN_IDS", "").strip()
 ADMIN_IDS = {int(x) for x in _admin_ids_raw.replace(" ", "").split(",") if x.isdigit()} if _admin_ids_raw else set()
 
-API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
+API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else ""
+_mode = "polling"  # polling | webhook
+
+def configure_bot(token: str, admin_ids: str):
+    global BOT_TOKEN, ADMIN_IDS, API_BASE
+    BOT_TOKEN = (token or "").strip()
+    raw = (admin_ids or "").strip()
+    ADMIN_IDS = {int(x) for x in raw.replace(" ", "").split(",") if x.isdigit()} if raw else set()
+    API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else ""
+    logger.info(f"Telegram configured (admins={len(ADMIN_IDS)}, token={'yes' if BOT_TOKEN else 'no'})")
+
+async def setup_webhook(url: str) -> bool:
+    if not BOT_TOKEN:
+        return False
+    try:
+        if url:
+            res = await _call("setWebhook", url=url, allowed_updates=["message", "callback_query"], drop_pending_updates=True)
+        else:
+            res = await _call("deleteWebhook", drop_pending_updates=True)
+        ok = bool(res and res.get("ok"))
+        logger.info(f"Telegram webhook setup: {ok} url={url or 'deleted'}")
+        return ok
+    except Exception as e:
+        logger.warning(f"webhook setup error: {e}")
+        return False
+
+async def process_update(upd: dict):
+    try:
+        if "message" in upd:
+            await _handle_message(upd["message"])
+        elif "callback_query" in upd:
+            await _handle_callback(upd["callback_query"])
+    except Exception as e:
+        logger.warning(f"process_update error: {e}")
+
 PAGE_SIZE = 6
 
 _client: httpx.AsyncClient | None = None
@@ -110,8 +144,11 @@ def _parse_nonneg_int(text: str):
 
 # ── Telegram API helpers ────────────────────────────────────────────────────
 async def _call(method: str, **params):
-    if _client is None:
+    global _client
+    if not API_BASE:
         return None
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=httpx.Timeout(40.0, connect=10.0))
     try:
         r = await _client.post(f"{API_BASE}/{method}", json=params, timeout=40)
         data = r.json()
@@ -829,16 +866,39 @@ async def _poll_loop():
             await asyncio.sleep(3)
 
 # ── Lifecycle ────────────────────────────────────────────────────────────────
-async def start_bot():
-    global _client, _poll_task, _running
+async def start_bot(mode: str = "polling"):
+    global _client, _poll_task, _running, _mode
+    _mode = mode if mode in ("polling", "webhook") else "polling"
+    # try load from panel settings file
+    if not BOT_TOKEN:
+        try:
+            from pathlib import Path
+            import json as _json
+            from main import DATA_DIR
+            p = Path(DATA_DIR) / "telegram_settings.json"
+            if p.exists():
+                s = _json.loads(p.read_text(encoding="utf-8"))
+                if s.get("token"):
+                    configure_bot(s.get("token",""), s.get("admin_ids",""))
+        except Exception:
+            pass
     if not BOT_TOKEN:
         logger.info("Telegram bot: TELEGRAM_BOT_TOKEN تنظیم نشده، ربات غیرفعاله.")
         return
     if not ADMIN_IDS:
-        logger.warning("Telegram bot: TELEGRAM_ADMIN_IDS تنظیم نشده، هیچ‌کس اجازه‌ی مدیریت نداره (ربات روشنه ولی همه رد می‌شن).")
-    _client = httpx.AsyncClient(timeout=httpx.Timeout(40.0, connect=10.0))
+        logger.warning("Telegram bot: TELEGRAM_ADMIN_IDS تنظیم نشده، هیچ‌کس اجازه‌ی مدیریت نداره.")
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=httpx.Timeout(40.0, connect=10.0))
     _running = True
-    _poll_task = asyncio.create_task(_poll_loop())
+    if _mode == "polling":
+        if _poll_task is None or _poll_task.done():
+            _poll_task = asyncio.create_task(_poll_loop())
+        logger.info("Telegram bot: polling mode")
+    else:
+        # webhook mode: no polling loop
+        if _poll_task and not _poll_task.done():
+            _poll_task.cancel()
+        logger.info("Telegram bot: webhook mode")
 
 async def stop_bot():
     global _running, _client
