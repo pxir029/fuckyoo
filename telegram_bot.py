@@ -221,17 +221,17 @@ def _force_join_kb():
     ch = (FORCE_JOIN.get("channel") or "").strip().lstrip("@")
     rows = []
     if ch:
-        rows.append([{"text": "📢 عضویت در کانال", "url": f"https://t.me/{ch}", "style": "primary"}])
-    rows.append([{"text": "✅ عضو شدم — بررسی مجدد", "callback_data": "fj:check", "style": "success"}])
+        rows.append([{"text": "📢 عضویت در کانال", "url": f"https://t.me/{ch}"}])
+    rows.append([{"text": "✅ عضو شدم — بررسی مجدد", "callback_data": "fj:check"}])
     return {"inline_keyboard": rows}
 
 
 def _main_menu_kb():
     return {
         "inline_keyboard": [
-            [{"text": "📊 داشبورد و آمار زنده", "callback_data": "stats", "style": "primary"}],
+            [{"text": "📊 داشبورد و آمار زنده", "callback_data": "stats"}],
             [
-                {"text": "🟢 لیست کانفیگ‌ها", "callback_data": "list:0", "style": "primary"},
+                {"text": "🟢 لیست کانفیگ‌ها", "callback_data": "list:0"},
                 {
                     "text": "➕ ساخت کانفیگ", 
                     "callback_data": "newcfg",
@@ -239,12 +239,12 @@ def _main_menu_kb():
                 },
             ],
             [
-                {"text": "🗂 گروه‌های ساب", "callback_data": "subs:0", "style": "primary"},
-                {"text": "🔌 اتصالات زنده", "callback_data": "conns", "style": "purple"},
+                {"text": "🗂 گروه‌های ساب", "callback_data": "subs:0"},
+                {"text": "🔌 اتصالات زنده", "callback_data": "conns"},
             ],
-            [{"text": "📜 لاگ فعالیت", "callback_data": "logs", "style": "purple"}],
-            [{"text": "⚙️ تنظیمات پنل ربات", "callback_data": "settings", "style": "primary"}],
-            [{"text": "🔄 بروزرسانی منو", "callback_data": "menu", "style": "primary"}],
+            [{"text": "📜 لاگ فعالیت", "callback_data": "logs"}],
+            [{"text": "⚙️ تنظیمات پنل ربات", "callback_data": "settings"}],
+            [{"text": "🔄 بروزرسانی منو", "callback_data": "menu"}],
         ]
     }
 
@@ -252,10 +252,10 @@ def _settings_kb():
     fj_on = FORCE_JOIN.get("enabled")
     return {
         "inline_keyboard": [
-            [{"text": f"{'🟢' if fj_on else '⚪'} عضویت اجباری: {'فعال' if fj_on else 'خاموش'}", "callback_data": "fj:toggle", "style": "success" if fj_on else "danger"}],
-            [{"text": "📢 تنظیم کانال عضویت", "callback_data": "fj:set", "style": "primary"}],
-            [{"text": "ℹ️ وضعیت ربات", "callback_data": "botinfo", "style": "primary"}],
-            [{"text": "🏠 منوی اصلی", "callback_data": "menu", "style": "primary"}],
+            [{"text": f"{'🟢' if fj_on else '⚪'} عضویت اجباری: {'فعال' if fj_on else 'خاموش'}", "callback_data": "fj:toggle"}],
+            [{"text": "📢 تنظیم کانال عضویت", "callback_data": "fj:set"}],
+            [{"text": "ℹ️ وضعیت ربات", "callback_data": "botinfo"}],
+            [{"text": "🏠 منوی اصلی", "callback_data": "menu"}],
         ]
     }
 
@@ -276,13 +276,13 @@ def _links_list_kb(page: int):
             dot = "⚪"
         label = (l.get("label") or "?")[:22]
         extra = f" · {online}👤" if online else ""
-        rows.append([{"text": f"{dot} {label}{extra}", "callback_data": f"view:{uid}", "style": "primary"}])
+        rows.append([{"text": f"{dot} {label}{extra}", "callback_data": f"view:{uid}"}])
     
     nav = []
     if start > 0:
-        nav.append({"text": "⬅️ قبلی", "callback_data": f"list:{page-1}", "style": "primary"})
+        nav.append({"text": "⬅️ قبلی", "callback_data": f"list:{page-1}"})
     if start + PAGE_SIZE < total:
-        nav.append({"text": "بعدی ➡️", "callback_data": f"list:{page+1}", "style": "primary"})
+        nav.append({"text": "بعدی ➡️", "callback_data": f"list:{page+1}"})
     if nav:
         rows.append(nav)
         
@@ -294,15 +294,15 @@ def _links_list_kb(page: int):
         }
     ])
     
-    rows.append([{"text": "🏠 منوی اصلی", "callback_data": "menu", "style": "primary"}])
+    rows.append([{"text": "🏠 منوی اصلی", "callback_data": "menu"}])
     return {"inline_keyboard": rows}
 
 def _link_detail_kb(uid: str, active: bool):
     return {
         "inline_keyboard": [
-            [{"text": "🔗 کپی لینک VLESS", "callback_data": f"link:{uid}", "style": "primary"}],
-            [{"text": "📡 لینک ساب", "callback_data": f"sublink:{uid}", "style": "primary"}],
-            [{"text": "📄 صفحه INFO", "callback_data": f"info:{uid}", "style": "purple"}],
+            [{"text": "🔗 کپی لینک VLESS", "callback_data": f"link:{uid}"}],
+            [{"text": "📡 لینک ساب", "callback_data": f"sublink:{uid}"}],
+            [{"text": "📄 صفحه INFO", "callback_data": f"info:{uid}"}],
             [
                 {
                     "text": "🔴 غیرفعال" if active else "🟢 فعال‌سازی",
@@ -317,7 +317,7 @@ def _link_detail_kb(uid: str, active: bool):
                     "style": "danger" 
                 }
             ],
-            [{"text": "⬅️ بازگشت به لیست", "callback_data": "list:0", "style": "primary"}],
+            [{"text": "⬅️ بازگشت به لیست", "callback_data": "list:0"}],
         ]
     }
 
@@ -326,41 +326,41 @@ def _confirm_delete_kb(uid: str):
     return {
         "inline_keyboard": [
             [
-                {"text": "🟢 بله، حذف کن", "callback_data": f"delok:{uid}", "style": "danger"},
-                {"text": "❌ انصراف", "callback_data": f"view:{uid}", "style": "primary"},
+                {"text": "🟢 بله، حذف کن", "callback_data": f"delok:{uid}"},
+                {"text": "❌ انصراف", "callback_data": f"view:{uid}"},
             ]
         ]
     }
 
 
 def _wizard_cancel_kb():
-    return {"inline_keyboard": [[{"text": "❌ انصراف از ساخت", "callback_data": "w:cancel", "style": "danger"}]]}
+    return {"inline_keyboard": [[{"text": "❌ انصراف از ساخت", "callback_data": "w:cancel"}]]}
 
 
 def _wizard_protocol_kb():
-    rows = [[{"text": _protocol_label(p), "callback_data": f"w:proto:{p}", "style": "primary"}] for p in list(PROTOCOLS)[:12]]
-    rows.append([{"text": "❌ انصراف", "callback_data": "w:cancel", "style": "danger"}])
+    rows = [[{"text": _protocol_label(p), "callback_data": f"w:proto:{p}"}] for p in list(PROTOCOLS)[:12]]
+    rows.append([{"text": "❌ انصراف", "callback_data": "w:cancel"}])
     return {"inline_keyboard": rows}
 
 
 def _wizard_fp_kb():
     rows, row = [], []
     for fp in FINGERPRINTS:
-        row.append({"text": _fp_label(fp), "callback_data": f"w:fp:{fp}", "style": "primary"})
+        row.append({"text": _fp_label(fp), "callback_data": f"w:fp:{fp}"})
         if len(row) == 2:
             rows.append(row)
             row = []
     if row:
         rows.append(row)
-    rows.append([{"text": "❌ انصراف", "callback_data": "w:cancel", "style": "danger"}])
+    rows.append([{"text": "❌ انصراف", "callback_data": "w:cancel"}])
     return {"inline_keyboard": rows}
 
 
 def _wizard_skip_kb(step_key: str, label: str):
     return {
         "inline_keyboard": [
-            [{"text": f"🟢 {label}", "callback_data": f"w:skip:{step_key}", "style": "success"}],
-            [{"text": "❌ انصراف", "callback_data": "w:cancel", "style": "danger"}],
+            [{"text": f"🟢 {label}", "callback_data": f"w:skip:{step_key}"}],
+            [{"text": "❌ انصراف", "callback_data": "w:cancel"}],
         ]
     }
 
@@ -368,11 +368,11 @@ def _wizard_skip_kb(step_key: str, label: str):
 def _wizard_alpn_kb():
     return {
         "inline_keyboard": [
-            [{"text": "🟢 http/1.1", "callback_data": "w:alpnpreset:p1", "style": "success"}],
-            [{"text": "h2,http/1.1", "callback_data": "w:alpnpreset:p2", "style": "primary"}],
-            [{"text": "h2", "callback_data": "w:alpnpreset:p3", "style": "primary"}],
-            [{"text": "⏭ پیش‌فرض پروتکل", "callback_data": "w:skip:alpn", "style": "purple"}],
-            [{"text": "❌ انصراف", "callback_data": "w:cancel", "style": "danger"}],
+            [{"text": "🟢 http/1.1", "callback_data": "w:alpnpreset:p1"}],
+            [{"text": "h2,http/1.1", "callback_data": "w:alpnpreset:p2"}],
+            [{"text": "h2", "callback_data": "w:alpnpreset:p3"}],
+            [{"text": "⏭ پیش‌فرض پروتکل", "callback_data": "w:skip:alpn"}],
+            [{"text": "❌ انصراف", "callback_data": "w:cancel"}],
         ]
     }
 
@@ -385,25 +385,25 @@ def _subs_list_kb(page: int):
     rows = []
     for sid, s in chunk:
         cnt = len(s.get("link_ids", []))
-        rows.append([{"text": f"🗂 {(s.get('name') or '?')[:26]} ({cnt})", "callback_data": f"subview:{sid}", "style": "primary"}])
+        rows.append([{"text": f"🗂 {(s.get('name') or '?')[:26]} ({cnt})", "callback_data": f"subview:{sid}"}])
     nav = []
     if start > 0:
-        nav.append({"text": "⬅️ قبلی", "callback_data": f"subs:{page-1}", "style": "primary"})
+        nav.append({"text": "⬅️ قبلی", "callback_data": f"subs:{page-1}"})
     if start + PAGE_SIZE < total:
-        nav.append({"text": "بعدی ➡️", "callback_data": f"subs:{page+1}", "style": "primary"})
+        nav.append({"text": "بعدی ➡️", "callback_data": f"subs:{page+1}"})
     if nav:
         rows.append(nav)
-    rows.append([{"text": "🟢 ساخت گروه جدید", "callback_data": "newsub", "style": "success"}])
-    rows.append([{"text": "🏠 منوی اصلی", "callback_data": "menu", "style": "primary"}])
+    rows.append([{"text": "🟢 ساخت گروه جدید", "callback_data": "newsub"}])
+    rows.append([{"text": "🏠 منوی اصلی", "callback_data": "menu"}])
     return {"inline_keyboard": rows}
 
 
 def _sub_detail_kb(sid: str):
     return {
         "inline_keyboard": [
-            [{"text": "➕ افزودن کانفیگ", "callback_data": f"subaddlink:{sid}:0", "style": "success"}],
-            [{"text": "🗑 حذف گروه", "callback_data": f"subdel:{sid}", "style": "danger"}],
-            [{"text": "⬅️ لیست گروه‌ها", "callback_data": "subs:0", "style": "primary"}],
+            [{"text": "➕ افزودن کانفیگ", "callback_data": f"subaddlink:{sid}:0"}],
+            [{"text": "🗑 حذف گروه", "callback_data": f"subdel:{sid}"}],
+            [{"text": "⬅️ لیست گروه‌ها", "callback_data": "subs:0"}],
         ]
     }
 
@@ -412,8 +412,8 @@ def _confirm_subdel_kb(sid: str):
     return {
         "inline_keyboard": [
             [
-                {"text": "🟢 بله، حذف", "callback_data": f"subdelok:{sid}", "style": "danger"},
-                {"text": "❌ انصراف", "callback_data": f"subview:{sid}", "style": "primary"},
+                {"text": "🟢 بله، حذف", "callback_data": f"subdelok:{sid}"},
+                {"text": "❌ انصراف", "callback_data": f"subview:{sid}"},
             ]
         ]
     }
@@ -427,15 +427,15 @@ def _pick_link_for_group_kb(sid: str, page: int):
     rows = []
     for uid, l in chunk:
         in_this = "✅ " if l.get("sub_id") == sid else ""
-        rows.append([{"text": f"{in_this}{(l.get('label') or '?')[:28]}", "callback_data": f"subaddlinkdo:{sid}:{uid}", "style": "primary"}])
+        rows.append([{"text": f"{in_this}{(l.get('label') or '?')[:28]}", "callback_data": f"subaddlinkdo:{sid}:{uid}"}])
     nav = []
     if start > 0:
-        nav.append({"text": "⬅️", "callback_data": f"subaddlink:{sid}:{page-1}", "style": "primary"})
+        nav.append({"text": "⬅️", "callback_data": f"subaddlink:{sid}:{page-1}"})
     if start + PAGE_SIZE < total:
-        nav.append({"text": "➡️", "callback_data": f"subaddlink:{sid}:{page+1}", "style": "primary"})
+        nav.append({"text": "➡️", "callback_data": f"subaddlink:{sid}:{page+1}"})
     if nav:
         rows.append(nav)
-    rows.append([{"text": "⬅️ بازگشت", "callback_data": f"subview:{sid}", "style": "primary"}])
+    rows.append([{"text": "⬅️ بازگشت", "callback_data": f"subview:{sid}"}])
     return {"inline_keyboard": rows}
 
 
@@ -555,8 +555,8 @@ def _wizard_prompt(step: str) -> tuple[str, dict | None]:
     if step == "label":
         return head + "✏️ نام کانفیگ را بفرست (یا دکمه رندوم):", {
             "inline_keyboard": [
-                [{"text": "🎲 نام تصادفی", "callback_data": "w:randlabel", "style": "purple"}],
-                [{"text": "❌ انصراف", "callback_data": "w:cancel", "style": "danger"}],
+                [{"text": "🎲 نام تصادفی", "callback_data": "w:randlabel"}],
+                [{"text": "❌ انصراف", "callback_data": "w:cancel"}],
             ]
         }
     if step == "protocol":
@@ -804,8 +804,8 @@ async def _handle_callback(cb: dict):
     if data == "stats":
         await _edit(chat_id, mid, _stats_text(), {
             "inline_keyboard": [
-                [{"text": "🔄 بروزرسانی آمار", "callback_data": "stats", "style": "primary"}],
-                [{"text": "🏠 منوی اصلی", "callback_data": "menu", "style": "primary"}],
+                [{"text": "🔄 بروزرسانی آمار", "callback_data": "stats"}],
+                [{"text": "🏠 منوی اصلی", "callback_data": "menu"}],
             ]
         })
         return
@@ -824,7 +824,7 @@ async def _handle_callback(cb: dict):
             chat_id,
             mid,
             "\n".join(lines),
-            {"inline_keyboard": [[{"text": "🔄", "callback_data": "conns", "style": "purple"}], [{"text": "🏠 منو", "callback_data": "menu", "style": "primary"}]]},
+            {"inline_keyboard": [[{"text": "🔄", "callback_data": "conns"}], [{"text": "🏠 منو", "callback_data": "menu"}]]},
         )
         return
 
@@ -840,7 +840,7 @@ async def _handle_callback(cb: dict):
             chat_id,
             mid,
             "\n".join(lines),
-            {"inline_keyboard": [[{"text": "🔄", "callback_data": "logs", "style": "purple"}], [{"text": "🏠 منو", "callback_data": "menu", "style": "primary"}]]},
+            {"inline_keyboard": [[{"text": "🔄", "callback_data": "logs"}], [{"text": "🏠 منو", "callback_data": "menu"}]]},
         )
         return
 
@@ -875,7 +875,7 @@ async def _handle_callback(cb: dict):
             chat_id,
             mid,
             "📢 آیدی کانال را بفرست:\nمثال: <code>@mychannel</code> یا <code>-100123...</code>",
-            {"inline_keyboard": [[{"text": "❌ انصراف", "callback_data": "settings", "style": "danger"}]]},
+            {"inline_keyboard": [[{"text": "❌ انصراف", "callback_data": "settings"}]]},
         )
         return
 
@@ -1062,7 +1062,7 @@ async def _handle_callback(cb: dict):
             chat_id,
             mid,
             "✏️ نام گروه ساب را بفرست:",
-            {"inline_keyboard": [[{"text": "❌ انصراف", "callback_data": "subs:0", "style": "danger"}]]},
+            {"inline_keyboard": [[{"text": "❌ انصراف", "callback_data": "subs:0"}]]},
         )
         return
 
