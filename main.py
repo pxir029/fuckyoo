@@ -42,7 +42,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # ============================================================
 
 APP_NAME = "PXPanel"
-APP_VERSION = "13.9.3"
+APP_VERSION = "13.9.4"
 
 SUPPORT_USERNAME = "@logic_sec"
 SUPPORT_URL = "https://t.me/logic_sec"
@@ -1223,7 +1223,6 @@ async def load_state():
             link.setdefault("category_id", "0")
             link.setdefault("config_count", 1)
             link.setdefault("usage_history", [])
-            link.setdefault("volume_coef", 1)
 
         logger.info(
             "State loaded: %d links / %d subscriptions",
@@ -2312,8 +2311,8 @@ LOGIN_HTML = r"""
 *{box-sizing:border-box;margin:0;padding:0}
 body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;font-family:Vazirmatn,sans-serif;color:#f8fafc;
 background:#06060b;background-image:radial-gradient(ellipse 80% 50% at 20% 0%,rgba(59,130,246,.18),transparent 50%),radial-gradient(ellipse 60% 40% at 100% 100%,rgba(139,92,246,.12),transparent 45%)}
-.card{width:100%;max-width:440px;padding:28px;border-radius:22px;background:rgba(18,18,28,.92);border:1px solid rgba(255,255,255,.08);box-shadow:0 24px 64px rgba(0,0,0,.5);backdrop-filter:blur(20px)}
-.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-weight:900;margin-bottom:16px;box-shadow:0 8px 24px rgba(59,130,246,.35)}
+.card{width:100%;max-width:440px;padding:28px;border-radius:22px;background:rgba(18,18,28,.96);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(20px)}
+.logo{width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;font-weight:900;margin-bottom:16px}
 h1{font-size:22px;font-weight:800;margin-bottom:4px}
 .ver{font-size:11px;color:#60a5fa;margin-bottom:8px}
 .desc{font-size:12px;color:rgba(255,255,255,.5);line-height:1.8;margin-bottom:18px}
@@ -2322,8 +2321,7 @@ h1{font-size:22px;font-weight:800;margin-bottom:4px}
 .warn code{background:rgba(0,0,0,.35);padding:2px 7px;border-radius:6px;font-family:ui-monospace,monospace;color:#93c5fd}
 label{display:block;font-size:11px;color:rgba(255,255,255,.5);margin-bottom:6px;font-weight:600}
 input{width:100%;padding:13px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.35);color:#fff;font-family:inherit;font-size:14px;outline:none;margin-bottom:12px;direction:ltr;text-align:left}
-input:focus{border-color:rgba(59,130,246,.6);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
-button{width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;margin-top:4px;box-shadow:0 6px 20px rgba(59,130,246,.3)}
+input:focus{border-color:rgba(59,130,246,.6);padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;margin-top:4px}
 button:hover{filter:brightness(1.08)}
 button:disabled{opacity:.5;cursor:not-allowed}
 .err{display:none;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#fca5a5;padding:10px 12px;border-radius:10px;font-size:12px;margin-bottom:12px}
@@ -2335,7 +2333,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <body>
 <div class="card">
   <div class="logo">PX</div>
-  <div class="ver">v13.9.3</div>
+  <div class="ver">v13.9.4</div>
 
   <div id="setupBox" class="hidden">
     <div class="step">راه‌اندازی اولیه</div>
@@ -3272,12 +3270,6 @@ async def update_link(
                     "used_bytes"
                 ] = 0
 
-        if "volume_coef" in body:
-            try:
-                coef = int(body.get("volume_coef") or 1)
-            except Exception:
-                coef = 1
-            link["volume_coef"] = 2 if coef >= 2 else 1
 
         if "limit_value" in body:
 
@@ -6353,7 +6345,7 @@ tr:hover td{background:var(--hover)}
     <div class="sb-logo-icon">PX</div>
     <div class="sb-logo-text">
       <div class="sb-logo-name">PXPanel</div>
-      <div class="sb-logo-ver">v13.9.3</div>
+      <div class="sb-logo-ver">v13.9.4</div>
     </div>
   </div>
   <nav class="nav">
@@ -6839,13 +6831,7 @@ function renderLinks(arr){
       </td>
       <td style="color:var(--t3);font-size:11px">${esc(proto)}</td>
       <td><label class="switch"><input type="checkbox" ${on?'checked':''} onchange="toggleLink('${esc(uid)}',this.checked)"><span class="slider"></span></label></td>
-      <td>
-        <div>${fmtB(l.used_bytes)}${l.limit_bytes?(' / '+fmtB(l.limit_bytes)):''}</div>
-        <label style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:10px;color:var(--t3)" title="ضریب ۲ حجم">
-          <span>×2</span>
-          <label class="switch"><input type="checkbox" ${Number(l.volume_coef)>=2?'checked':''} onchange="toggleVolumeCoef('${esc(uid)}',this)"><span class="slider"></span></label>
-        </label>
-      </td>
+      <td>${fmtB(l.used_bytes)}${l.limit_bytes?(' / '+fmtB(l.limit_bytes)):''}</td>
       <td class="ops">
         <button class="btn btn-sm" onclick="copyLinkById('${esc(uid)}')" title="VLESS"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
         <button class="btn btn-sm" onclick="copySubById('${esc(uid)}')" title="Sub"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></button>
