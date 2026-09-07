@@ -2066,6 +2066,15 @@ html{scroll-behavior:smooth} body{overflow-x:hidden} button,input,select,textare
 @media(max-width:900px){.container,.shell,.dashboard,.main,.content{max-width:100%!important;width:100%!important}.grid,.stats-grid,.cards-grid,.form-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.sidebar{z-index:1000}}
 @media(max-width:640px){body{padding:10px!important;font-size:14px}.grid,.stats-grid,.cards-grid,.form-grid{grid-template-columns:1fr!important}.card,.panel,.section,.modal{border-radius:18px!important}.modal{max-height:92vh;overflow:auto;padding:14px!important}.header,.topbar,.toolbar,.actions{flex-wrap:wrap!important}.header>* ,.topbar>*{max-width:100%}.btn,button{min-height:44px}.field input,.field select,.field textarea,input,select,textarea{min-height:44px;font-size:16px;max-width:100%}table{display:block;overflow-x:auto;white-space:nowrap}.link-row,.config-row{flex-direction:column!important;align-items:stretch!important}.brand-name{font-size:15px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+/* Toggle switch */
+.switch{position:relative;display:inline-block;width:42px;height:24px;vertical-align:middle}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;inset:0;background:rgba(255,255,255,.12);border-radius:24px;transition:.2s}
+.slider:before{position:absolute;content:"";height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+.switch input:checked+.slider{background:var(--green)}
+.switch input:checked+.slider:before{transform:translateX(18px)}
+
 </style>
 </head>
 
@@ -6521,8 +6530,7 @@ function fmtB(b){
 async function refreshAll(){
   const links=await api('/api/links');
   if(!links)return;
-  const list=links.links||links||[];
-  const arr=Array.isArray(list)?list:(list.links||[]);
+  const arr=Array.isArray(links.links)?links.links:(Array.isArray(links)?links:[]);
   document.getElementById('mLinks').textContent=arr.length;
   let active=0,used=0;
   arr.forEach(l=>{if(l.active!==false)active++;used+=Number(l.used_bytes||0)});
@@ -6531,25 +6539,17 @@ async function refreshAll(){
   document.getElementById('sActive').textContent=active;
   document.getElementById('lastUpd').textContent=(lang==='fa'?'بروزرسانی: ':'Updated: ')+new Date().toLocaleTimeString(lang==='fa'?'fa-IR':'en-US');
 
-  // try stats endpoints if exist
-  try{
-    const st=await api('/api/activity');
-    if(st&&Array.isArray(st)){/* handled in loadLogs */}
-  }catch{}
-
-  // connections
   try{
     const c=await api('/api/connections');
-    const cnt=c&&c.connections?c.connections.length:(c&&c.count)||0;
+    const cnt=(c&&c.connections)?c.connections.length:((c&&typeof c.count==='number')?c.count:0);
     document.getElementById('mConns').textContent=cnt;
     document.getElementById('sConns').textContent=cnt;
-  }catch{document.getElementById('mConns').textContent='—'}
+  }catch(e){document.getElementById('mConns').textContent='—'}
 
-  // uptime from me or links meta
   try{
-    const me=await api('/api/me');
-    if(me&&me.uptime)document.getElementById('mUptime').textContent=me.uptime;
-  }catch{}
+    const h=await fetch('/health',{cache:'no-store'}).then(r=>r.json());
+    if(h&&h.uptime)document.getElementById('mUptime').textContent=h.uptime;
+  }catch(e){}
 
   renderLinks(arr);
   document.getElementById('panelInfo').innerHTML=
@@ -6562,31 +6562,73 @@ async function refreshAll(){
 function renderLinks(arr){
   const tb=document.getElementById('linksTable');
   if(!arr.length){tb.innerHTML=`<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:28px">${lang==='fa'?'کانفیگی نیست':'No configs'}</td></tr>`;return}
-  tb.innerHTML=arr.map(l=>{
+  window.__linksMap={};
+  tb.innerHTML=arr.map((l,idx)=>{
     const uid=l.uuid||l.id||'';
-    const name=l.label||l.name||uid.slice(0,8);
-    const proto=(l.protocol||'vless-ws').replace(/-ws$/,'');
+    window.__linksMap[uid]=l;
+    const name=l.label||l.name||String(uid).slice(0,8);
+    const proto=(l.protocol||'vless-ws');
     const on=l.active!==false&&!l.expired;
-    const link=l.vless_link||l.link||'';
     return `<tr>
       <td><b>${esc(name)}</b></td>
-      <td style="color:var(--t3)">${esc(proto)}</td>
-      <td><span class="badge ${on?'badge-on':'badge-off'}">${on?(lang==='fa'?'فعال':'ON'):(lang==='fa'?'خاموش':'OFF')}</span></td>
-      <td>${fmtB(l.used_bytes)}</td>
+      <td style="color:var(--t3);font-size:11px">${esc(proto)}</td>
+      <td>
+        <label class="switch" title="${on?(lang==='fa'?'فعال':'ON'):(lang==='fa'?'غیرفعال':'OFF')}">
+          <input type="checkbox" ${on?'checked':''} onchange="toggleLink('${esc(uid)}',this.checked)">
+          <span class="slider"></span>
+        </label>
+      </td>
+      <td>${fmtB(l.used_bytes)}${l.limit_bytes?(' / '+fmtB(l.limit_bytes)):''}</td>
       <td class="ops">
-        <button class="btn btn-sm" onclick="copyText('${esc(link)}')" title="Copy"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-        <button class="btn btn-sm" onclick="toggleLink('${uid}',${!on})"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-        <button class="btn btn-sm btn-d" onclick="deleteLink('${uid}')"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+        <button class="btn btn-sm" onclick="copyLinkById('${esc(uid)}')" title="Copy">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="btn btn-sm" onclick="copySubById('${esc(uid)}')" title="Sub">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
+        </button>
+        <button class="btn btn-sm btn-d" onclick="deleteLink('${esc(uid)}')" title="Delete">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+        </button>
       </td>
     </tr>`;
   }).join('');
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 
-async function copyText(t){try{await navigator.clipboard.writeText(t);toast(lang==='fa'?'کپی شد':'Copied')}catch{toast('Copy failed')}}
+function getLinkUrl(l){
+  if(!l)return '';
+  return l.vless_full||l.vless||l.vless_link||l.link||l.sub||'';
+}
+async function copyText(text){
+  text=String(text||'').trim();
+  if(!text){toast(lang==='fa'?'لینکی برای کپی نیست':'Nothing to copy');return}
+  try{
+    if(navigator.clipboard&&window.isSecureContext){
+      await navigator.clipboard.writeText(text);
+    }else{
+      const ta=document.createElement('textarea');
+      ta.value=text;ta.style.position='fixed';ta.style.left='-9999px';
+      document.body.appendChild(ta);ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    toast(lang==='fa'?'کپی شد':'Copied');
+  }catch(e){
+    toast(lang==='fa'?'کپی نشد':'Copy failed');
+  }
+}
+async function copyLinkById(uid){
+  const l=(window.__linksMap||{})[uid];
+  await copyText(getLinkUrl(l));
+}
+async function copySubById(uid){
+  const l=(window.__linksMap||{})[uid];
+  await copyText((l&&(l.sub||l.sub_url))||'');
+}
 async function toggleLink(uid,state){
-  const r=await api('/api/links/'+uid,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:state})});
-  if(r){toast(state?(lang==='fa'?'فعال':'ON'):(lang==='fa'?'غیرفعال':'OFF'));refreshAll()}
+  const r=await api('/api/links/'+uid,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!!state})});
+  if(r!==null){toast(state?(lang==='fa'?'فعال شد':'Enabled'):(lang==='fa'?'غیرفعال شد':'Disabled'));refreshAll()}
+  else refreshAll();
 }
 async function deleteLink(uid){
   if(!confirm(lang==='fa'?'حذف شود؟':'Delete?'))return;
@@ -6626,7 +6668,7 @@ async function doChangePw(){
   const nw=document.getElementById('pwNew').value;
   const cf=document.getElementById('pwCf').value;
   if(nw!==cf){toast(lang==='fa'?'رمزها یکی نیستند':'Passwords mismatch');return}
-  const r=await api('/api/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw})});
+  const r=await api('/api/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:cur,new_password:nw,repeat_password:cf})});
   if(r){toast(lang==='fa'?'رمز تغییر کرد':'Password changed');document.getElementById('pwCur').value='';document.getElementById('pwNew').value='';document.getElementById('pwCf').value=''}
 }
 
